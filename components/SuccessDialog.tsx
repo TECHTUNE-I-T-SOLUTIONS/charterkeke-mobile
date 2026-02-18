@@ -116,7 +116,7 @@ export const SuccessDialog: React.FC<SuccessDialogProps> = ({
               },
             ]}
           >
-            <MaterialCommunityIcons name="check-circle" size={56} color="#10B981" />
+            <MaterialCommunityIcons name="check-circle" size={56} color="#F18902" />
           </Animated.View>
 
           {/* Title */}
@@ -132,7 +132,7 @@ export const SuccessDialog: React.FC<SuccessDialogProps> = ({
           {/* Action Buttons */}
           <View style={styles.buttonContainer}>
             <TouchableOpacity
-              style={[styles.button, styles.primaryButton, { backgroundColor: '#10B981' }]}
+              style={[styles.button, styles.primaryButton, { backgroundColor: '#F18902AD' }]}
               onPress={handlePrimaryAction}
               activeOpacity={0.8}
             >

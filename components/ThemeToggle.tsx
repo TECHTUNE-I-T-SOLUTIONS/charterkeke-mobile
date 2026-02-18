@@ -32,7 +32,7 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({
         style={[
           styles.button,
           {
-            backgroundColor: theme.colors.surfaceLight,
+            backgroundColor: theme.colors.surface,
             borderColor: theme.colors.border,
           },
         ]}

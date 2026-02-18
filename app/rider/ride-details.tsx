@@ -29,14 +29,14 @@ interface RideData {
   destination_zone: string;
   pickup_description?: string;
   destination_description?: string;
-  fare_amount: number;
+  fare_amount: number | null;
   status: string;
   created_at: string;
   completed_at?: string;
   rating?: number;
   distance_km?: number;
   duration_minutes?: number;
-  platform_fee?: number;
+  platform_fee?: number | null;
   payment_method?: string;
   driver_id?: string;
   assigned_driver_id?: string;
@@ -73,6 +73,12 @@ function parseCoordinates(description: string) {
   const lngMatch = description.match(/Lng:\s*([-\d.]+)/);
   if (latMatch && lngMatch) return { latitude: parseFloat(latMatch[1]), longitude: parseFloat(lngMatch[1]) };
   return null;
+}
+
+function formatCurrency(value?: number | null) {
+  const amount = Number(value ?? 0);
+  if (!Number.isFinite(amount)) return '0';
+  return amount.toLocaleString();
 }
 
 export default function RideDetailsScreen() {
@@ -287,13 +293,13 @@ export default function RideDetailsScreen() {
           
           <View style={styles.row}>
             <Text style={[styles.rowLabel, { color: theme.colors.textSecondary }]}>Ride Fare</Text>
-            <Text style={[styles.rowValue, { color: theme.colors.textPrimary }]}>₦{rideDetails.fare_amount.toLocaleString()}</Text>
+            <Text style={[styles.rowValue, { color: theme.colors.textPrimary }]}>₦{formatCurrency(rideDetails.fare_amount)}</Text>
           </View>
           
           {rideDetails.platform_fee && (
             <View style={styles.row}>
               <Text style={[styles.rowLabel, { color: theme.colors.textSecondary }]}>Platform & Booking Fee</Text>
-              <Text style={[styles.rowValue, { color: theme.colors.textPrimary }]}>₦{rideDetails.platform_fee.toLocaleString()}</Text>
+              <Text style={[styles.rowValue, { color: theme.colors.textPrimary }]}>₦{formatCurrency(rideDetails.platform_fee)}</Text>
             </View>
           )}
           
@@ -308,7 +314,7 @@ export default function RideDetailsScreen() {
               </View>
             </View>
             <Text style={[styles.totalValue, { color: BRAND.primary }]}>
-              ₦{((rideDetails.fare_amount || 0) + (rideDetails.platform_fee || 0)).toLocaleString()}
+              ₦{formatCurrency((rideDetails.fare_amount || 0) + (rideDetails.platform_fee || 0))}
             </Text>
           </View>
         </View>

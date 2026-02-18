@@ -391,7 +391,7 @@ export default function WelcomeScreen() {
           ]
         }]}>
           <Text style={[styles.appName, { color: theme.colors.primary }]}>Charter Keke</Text>
-          <Text style={[styles.tagline, { color: theme.colors.textPrimary }]}>
+          <Text style={[styles.tagline, { color: theme.colors.moving }]}>
             Moving Nigeria,{'\n'}One Keke at a time.
           </Text>
           <View style={styles.pillContainer}>

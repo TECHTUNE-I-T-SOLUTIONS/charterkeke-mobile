@@ -17,6 +17,7 @@ export interface ThemeColors {
   textPrimary: string;
   textSecondary: string;
   textTertiary: string;
+  moving: string; // For text that indicates movement or action (e.g., "Moving to Trash")
 
   // Form Elements
   inputBackground: string;
@@ -59,6 +60,7 @@ export const lightTheme: Theme = {
     textPrimary: '#000000',
     textSecondary: '#814D08',
     textTertiary: '#999999',
+    moving: '#F18902AD', // Red color for "Moving to Trash" text
 
     inputBackground: '#FAFAFA',
     inputBorder: '#E5E5E5',
@@ -90,7 +92,8 @@ export const darkTheme: Theme = {
     textPrimary: '#FFFFFF',
     textSecondary: '#E6A653',
     textTertiary: '#52525B',
-
+    moving: '#C27107D2', // Red color for "Moving to Trash" text
+    
     inputBackground: '#18181B', // Zinc 900
     inputBorder: '#27272A',     // Zinc 800
     inputPlaceholder: '#52525B',

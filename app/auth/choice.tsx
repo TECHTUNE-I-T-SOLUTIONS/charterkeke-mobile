@@ -240,10 +240,10 @@ export default function AuthChoiceScreen() {
             style={styles.logo}
             resizeMode="contain"
           />
-          <Text style={[styles.title, { color: theme.colors.textPrimary }]}>
+          <Text style={[styles.title, { color: theme.colors.moving }]}>
             {userName ? `Welcome,\n${userName}!` : "Let's Get\nStarted"}
           </Text>
-          <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
+          <Text style={[styles.subtitle, { color: theme.colors.moving }]}>
             {userName 
               ? 'Ready for your next ride?' 
               : 'Join the community of riders and drivers moving effortlessly through the city.'}
