@@ -1,6 +1,5 @@
-// 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,21 +12,30 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
+  StatusBar,
+  Animated,
+  BackHandler,
+  Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import MapView, { Marker } from 'react-native-maps';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useAuth } from '@context/AuthContext';
-import { useLocation } from '@context/LocationContext';
-import { useTheme } from '@context/ThemeContext';
-import { apiService } from '@services/api';
-import RiderBottomNavigation from '@components/RiderBottomNavigation';
-import { formatCurrency } from '@utils/formatting';
+import { useAuth } from '@/context/AuthContext';
+import { useLocation } from '@/context/LocationContext';
+import { useTheme } from '@/context/ThemeContext';
+import { useNotificationBadge } from '@/context/NotificationContext';
+import { apiService } from '@/services/api';
+import { cacheService } from '@/services/cache';
+import { setNotificationCallbacks } from '@/services/notificationService';
+import { setNavigationRef } from '@/services/navigationService';
+import { HomeSkeleton } from '@/components/HomeSkeleton';
+import SupportFloatingWidget from '@/components/SupportFloatingWidget';
+import { formatCurrency } from '@/utils/formatting';
+import { BRAND, COLORS } from '@/utils/colors';
 
 const { width } = Dimensions.get('window');
-const scale = (size: number) => (width / 375) * size;
 
 interface DriverData {
   total_earnings?: number;
@@ -38,692 +46,388 @@ interface DriverData {
 
 export default function DriverHomeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { user, isAuthenticated, logout } = useAuth();
   const { currentLocation } = useLocation();
   const { theme, mode, toggleTheme } = useTheme();
+  const { unreadCount, resetUnreadCount, incrementUnreadCount } = useNotificationBadge();
+  
   const [refreshing, setRefreshing] = useState(false);
   const [isOnline, setIsOnline] = useState(false);
-  const [isToggling, setIsToggling] = useState(false);
   const [driverData, setDriverData] = useState<DriverData | null>(null);
   const [activeRidesCount, setActiveRidesCount] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [todayEarnings, setTodayEarnings] = useState(0);
   const [availableRides, setAvailableRides] = useState<any[]>([]);
-  const [dataFetched, setDataFetched] = useState(false);
+  const [recentRides, setRecentRides] = useState<any[]>([]);
+  const [hasCached, setHasCached] = useState(false);
+  
+  // Animations
+  const onlineAnim = useRef(new Animated.Value(0)).current;
+
+  // Set up navigation ref and notification callbacks
+  useEffect(() => {
+    setNavigationRef(router);
+    setNotificationCallbacks(incrementUnreadCount);
+  }, [router, incrementUnreadCount]);
 
   useFocusEffect(
     React.useCallback(() => {
-      if (!isAuthenticated) {
-        console.log('🔓 [DRIVER-HOME] Not authenticated, redirecting to login');
-        setLoading(false);
-        setDataFetched(false);
-        router.replace('/auth/welcome');
-        return;
-      }
-
-      if (!dataFetched) {
-        fetchDashboardData();
-        setDataFetched(true);
-      }
-
-      return () => {};
-    }, [isAuthenticated, dataFetched, router])
+      if (!isAuthenticated) return router.replace('/auth/welcome');
+      loadDashboard();
+    }, [isAuthenticated])
   );
 
-  const fetchDashboardData = async () => {
-    try {
-      if (!isAuthenticated) {
-        console.log('🔓 [DRIVER-HOME] Not authenticated, skipping data fetch');
-        return;
-      }
+  useFocusEffect(
+    React.useCallback(() => {
+      if (Platform.OS !== 'android' || !isAuthenticated) return;
 
-      setLoading(true);
-      let hasAuthError = false;
+      const backSubscription = BackHandler.addEventListener('hardwareBackPress', () => {
+        BackHandler.exitApp();
+        return true;
+      });
 
-      try {
-        const detailsData = await apiService.getDriverDetails();
-        console.log('✅ [DRIVER-HOME] Driver details:', detailsData);
-        setDriverData(detailsData.driver || detailsData);
-        setTodayEarnings(detailsData.driver?.total_earnings || 0);
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : JSON.stringify(err);
-        if (errorMsg.includes('No refresh token') || errorMsg.includes('401') || errorMsg.includes('Unauthorized')) {
-          hasAuthError = true;
-        }
-        console.error('⚠️ [DRIVER-HOME] Error fetching driver details:', err);
-      }
+      return () => backSubscription.remove();
+    }, [isAuthenticated])
+  );
 
-      try {
-        const statusData = await apiService.getDriverStatus();
-        console.log('✅ [DRIVER-HOME] Driver status:', statusData);
-        setIsOnline(statusData.status === 'online' || statusData.is_online === true);
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : JSON.stringify(err);
-        if (errorMsg.includes('No refresh token') || errorMsg.includes('401') || errorMsg.includes('Unauthorized')) {
-          hasAuthError = true;
-        }
-        console.error('⚠️ [DRIVER-HOME] Error fetching driver status:', err);
-      }
+  useEffect(() => {
+    Animated.timing(onlineAnim, {
+      toValue: isOnline ? 1 : 0,
+      duration: 300,
+      useNativeDriver: false,
+    }).start();
+  }, [isOnline]);
 
-      try {
-        const ridesData = await apiService.getActiveRides();
-        console.log('✅ [DRIVER-HOME] Active rides:', ridesData.rides?.length || 0);
-        setActiveRidesCount(ridesData.rides?.length || 0);
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : JSON.stringify(err);
-        if (errorMsg.includes('No refresh token') || errorMsg.includes('401') || errorMsg.includes('Unauthorized')) {
-          hasAuthError = true;
-        }
-        console.error('⚠️ [DRIVER-HOME] Error fetching active rides:', err);
-      }
-
-      try {
-        const availableData = await apiService.getAvailableRides(
-          currentLocation?.latitude,
-          currentLocation?.longitude,
-          10
-        );
-        console.log('✅ [DRIVER-HOME] Available rides:', availableData.rides?.length || 0);
-        setAvailableRides(availableData.rides?.slice(0, 3) || []);
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : JSON.stringify(err);
-        if (errorMsg.includes('No refresh token') || errorMsg.includes('401') || errorMsg.includes('Unauthorized')) {
-          hasAuthError = true;
-        }
-        console.error('⚠️ [DRIVER-HOME] Error fetching available rides:', err);
-      }
-
-      if (hasAuthError) {
-        console.error('🔒 [DRIVER-HOME] Auth error detected! Token expired or invalid. Logging out...');
-        await logout();
-        router.replace('/auth/welcome');
-        return;
-      }
-    } catch (error) {
-      console.error('❌ [DRIVER-HOME] Error fetching dashboard:', error);
-    } finally {
+  const loadDashboard = async () => {
+    const cached = await cacheService.get<any>('driver_home_dashboard');
+    if (cached) {
+      setDriverData(cached.driverData || null);
+      setIsOnline(!!cached.isOnline);
+      setActiveRidesCount(cached.activeRidesCount || 0);
+      setAvailableRides(cached.availableRides || []);
+      setRecentRides(cached.recentRides || []);
+      setHasCached(true);
       setLoading(false);
+    }
+
+    await fetchDashboardData(!cached);
+  };
+
+  const fetchDashboardData = async (showLoader: boolean = true) => {
+    try {
+      if (showLoader) setLoading(true);
+      const [details, status, rides, available, history] = await Promise.all([
+        apiService.getDriverDetails().catch(() => ({})),
+        apiService.getDriverStatus().catch(() => ({ status: 'offline' })),
+        apiService.getActiveRides().catch(() => ({ rides: [] })),
+        apiService.getAvailableRides(currentLocation?.latitude, currentLocation?.longitude, 10).catch(() => ({ rides: [] })),
+        apiService.get('/user/ride-history?limit=5').catch(() => ({ rides: [] }))
+      ]);
+
+      const nextDriverData = details.driver || details;
+      const nextIsOnline = status.status === 'online' || status.is_online === true;
+      const nextActiveRidesCount = rides.rides?.length || 0;
+      const nextAvailableRides = available.rides?.slice(0, 3) || [];
+      const nextRecentRides = (history.rides || history.data || []).slice(0, 5);
+
+      setDriverData(nextDriverData);
+      setIsOnline(nextIsOnline);
+      setActiveRidesCount(nextActiveRidesCount);
+      setAvailableRides(nextAvailableRides);
+      setRecentRides(nextRecentRides);
+
+      await cacheService.set('driver_home_dashboard', {
+        driverData: nextDriverData,
+        isOnline: nextIsOnline,
+        activeRidesCount: nextActiveRidesCount,
+        availableRides: nextAvailableRides,
+        recentRides: nextRecentRides,
+      });
+    } catch (error) {
+      console.error(error);
+    } finally {
+      if (showLoader) setLoading(false);
     }
   };
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchDashboardData();
+    await fetchDashboardData(!hasCached);
     setRefreshing(false);
   };
 
-  const handleOnlineToggle = async (checked: boolean) => {
-    setIsToggling(true);
+  const handleOnlineToggle = async (value: boolean) => {
     try {
-      const newStatus = checked ? 'online' : 'offline';
-      await apiService.setDriverStatus(newStatus);
-      setIsOnline(checked);
-      console.log('✅ [DRIVER-HOME] Status updated to:', newStatus);
-
-      const message = checked
-        ? 'You are now online! Start receiving ride requests.'
-        : 'You are now offline.';
-      Alert.alert('Status Updated', message);
+      setIsOnline(value); // Optimistic update
+      await apiService.setDriverStatus(value ? 'online' : 'offline');
     } catch (error) {
-      console.error('❌ [DRIVER-HOME] Error updating status:', error);
-      setIsOnline(!checked);
-      const errorMsg = error instanceof Error ? error.message : 'Failed to update status';
-      Alert.alert('Error', errorMsg);
-    } finally {
-      setIsToggling(false);
+      setIsOnline(!value); // Revert on failure
+      Alert.alert('Error', 'Failed to update status');
     }
   };
 
-  const gradientColors = useMemo(() => {
-    return mode === 'light'
-      ? ['#FFFFFF', '#F8F9FA']
-      : ['#1A1A1A', '#0F0F0F'];
-  }, [mode]) as [string, string];
-
-  const headerGradient = useMemo(() => {
-    return mode === 'light'
-      ? ['#F3F4F6', '#E5E7EB']
-      : ['#2D2D2D', '#1F1F1F'];
-  }, [mode]) as [string, string];
-
-  if (loading && !driverData) {
-    return (
-      <SafeAreaView style={[styles.container, { backgroundColor: theme?.colors?.background || '#FFFFFF', justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={theme?.colors?.primary || '#000000'} />
-      </SafeAreaView>
-    );
-  }
+  const isLight = theme.mode === 'light';
+  const statusColor = onlineAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [theme.colors.textSecondary, '#10B981']
+  });
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme?.colors?.background || '#FFFFFF' }]}>
-      <ScrollView
-        style={styles.scrollView}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme?.colors?.primary} />}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Header with Greeting */}
-        <LinearGradient
-          colors={headerGradient}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.headerGradient}
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
+      
+      {loading && !driverData ? (
+        <HomeSkeleton />
+      ) : (
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={{ paddingBottom: 100 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={BRAND.primary} />}
+          showsVerticalScrollIndicator={false}
         >
-          <View style={styles.header}>
-            <View style={styles.greetingContainer}>
-              <Text style={[styles.greeting, { color: theme?.colors?.textPrimary || '#000000' }]}>
-                Welcome back, {user?.firstName || 'Driver'}!
-              </Text>
-              <Text style={[styles.subGreeting, { color: theme?.colors?.textSecondary || '#666666' }]}>
-                Ready to drive?
-              </Text>
-            </View>
-            <View style={styles.headerButtons}>
-              <TouchableOpacity
-                onPress={toggleTheme}
-                style={[
-                  styles.headerButton,
-                  { backgroundColor: mode === 'light' ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.3)' },
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name={mode === 'dark' ? 'white-balance-sunny' : 'moon-waning-crescent'}
-                  size={scale(18)}
-                  color={theme?.colors?.primary || '#000000'}
-                />
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => router.push('/driver/notifications')}
-                style={[
-                  styles.headerButton,
-                  { backgroundColor: mode === 'light' ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.3)' },
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name="bell"
-                  size={scale(18)}
-                  color={theme?.colors?.primary || '#000000'}
-                />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.profileButton, { backgroundColor: theme?.colors?.primary || '#00CCFF' }]}
-                onPress={() => router.push('/driver/profile')}
-              >
-                <Image
-                  source={{
-                    uri: (user as any)?.avatar || 'https://via.placeholder.com/40',
-                  }}
-                  style={styles.profileImage}
-                />
-              </TouchableOpacity>
-            </View>
-          </View>
-        </LinearGradient>
-
-        {/* Online Status Card */}
-        <View style={[styles.statusCard, { marginHorizontal: scale(16), marginTop: scale(16) }]}>
+          {/* Header */}
           <LinearGradient
-            colors={isOnline
-              ? ['rgba(16, 185, 129, 0.08)', 'rgba(16, 185, 129, 0.04)']
-              : [mode === 'light' ? 'rgba(107, 114, 128, 0.05)' : 'rgba(107, 114, 128, 0.1)', 'transparent']
-            }
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.statusGradient}
+            colors={isLight ? ['#FFFFFF', '#FFF8F0'] : ['#000000', '#1A1100']}
+            style={[styles.headerGradient, { paddingTop: insets.top + 10 }]}
           >
-            <View style={styles.statusContent}>
+            <View style={styles.header}>
               <View>
-                <Text style={[styles.statusLabel, { color: theme?.colors?.textSecondary || '#666666' }]}>
-                  Your Status
+                <Text style={[styles.greeting, { color: theme.colors.textSecondary }]}>Ready to earn?</Text>
+                <Text style={[styles.name, { color: theme.colors.textPrimary }]}>
+                  {user?.firstName || (user as any)?.first_name || (driverData as any)?.first_name || 'Driver'} 👋
                 </Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: scale(6) }}>
-                  <View
-                    style={{
-                      width: scale(8),
-                      height: scale(8),
-                      borderRadius: scale(4),
-                      backgroundColor: isOnline ? '#10b981' : '#6b7280',
-                      marginRight: scale(6),
-                    }}
-                  />
-                  <Text style={[styles.statusValue, { color: theme?.colors?.textPrimary || '#000000' }]}>
-                    {isOnline ? 'Online' : 'Offline'}
-                  </Text>
-                </View>
               </View>
-              <Switch
-                value={isOnline}
-                onValueChange={handleOnlineToggle}
-                disabled={isToggling}
-                trackColor={{ false: theme?.colors?.border || '#cccccc', true: '#10b981' }}
-                thumbColor={isOnline ? '#22c55e' : '#ef4444'}
-              />
+              <View style={styles.headerButtons}>
+                <TouchableOpacity 
+                  onPress={() => {
+                    resetUnreadCount();
+                    router.push('/driver/notifications');
+                  }} 
+                  style={[styles.iconBtn, { backgroundColor: theme.colors.inputBackground }]}
+                >
+                  <MaterialCommunityIcons name="bell-outline" size={20} color={theme.colors.textPrimary} />
+                  {unreadCount > 0 && (
+                    <View style={[styles.badge, { backgroundColor: BRAND.primary }]}>
+                      <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity onPress={toggleTheme} style={[styles.iconBtn, { backgroundColor: theme.colors.inputBackground }]}>
+                  <MaterialCommunityIcons name={isLight ? "weather-sunny" : "weather-night"} size={20} color={theme.colors.textPrimary} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => router.push('/driver/profile')} style={styles.profileBtn}>
+                  <Image source={{ uri: (user as any)?.avatar || (driverData as any)?.profile_picture_url || 'https://via.placeholder.com/40' }} style={styles.profileImage} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Status Toggle Card */}
+            <View style={[styles.statusCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+               <View style={styles.statusInfo}>
+                  <Text style={[styles.statusLabel, { color: theme.colors.textSecondary }]}>Current Status</Text>
+                  <Animated.Text style={[styles.statusValue, { color: statusColor }]}>
+                    {isOnline ? 'Online • Receiving Requests' : 'Offline'}
+                  </Animated.Text>
+               </View>
+               <Switch
+                  value={isOnline}
+                  onValueChange={handleOnlineToggle}
+                  trackColor={{ false: theme.colors.border, true: '#10B981' }}
+                  thumbColor="#FFF"
+               />
             </View>
           </LinearGradient>
-        </View>
 
-        {/* Statistics Cards */}
-        <View style={[styles.statsContainer, { marginHorizontal: scale(16), marginTop: scale(20) }]}>
-          <View style={styles.statRow}>
-            <StatCard
-              icon="wallet"
-              label="Today's Earnings"
-              value={formatCurrency(todayEarnings)}
-              colors={theme?.colors}
-              theme={mode}
-            />
-            <StatCard
-              icon="car"
-              label="Active Rides"
-              value={activeRidesCount.toString()}
-              colors={theme?.colors}
-              theme={mode}
-            />
+          {/* Stats Grid */}
+          <View style={styles.statsContainer}>
+             <StatCard 
+               label="Today's Earnings" 
+               value={formatCurrency(driverData?.total_earnings || 0)} 
+               icon="wallet-outline" 
+               color={BRAND.primary}
+               theme={theme}
+               isLight={isLight}
+             />
+             <StatCard 
+               label="Completed Trips" 
+               value={(driverData?.total_rides_completed || 0).toString()} 
+               icon="check-circle-outline" 
+               color="#10B981"
+               theme={theme}
+               isLight={isLight}
+             />
           </View>
-          <View style={styles.statRow}>
-            <StatCard
-              icon="star"
-              label="Rating"
-              value={(driverData?.average_rating || 5.0).toFixed(1) + '⭐'}
-              colors={theme?.colors}
-              theme={mode}
-            />
-            <StatCard
-              icon="check-circle"
-              label="Completed Trips"
-              value={(driverData?.total_rides_completed || 0).toString()}
-              colors={theme?.colors}
-              theme={mode}
-            />
+          
+          <View style={[styles.statsContainer, { marginTop: 12 }]}>
+             <StatCard 
+               label="Active Rides" 
+               value={activeRidesCount.toString()} 
+               icon="car-sports" 
+               color="#3B82F6"
+               theme={theme}
+               isLight={isLight}
+             />
+             <StatCard 
+               label="Rating" 
+               value={(driverData?.average_rating || 5.0).toFixed(1)} 
+               icon="star" 
+               color="#F59E0B"
+               theme={theme}
+               isLight={isLight}
+             />
           </View>
-        </View>
 
-        {/* Current Location Map */}
-        {currentLocation && currentLocation.latitude && currentLocation.longitude ? (
-          <View style={[styles.mapContainer, { marginHorizontal: scale(16), marginTop: scale(20), borderRadius: scale(12), overflow: 'hidden', borderWidth: 1, borderColor: theme?.colors?.border || '#CCCCCC' }]}>
-            <MapView
-              style={styles.map}
-              initialRegion={{
-                latitude: currentLocation.latitude,
-                longitude: currentLocation.longitude,
-                latitudeDelta: 0.0922,
-                longitudeDelta: 0.0421,
-              }}
-              zoomEnabled={true}
-              scrollEnabled={true}
-            >
-              <Marker
-                coordinate={{
-                  latitude: currentLocation.latitude,
-                  longitude: currentLocation.longitude,
+          {/* Map Preview */}
+          <View style={[styles.mapSection, { borderColor: theme.colors.border }]}>
+             <MapView
+                style={styles.map}
+                scrollEnabled={true}
+                zoomEnabled={true}
+                pitchEnabled={true}
+                rotateEnabled={true}
+                initialRegion={{
+                  latitude: currentLocation?.latitude || 6.5244,
+                  longitude: currentLocation?.longitude || 3.3792,
+                  latitudeDelta: 0.05,
+                  longitudeDelta: 0.05,
                 }}
-                title="Your Location"
-                description="You are here"
-              />
-            </MapView>
-            <View
-              style={[
-                styles.locationLabel,
-                { backgroundColor: theme?.colors?.surfaceLight || '#F5F5F5', borderColor: theme?.colors?.border || '#CCCCCC' },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="map-marker"
-                size={scale(14)}
-                color={theme?.colors?.primary || '#000000'}
-              />
-              <Text
-                style={[styles.locationText, { color: theme?.colors?.textPrimary || '#000000', fontSize: scale(11) }]}
+                customMapStyle={!isLight ? mapDarkStyle : []}
               >
-                {currentLocation.latitude?.toFixed(3)}, {currentLocation.longitude?.toFixed(3)}
-              </Text>
-            </View>
-          </View>
-        ) : null}
-
-        {/* Available Rides Section */}
-        <View style={[styles.sectionContainer, { marginTop: scale(20) }]}>
-          <View style={[styles.sectionHeader, { marginHorizontal: scale(16) }]}>
-            <Text style={[styles.sectionTitle, { color: theme?.colors?.textPrimary || '#000000', fontSize: scale(16) }]}>
-              Available Rides
-            </Text>
-            <TouchableOpacity onPress={() => router.push('/driver/rides')}>
-              <Text style={[styles.viewAll, { color: theme?.colors?.primary || '#000000', fontSize: scale(12) }]}>View All</Text>
-            </TouchableOpacity>
+                {currentLocation && <Marker coordinate={currentLocation} pinColor={BRAND.primary} title="You" />}
+                {recentRides.map((ride) => [
+                  ride.pickup_latitude && ride.pickup_longitude && (
+                    <Marker
+                      key={`pickup-${ride.id}`}
+                      coordinate={{
+                        latitude: parseFloat(ride.pickup_latitude || ride.pickup_location?.latitude || 0),
+                        longitude: parseFloat(ride.pickup_longitude || ride.pickup_location?.longitude || 0),
+                      }}
+                      title="Pickup"
+                      description={ride.pickup_zone || 'Pickup Location'}
+                      pinColor="#2563EB"
+                    />
+                  ),
+                  ride.dropoff_latitude && ride.dropoff_longitude && (
+                    <Marker
+                      key={`dropoff-${ride.id}`}
+                      coordinate={{
+                        latitude: parseFloat(ride.dropoff_latitude || ride.dropoff_location?.latitude || 0),
+                        longitude: parseFloat(ride.dropoff_longitude || ride.dropoff_location?.longitude || 0),
+                      }}
+                      title="Dropoff"
+                      description={ride.dropoff_zone || 'Dropoff Location'}
+                      pinColor="#10B981"
+                    />
+                  ),
+                ])}
+              </MapView>
+              <View style={[styles.mapOverlay, { backgroundColor: theme.colors.surface }]}>
+                <View style={styles.dot} />
+                <Text style={[styles.locationText, { color: theme.colors.textPrimary }]}>
+                   {currentLocation ? 'You are here' : 'Locating...'}
+                </Text>
+              </View>
           </View>
 
           {isOnline && availableRides.length > 0 ? (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: scale(12), paddingHorizontal: scale(16), paddingBottom: scale(8), paddingTop: scale(12) }}
-            >
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.ridesScroll}>
               {availableRides.map((ride) => (
-                <TouchableOpacity
-                  key={ride.id}
-                  style={[
-                    styles.availableRideCard,
-                    {
-                      backgroundColor: theme?.colors?.surfaceLight || '#F5F5F5',
-                      borderColor: theme?.colors?.border || '#CCCCCC',
-                      width: scale(280),
-                    },
-                  ]}
+                <TouchableOpacity 
+                  key={ride.id} 
+                  style={[styles.rideCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
                   onPress={() => router.push('/driver/rides')}
                 >
-                  <View style={styles.rideCardContent}>
-                    <Text style={[styles.rideCardPassenger, { color: theme?.colors?.textPrimary || '#000000', fontSize: scale(14) }]}>
-                      {ride.users?.first_name}
-                    </Text>
-                    <View style={{ marginTop: scale(10), gap: scale(6) }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(6) }}>
-                        <MaterialCommunityIcons
-                          name="map-marker"
-                          size={scale(13)}
-                          color="#10b981"
-                        />
-                        <Text style={[styles.rideCardLocation, { color: theme?.colors?.textSecondary || '#666666', fontSize: scale(12) }]} numberOfLines={1}>
-                          {ride.pickup_zone}
-                        </Text>
-                      </View>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(6) }}>
-                        <MaterialCommunityIcons
-                          name="map-marker"
-                          size={scale(13)}
-                          color="#ef4444"
-                        />
-                        <Text style={[styles.rideCardLocation, { color: theme?.colors?.textSecondary || '#666666', fontSize: scale(12) }]} numberOfLines={1}>
-                          {ride.destination_zone}
-                        </Text>
-                      </View>
-                    </View>
-                    <View style={{ marginTop: scale(10), paddingTop: scale(10), borderTopWidth: 1, borderTopColor: theme?.colors?.border || '#CCCCCC', flexDirection: 'row', justifyContent: 'space-between' }}>
-                      <Text style={[styles.rideCardMeta, { color: theme?.colors?.textSecondary || '#999999', fontSize: scale(11) }]}>
-                        {ride.distance_km?.toFixed(1) || '0'} km
-                      </Text>
-                      <Text style={[styles.rideCardEarnings, { color: '#10b981', fontSize: scale(12), fontWeight: '600' }]}>
-                        ₦{(ride.driver_earnings || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                      </Text>
-                    </View>
-                  </View>
+                   <View style={styles.rideHeader}>
+                     <View style={styles.rideBadge}><Text style={styles.rideBadgeText}>NEW</Text></View>
+                     <Text style={[styles.rideFare, { color: BRAND.primary }]}>₦{ride.driver_earnings?.toLocaleString()}</Text>
+                   </View>
+                   <Text numberOfLines={1} style={[styles.rideLoc, { color: theme.colors.textPrimary }]}>{ride.pickup_zone}</Text>
+                   <Text style={[styles.rideArrow, { color: theme.colors.textSecondary }]}>↓</Text>
+                   <Text numberOfLines={1} style={[styles.rideLoc, { color: theme.colors.textPrimary }]}>{ride.destination_zone}</Text>
+                   <View style={styles.rideMeta}>
+                      <Text style={[styles.metaText, { color: theme.colors.textSecondary }]}>{ride.distance_km?.toFixed(1)} km</Text>
+                   </View>
                 </TouchableOpacity>
               ))}
             </ScrollView>
-          ) : isOnline ? (
-            <View
-              style={[
-                styles.emptyState,
-                { backgroundColor: theme?.colors?.surfaceLight || '#F5F5F5', borderColor: theme?.colors?.border || '#CCCCCC', marginHorizontal: scale(16), marginTop: scale(12) },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="car-off"
-                size={scale(40)}
-                color={theme?.colors?.textSecondary || '#333333'}
-              />
-              <Text
-                style={[styles.emptyStateText, { color: theme?.colors?.textPrimary || '#000000', fontSize: scale(14) }]}
-              >
-                No rides available
-              </Text>
-              <Text
-                style={[styles.emptyStateSubtext, { color: theme?.colors?.textSecondary || '#333333', fontSize: scale(12) }]}
-              >
-                Ride requests will appear here
-              </Text>
-            </View>
           ) : (
-            <View
-              style={[
-                styles.emptyState,
-                { backgroundColor: theme?.colors?.surfaceLight || '#F5F5F5', borderColor: theme?.colors?.border || '#CCCCCC', marginHorizontal: scale(16), marginTop: scale(12) },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="power-off"
-                size={scale(40)}
-                color={theme?.colors?.textSecondary || '#333333'}
-              />
-              <Text
-                style={[styles.emptyStateText, { color: theme?.colors?.textPrimary || '#000000', fontSize: scale(14) }]}
-              >
-                You're offline
-              </Text>
-              <Text
-                style={[styles.emptyStateSubtext, { color: theme?.colors?.textSecondary || '#333333', fontSize: scale(12) }]}
-              >
-                Turn on to receive ride requests
-              </Text>
-            </View>
+             <View style={[styles.emptyState, { borderColor: theme.colors.border, borderStyle: 'dashed' }]}>
+               <MaterialCommunityIcons name={isOnline ? "car-off" : "power-sleep"} size={32} color={theme.colors.textTertiary} />
+               <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
+                 {isOnline ? 'Searching for nearby rides...' : 'Go online to see requests'}
+               </Text>
+             </View>
           )}
-        </View>
 
-        <View style={{ height: scale(20) }} />
-      </ScrollView>
+        </ScrollView>
+      )}
 
-      {/* Bottom Navigation */}
-      <RiderBottomNavigation />
-    </SafeAreaView>
-  );
-}
-
-interface StatCardProps {
-  icon: string;
-  label: string;
-  value: string;
-  colors: any;
-  theme: string;
-}
-
-function StatCard({ icon, label, value, colors, theme }: StatCardProps) {
-  return (
-    <View
-      style={[
-        styles.statCard,
-        {
-          backgroundColor: colors?.surfaceLight || '#F5F5F5',
-          borderColor: colors?.border || '#CCCCCC',
-        },
-      ]}
-    >
-      <LinearGradient
-        colors={theme === 'light'
-          ? ['rgba(255,255,255,0.4)', 'rgba(255,255,255,0.2)']
-          : ['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.02)']
-        }
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={{
-          width: scale(36),
-          height: scale(36),
-          borderRadius: scale(8),
-          justifyContent: 'center',
-          alignItems: 'center',
-        }}
-      >
-        <MaterialCommunityIcons
-          name={icon as any}
-          size={scale(18)}
-          color={colors?.primary || '#000000'}
-        />
-      </LinearGradient>
-      <Text style={[styles.statValue, { color: colors?.textPrimary || '#000000', fontSize: scale(14), marginTop: scale(8) }]}>
-        {value}
-      </Text>
-      <Text style={[styles.statLabel, { color: colors?.textSecondary || '#333333', fontSize: scale(11) }]}>
-        {label}
-      </Text>
+      <SupportFloatingWidget route="/driver/help-and-support" />
     </View>
   );
 }
 
+const StatCard = ({ label, value, icon, color, theme, isLight }: any) => (
+  <View style={[styles.statCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+    <View style={[styles.statIcon, { backgroundColor: color + '15' }]}>
+      <MaterialCommunityIcons name={icon} size={20} color={color} />
+    </View>
+    <View>
+      <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{value}</Text>
+      <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>{label}</Text>
+    </View>
+  </View>
+);
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  headerGradient: {
-    paddingVertical: scale(14),
-    paddingHorizontal: scale(16),
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  greetingContainer: {
-    flex: 1,
-    marginRight: scale(12),
-  },
-  greeting: {
-    fontSize: scale(18),
-    fontWeight: '700',
-  },
-  subGreeting: {
-    fontSize: scale(12),
-    marginTop: scale(2),
-  },
-  headerButtons: {
-    flexDirection: 'row',
-    gap: scale(8),
-    alignItems: 'center',
-  },
-  headerButton: {
-    width: scale(40),
-    height: scale(40),
-    borderRadius: scale(8),
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  profileButton: {
-    width: scale(40),
-    height: scale(40),
-    borderRadius: scale(8),
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
-  },
-  profileImage: {
-    width: '100%',
-    height: '100%',
-  },
-  statusCard: {
-    borderWidth: 1,
-    borderRadius: scale(12),
-    overflow: 'hidden',
-  },
-  statusGradient: {
-    padding: scale(14),
-  },
-  statusContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  statusLabel: {
-    fontSize: scale(11),
-    fontWeight: '500',
-  },
-  statusValue: {
-    fontSize: scale(14),
-    fontWeight: '600',
-  },
-  statsContainer: {
-    gap: scale(12),
-  },
-  statRow: {
-    flexDirection: 'row',
-    gap: scale(12),
-  },
-  statCard: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: scale(12),
-    padding: scale(14),
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statIcon: {
-    marginBottom: scale(8),
-  },
-  statValue: {
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  statLabel: {
-    marginTop: scale(2),
-    textAlign: 'center',
-    fontWeight: '500',
-  },
-  mapContainer: {
-    height: scale(220),
-  },
-  map: {
-    flex: 1,
-  },
-  locationLabel: {
-    position: 'absolute',
-    bottom: scale(8),
-    left: scale(8),
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: scale(10),
-    paddingVertical: scale(6),
-    borderRadius: scale(6),
-    borderWidth: 1,
-    gap: scale(6),
-  },
-  locationText: {
-    fontWeight: '500',
-  },
-  sectionContainer: {
-    paddingBottom: scale(8),
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  sectionTitle: {
-    fontWeight: '700',
-  },
-  viewAll: {
-    fontWeight: '600',
-  },
-  availableRideCard: {
-    borderWidth: 1,
-    borderRadius: scale(12),
-    overflow: 'hidden',
-  },
-  rideCardContent: {
-    padding: scale(12),
-  },
-  rideCardPassenger: {
-    fontWeight: '600',
-  },
-  rideCardLocation: {
-    fontWeight: '500',
-  },
-  rideCardMeta: {
-    fontWeight: '500',
-  },
-  rideCardEarnings: {
-    fontWeight: '600',
-  },
-  emptyState: {
-    borderWidth: 1,
-    borderRadius: scale(12),
-    paddingVertical: scale(28),
-    paddingHorizontal: scale(16),
-    alignItems: 'center',
-    gap: scale(8),
-  },
-  emptyStateText: {
-    fontWeight: '600',
-    marginTop: scale(8),
-  },
-  emptyStateSubtext: {
-    fontWeight: '400',
-  },
+  container: { flex: 1 },
+  scrollView: { flex: 1 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  headerGradient: { paddingHorizontal: 20, paddingBottom: 24, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  greeting: { fontSize: 13, fontWeight: '500' },
+  name: { fontSize: 22, fontWeight: '800' },
+  headerButtons: { flexDirection: 'row', gap: 12, alignItems: 'center' },
+  iconBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', position: 'relative' },
+  badge: { position: 'absolute', top: -6, right: -4, width: 24, height: 24, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  badgeText: { fontSize: 10, fontWeight: '700', color: '#fff' },
+  profileBtn: { width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: BRAND.primary, padding: 1 },
+  profileImage: { width: '100%', height: '100%', borderRadius: 20 },
+  statusCard: { padding: 16, borderRadius: 16, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.05, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
+  statusLabel: { fontSize: 12, marginBottom: 4 },
+  statusValue: { fontSize: 14, fontWeight: '700' },
+  statusInfo: { flex: 1 },
+  statsContainer: { flexDirection: 'row', gap: 12, paddingHorizontal: 20, marginTop: 20 },
+  statCard: { flex: 1, flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 16, borderWidth: 1, gap: 12 },
+  statIcon: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  statValue: { fontSize: 18, fontWeight: '700' },
+  statLabel: { fontSize: 11 },
+  mapSection: { margin: 20, height: 440, borderRadius: 20, overflow: 'hidden', borderWidth: 1, position: 'relative' },
+  map: { flex: 1 },
+  mapOverlay: { position: 'absolute', bottom: 12, left: 12, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, gap: 6 },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: BRAND.primary },
+  locationText: { fontSize: 12, fontWeight: '600' },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, marginBottom: 12 },
+  sectionTitle: { fontSize: 16, fontWeight: '700' },
+  seeAll: { fontSize: 13, fontWeight: '600' },
+  ridesScroll: { paddingHorizontal: 20, gap: 12 },
+  rideCard: { width: 200, padding: 16, borderRadius: 16, borderWidth: 1, marginRight: 4 },
+  rideHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
+  rideBadge: { backgroundColor: BRAND.primary, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  rideBadgeText: { fontSize: 10, fontWeight: '700', color: '#000' },
+  rideFare: { fontSize: 14, fontWeight: '700' },
+  rideLoc: { fontSize: 13, fontWeight: '600' },
+  rideArrow: { fontSize: 12, marginVertical: 2 },
+  rideMeta: { marginTop: 12, flexDirection: 'row', alignItems: 'center' },
+  metaText: { fontSize: 11 },
+  emptyState: { margin: 20, padding: 30, borderRadius: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  emptyText: { marginTop: 8, fontSize: 13 },
 });
+
+const mapDarkStyle = [
+  { "elementType": "geometry", "stylers": [{ "color": "#242f3e" }] },
+  { "elementType": "labels.text.stroke", "stylers": [{ "color": "#242f3e" }] },
+  { "elementType": "labels.text.fill", "stylers": [{ "color": "#746855" }] },
+  { "featureType": "road", "elementType": "geometry", "stylers": [{ "color": "#38414e" }] },
+  { "featureType": "road", "elementType": "geometry.stroke", "stylers": [{ "color": "#212a37" }] },
+];

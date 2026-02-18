@@ -14,10 +14,13 @@ import {
   TextInput,
   Image,
   Alert,
+  Modal,
   Animated,
   Easing,
+  StatusBar,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -25,7 +28,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '@context/AuthContext';
 import { useTheme } from '@context/ThemeContext';
 import { ThemeToggle } from '@components/ThemeToggle';
-import { COLORS, BRAND } from '@utils/colors';
+import { BRAND } from '@utils/colors';
+import { apiService } from '@services/api';
 
 const { width, height } = Dimensions.get('window');
 
@@ -50,7 +54,7 @@ const STEPS: Record<SignupStep, { number: number; label: string; icon: string }>
 export default function SignupMultiStepScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { signup, isLoading } = useAuth();
+  const { signup, isLoading, updateUserProfile } = useAuth();
   const { theme } = useTheme();
 
   const [currentStep, setCurrentStep] = useState<SignupStep>('role');
@@ -61,6 +65,8 @@ export default function SignupMultiStepScreen() {
     lastName: '',
     email: '',
     phone: '+234',
+    homeAddress: '',
+    workAddress: '',
     dob: '',
     gender: '',
     password: '',
@@ -71,7 +77,9 @@ export default function SignupMultiStepScreen() {
     referralCode: '',
     // Driver-specific fields
     bankName: '',
+    bankCode: '',
     bankAccountNumber: '',
+    verifiedAccountName: '',
     vehicleType: '',
     plateNumber: '',
     unionName: '',
@@ -85,10 +93,29 @@ export default function SignupMultiStepScreen() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [banks, setBanks] = useState<{ code: string; name: string }[]>([]);
+  const [loadingBanks, setLoadingBanks] = useState(false);
+  const [bankPickerVisible, setBankPickerVisible] = useState(false);
+  const [bankSearch, setBankSearch] = useState('');
+  const [verifyingAccount, setVerifyingAccount] = useState(false);
+  const [accountVerified, setAccountVerified] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   // Memoized handler to prevent keyboard focus loss
   const handleFieldChange = useCallback((field: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+    const normalizedValue =
+      field === 'bankAccountNumber' ? value.replace(/\D/g, '').slice(0, 10) : value;
+
+    setFormData((prev) => {
+      const next = { ...prev, [field]: normalizedValue };
+      if (field === 'bankAccountNumber' || field === 'bankCode') {
+        next.verifiedAccountName = '';
+      }
+      return next;
+    });
+    if (field === 'bankAccountNumber' || field === 'bankCode') {
+      setAccountVerified(false);
+    }
   }, []);
 
   // === ENTRANCE ANIMATIONS ===
@@ -400,12 +427,104 @@ export default function SignupMultiStepScreen() {
     triggerStepAnimation();
   }, [currentStep]);
 
+  const loadBanks = async () => {
+    setLoadingBanks(true);
+    try {
+      const paystackKey = process.env.EXPO_PUBLIC_PAYSTACK_PUBLIC_KEY;
+      const response = await fetch('https://api.paystack.co/bank', {
+        headers: paystackKey ? { Authorization: `Bearer ${paystackKey}` } : {},
+      });
+      const data = await response.json();
+      if (data?.status && Array.isArray(data.data)) {
+        const activeBanks = data.data.filter((bank: any) => bank.active !== false);
+        setBanks(activeBanks.map((bank: any) => ({ code: bank.code, name: bank.name })));
+      } else {
+        setBanks([]);
+      }
+    } catch (error) {
+      console.error('❌ [SIGNUP] Failed to fetch banks:', error);
+    } finally {
+      setLoadingBanks(false);
+    }
+  };
+
+  const handleSelectBank = (bank: { code: string; name: string }) => {
+    setFormData((prev) => ({
+      ...prev,
+      bankName: bank.name,
+      bankCode: bank.code,
+      verifiedAccountName: '',
+    }));
+    setAccountVerified(false);
+    setBankPickerVisible(false);
+  };
+
+  const handleVerifyBankAccount = async () => {
+    if (!formData.bankAccountNumber || formData.bankAccountNumber.length !== 10) {
+      Alert.alert('Invalid Account', 'Account number must be 10 digits.');
+      return;
+    }
+    if (!formData.bankCode) {
+      Alert.alert('Select Bank', 'Please select a bank to continue.');
+      return;
+    }
+
+    setVerifyingAccount(true);
+    try {
+      const response = await apiService.post('/paystack/verify-account', {
+        accountNumber: formData.bankAccountNumber,
+        bankCode: formData.bankCode,
+      });
+
+      if (response?.status === true) {
+        setFormData((prev) => ({
+          ...prev,
+          verifiedAccountName: response?.data?.account_name || '',
+          bankName: prev.bankName || banks.find((bank) => bank.code === formData.bankCode)?.name || '',
+        }));
+        setAccountVerified(true);
+        Alert.alert('Verified', 'Account verified successfully.');
+      } else {
+        const message = response?.error || response?.message || 'Account verification failed.';
+        setAccountVerified(false);
+        Alert.alert('Verification Failed', message);
+      }
+    } catch (error: any) {
+      setAccountVerified(false);
+      Alert.alert('Verification Failed', error?.message || 'Account verification failed.');
+    } finally {
+      setVerifyingAccount(false);
+    }
+  };
+
+  const handleProceedWithoutVerification = () => {
+    if (!formData.bankCode) {
+      Alert.alert('Select Bank', 'Please select a bank to continue.');
+      return;
+    }
+    if (!formData.bankAccountNumber || formData.bankAccountNumber.length !== 10) {
+      Alert.alert('Invalid Account', 'Account number must be 10 digits.');
+      return;
+    }
+    setFormData((prev) => ({
+      ...prev,
+      bankName: prev.bankName || banks.find((bank) => bank.code === formData.bankCode)?.name || '',
+      verifiedAccountName: '',
+    }));
+    setAccountVerified(true);
+  };
+
+  useEffect(() => {
+    if (role === 'driver' && currentStep === 'emergency' && banks.length === 0) {
+      loadBanks();
+    }
+  }, [role, currentStep, banks.length]);
+
   const pickImage = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsEditing: true,
-        cropperCircleOverlay: true,
         quality: 0.8,
         base64: false,
       });
@@ -483,11 +602,16 @@ export default function SignupMultiStepScreen() {
             newErrors.emergencyContactPhone = 'Valid phone number required';
         } else if (role === 'driver') {
           // Driver validation
-          if (!formData.bankName.trim()) newErrors.bankName = 'Bank name required';
+          if (!formData.emergencyContactName.trim())
+            newErrors.emergencyContactName = 'Emergency contact name required';
+          if (formData.emergencyContactPhone.length < 11)
+            newErrors.emergencyContactPhone = 'Valid emergency phone required';
+          if (!formData.bankCode.trim()) newErrors.bankCode = 'Select a bank';
           if (!formData.bankAccountNumber.trim())
             newErrors.bankAccountNumber = 'Bank account number required';
-          if (formData.bankAccountNumber.length < 10)
+          if (formData.bankAccountNumber.length !== 10)
             newErrors.bankAccountNumber = 'Valid bank account number required';
+          if (!accountVerified) newErrors.bankVerification = 'Verify your bank account';
           if (!formData.vehicleType.trim()) newErrors.vehicleType = 'Vehicle type required';
           if (!formData.plateNumber.trim()) newErrors.plateNumber = 'Plate number required';
           if (!formData.unionName.trim()) newErrors.unionName = 'Union name required';
@@ -531,10 +655,42 @@ export default function SignupMultiStepScreen() {
     }
   };
 
+  const uploadProfilePictureInBackground = (imageAsset: any) => {
+    if (!imageAsset?.uri) return;
+
+    const fileName = imageAsset.fileName || imageAsset.uri.split('/').pop() || 'profile.jpg';
+    const fileType = imageAsset.mimeType || 'image/jpeg';
+
+    const uploadFormData = new FormData();
+    uploadFormData.append('profilePicture', {
+      uri: imageAsset.uri,
+      type: fileType,
+      name: fileName,
+    } as any);
+
+    void apiService
+      .post('/user/profile/avatar', uploadFormData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      .then(async (response: any) => {
+        const uploadedAvatar = response?.user?.profile_picture_url;
+        if (uploadedAvatar) {
+          await updateUserProfile({
+            avatar: uploadedAvatar,
+            profile_picture_url: uploadedAvatar,
+          } as any);
+        }
+      })
+      .catch((error) => {
+        console.error('⚠️ [SIGNUP] Background avatar upload failed:', error);
+      });
+  };
+
   const handleSignup = async () => {
     if (!validateStep('security')) return;
 
     try {
+      const deferredProfileImage = formData.profileImage;
       const formDataObj = new FormData();
 
       // Common fields for all users
@@ -542,42 +698,48 @@ export default function SignupMultiStepScreen() {
       formDataObj.append('lastName', formData.lastName);
       formDataObj.append('email', formData.email);
       formDataObj.append('phone', formData.phone);
+      if (formData.homeAddress) {
+        formDataObj.append('homeAddress', formData.homeAddress);
+      }
+      if (formData.workAddress) {
+        formDataObj.append('workAddress', formData.workAddress);
+      }
       formDataObj.append('dob', formData.dob);
       formDataObj.append('gender', formData.gender);
+      if (formData.emergencyContactName) {
+        formDataObj.append('emergencyContactName', formData.emergencyContactName);
+      }
+      if (formData.emergencyContactPhone) {
+        formDataObj.append('emergencyContactPhone', formData.emergencyContactPhone);
+      }
       formDataObj.append('password', formData.password);
-      formDataObj.append('role', role);
-
-      // Profile image (common)
-      if (formData.profileImage) {
-        formDataObj.append('profileImage', {
-          uri: formData.profileImage.uri,
-          type: formData.profileImage.mimeType || 'image/jpeg',
-          name: formData.profileImage.uri.split('/').pop() || 'profile.jpg',
-        } as any);
+      if (role) {
+        formDataObj.append('role', role === 'rider' ? 'user' : role);
       }
 
       // Role-specific fields
       if (role === 'rider') {
-        if (formData.emergencyContactName) {
-          formDataObj.append('emergencyContactName', formData.emergencyContactName);
-        }
-        if (formData.emergencyContactPhone) {
-          formDataObj.append('emergencyContactPhone', formData.emergencyContactPhone);
-        }
         if (formData.referralCode) {
           formDataObj.append('referralCode', formData.referralCode);
         }
       } else if (role === 'driver') {
         // Driver-specific fields
-        formDataObj.append('bankName', formData.bankName);
+        const selectedBankName = formData.bankName || banks.find((bank) => bank.code === formData.bankCode)?.name || '';
+        formDataObj.append('bankName', selectedBankName);
         formDataObj.append('bankAccountNumber', formData.bankAccountNumber);
+        if (formData.bankCode) {
+          formDataObj.append('bankCode', formData.bankCode);
+        }
+        if (formData.verifiedAccountName) {
+          formDataObj.append('accountName', formData.verifiedAccountName);
+        }
         formDataObj.append('vehicleType', formData.vehicleType);
         formDataObj.append('plateNumber', formData.plateNumber);
         formDataObj.append('unionName', formData.unionName);
 
         // Vehicle and license photos
         if (formData.vehicleImage) {
-          formDataObj.append('vehicleImage', {
+          formDataObj.append('vehiclePicture', {
             uri: formData.vehicleImage.uri,
             type: formData.vehicleImage.mimeType || 'image/jpeg',
             name: formData.vehicleImage.uri.split('/').pop() || 'vehicle.jpg',
@@ -585,7 +747,7 @@ export default function SignupMultiStepScreen() {
         }
 
         if (formData.licenseImage) {
-          formDataObj.append('licenseImage', {
+          formDataObj.append('licensePicture', {
             uri: formData.licenseImage.uri,
             type: formData.licenseImage.mimeType || 'image/jpeg',
             name: formData.licenseImage.uri.split('/').pop() || 'license.jpg',
@@ -595,9 +757,13 @@ export default function SignupMultiStepScreen() {
 
       await signup(formDataObj);
 
+      if (deferredProfileImage) {
+        uploadProfilePictureInBackground(deferredProfileImage);
+      }
+
       // Navigate based on role
       const targetRoute = role === 'driver' ? '/driver/home' : '/rider/home';
-      router.push(targetRoute);
+      router.replace(targetRoute);
     } catch (error) {
       Alert.alert('Error', error instanceof Error ? error.message : 'Signup failed');
     }
@@ -608,16 +774,16 @@ export default function SignupMultiStepScreen() {
     const currentIdx = order.indexOf(currentStep);
     const stepIdx = order.indexOf(stepName);
 
-    if (stepIdx < currentIdx) return '#10B981';
-    if (stepIdx === currentIdx) return '#C1E8FF';
-    return 'rgba(193, 232, 255, 0.2)';
+    if (stepIdx < currentIdx) return '#F18902';
+    if (stepIdx === currentIdx) return '#F18902';
+    return 'rgba(241, 137, 2, 0.94)';
   };
 
   const StepIndicator = () => (
     <View style={styles.stepIndicator}>
       {(Object.keys(STEPS) as SignupStep[]).map((step, index) => {
         const isActive = step === currentStep;
-        const isCompleted = getProgressColor(step) === '#10B981';
+        const isCompleted = getProgressColor(step) === '#F18902';
         const isFuture = !isActive && !isCompleted;
 
         return (
@@ -636,12 +802,12 @@ export default function SignupMultiStepScreen() {
                   styles.stepCircle,
                   {
                     backgroundColor: isCompleted
-                      ? '#10B981'
+                      ? '#F18902'
                       : isActive
-                      ? 'rgba(193, 232, 255, 0.2)'
-                      : 'rgba(255,255,255,0.06)',
+                      ? 'rgb(248, 167, 62)'
+                      : 'rgba(221, 170, 103, 0.94)',
                     borderWidth: isActive ? 2 : 0,
-                    borderColor: isActive ? '#C1E8FF' : 'transparent',
+                    borderColor: isActive ? '#F5F2ED' : 'transparent',
                     transform: isActive ? [{ scale: activeStepPulse }] : [],
                   },
                 ]}
@@ -652,7 +818,10 @@ export default function SignupMultiStepScreen() {
                   <Text
                     style={[
                       styles.stepNumber,
-                      { opacity: isFuture ? 0.4 : 1 },
+                      { 
+                        opacity: isFuture ? 0.4 : 1,
+                        color: '#000000',
+                      },
                     ]}
                   >
                     {STEPS[step].number}
@@ -662,6 +831,9 @@ export default function SignupMultiStepScreen() {
               <Text
                 style={[
                   styles.stepLabel,
+                  {
+                    color: theme.colors.textPrimary,
+                  },
                   isActive && styles.stepLabelActive,
                   isFuture && { opacity: 0.4 },
                 ]}
@@ -676,8 +848,8 @@ export default function SignupMultiStepScreen() {
                   styles.stepLine,
                   {
                     backgroundColor: isCompleted
-                      ? '#10B981'
-                      : 'rgba(193, 232, 255, 0.12)',
+                      ? '#F18902'
+                      : 'rgba(146, 144, 142, 0.88)',
                   },
                 ]}
               />
@@ -707,11 +879,14 @@ export default function SignupMultiStepScreen() {
       icon?: string;
     }) => (
       <View>
-        <Text style={[styles.label, { color: theme.colors.textPrimary }]}>{label}</Text>
+        <Text style={[styles.label, { color: theme.colors.textSecondary }]}>{label}</Text>
         <View
           style={[
             styles.inputWrapper,
-            { borderColor: error ? theme.colors.error : theme.colors.border },
+            {
+              borderColor: error ? theme.colors.error : theme.colors.border,
+              backgroundColor: theme.colors.inputBackground,
+            },
             error ? styles.inputWrapperError : null,
           ]}
         >
@@ -726,7 +901,7 @@ export default function SignupMultiStepScreen() {
           <TextInput
             style={[styles.input, { color: theme.colors.textPrimary }]}
             placeholder={placeholder}
-            placeholderTextColor={theme.colors.placeholder}
+            placeholderTextColor={theme.colors.inputPlaceholder}
             keyboardType={keyboardType}
             value={value}
             onChangeText={onChangeText}
@@ -740,16 +915,8 @@ export default function SignupMultiStepScreen() {
   }, [theme]);
 
   return (
-    <LinearGradient
-      colors={
-        theme.mode === 'light'
-          ? ['#949494', '#777777', '#464343']
-          : ['#1E1E1E', '#121212', '#2A2A2A']
-      }
-      start={{ x: 0, y: 0 }}
-      end={{ x: 0.3, y: 1 }}
-      style={styles.container}
-    >
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <StatusBar barStyle={theme.mode === 'light' ? 'dark-content' : 'light-content'} />
       {/* Theme Toggle */}
       <ThemeToggle top={insets.top + 16} right={16} />
 
@@ -783,17 +950,18 @@ export default function SignupMultiStepScreen() {
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
-            {/* Back Button */}
-            <TouchableOpacity onPress={handleBack} style={styles.backBtn}>
-              <View style={styles.backBtnCircle}>
+            {/* Header */}
+            <View style={styles.header}>
+              <TouchableOpacity onPress={handleBack} style={styles.backBtn}>
                 <MaterialCommunityIcons
                   name="arrow-left"
-                  size={moderateScale(18)}
-                  color="#C1E8FF"
+                  size={moderateScale(20)}
+                  color={theme.colors.textPrimary}
                 />
-              </View>
-              <Text style={styles.backText}>Back</Text>
-            </TouchableOpacity>
+              </TouchableOpacity>
+              <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>Create Account</Text>
+              <View style={styles.headerSpacer} />
+            </View>
 
             {/* Progress Indicator */}
             <StepIndicator />
@@ -849,7 +1017,7 @@ export default function SignupMultiStepScreen() {
                           <MaterialCommunityIcons
                             name="check-circle"
                             size={moderateScale(22)}
-                            color="#10B981"
+                            color="#F18902"
                           />
                         </View>
                       )}
@@ -890,7 +1058,7 @@ export default function SignupMultiStepScreen() {
                           <MaterialCommunityIcons
                             name="check-circle"
                             size={moderateScale(22)}
-                            color="#10B981"
+                            color="#F18902"
                           />
                         </View>
                       )}
@@ -923,7 +1091,7 @@ export default function SignupMultiStepScreen() {
                             <MaterialCommunityIcons
                               name="pencil"
                               size={moderateScale(12)}
-                              color="#fff"
+                              color="#F18902"
                             />
                           </View>
                         </View>
@@ -938,7 +1106,7 @@ export default function SignupMultiStepScreen() {
                             <MaterialCommunityIcons
                               name="camera-plus"
                               size={moderateScale(28)}
-                              color="#C1E8FF"
+                              color="#F18902"
                             />
                           </Animated.View>
                           <Text style={styles.uploadText}>Add Profile Photo</Text>
@@ -985,24 +1153,127 @@ export default function SignupMultiStepScreen() {
                       label="Phone Number *"
                       value={formData.phone}
                       onChangeText={(text) => handleFieldChange('phone', text)}
-                      placeholder="08012345678"
+                      placeholder="+234 801 234 5678"
                       error={errors.phone}
                       keyboardType="phone-pad"
                       icon="phone-outline"
                     />
 
                     <InputField
-                      label="Date of Birth *"
-                      value={formData.dob}
-                      onChangeText={(text) => handleFieldChange('dob', text)}
-                      placeholder="DD/MM/YYYY"
-                      error={errors.dob}
-                      icon="calendar-outline"
+                      label="Home Address"
+                      value={formData.homeAddress}
+                      onChangeText={(text) => handleFieldChange('homeAddress', text)}
+                      placeholder="Enter your home address"
+                      icon="home-outline"
                     />
+
+                    <InputField
+                      label="Work Address"
+                      value={formData.workAddress}
+                      onChangeText={(text) => handleFieldChange('workAddress', text)}
+                      placeholder="Enter your work address"
+                      icon="briefcase-outline"
+                    />
+
+                    {/* Date of Birth */}
+                    <View>
+                      <Text style={[styles.label, { color: theme.colors.textSecondary }]}>Date of Birth *</Text>
+                      <TouchableOpacity
+                        onPress={() => setShowDatePicker(true)}
+                        activeOpacity={0.8}
+                        style={[
+                          styles.inputWrapper,
+                          {
+                            borderColor: errors.dob ? theme.colors.error : theme.colors.border,
+                            backgroundColor: theme.colors.inputBackground,
+                          },
+                          errors.dob ? styles.inputWrapperError : null,
+                        ]}
+                      >
+                        <MaterialCommunityIcons
+                          name="calendar-outline"
+                          size={moderateScale(16)}
+                          color={theme.colors.textSecondary}
+                          style={styles.inputIcon}
+                        />
+                        <Text
+                          style={[
+                            styles.input,
+                            {
+                              color: formData.dob ? theme.colors.textPrimary : theme.colors.inputPlaceholder,
+                            },
+                          ]}
+                        >
+                          {formData.dob
+                            ? new Date(formData.dob).toLocaleDateString('en-US', {
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric',
+                              })
+                            : 'Select your date of birth'}
+                        </Text>
+                      </TouchableOpacity>
+                      {errors.dob && (
+                        <Text style={[styles.errorText, { color: theme.colors.error }]}>
+                          {errors.dob}
+                        </Text>
+                      )}
+                    </View>
+
+                    {/* Date Picker Modal for iOS */}
+                    {Platform.OS === 'ios' && showDatePicker && (
+                      <Modal
+                        visible={showDatePicker}
+                        transparent
+                        animationType="slide"
+                        onRequestClose={() => setShowDatePicker(false)}
+                      >
+                        <View style={styles.datePickerModal}>
+                          <View style={[styles.datePickerContainer, { backgroundColor: theme.colors.card }]}>
+                            <View style={styles.datePickerHeader}>
+                              <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                                <Text style={[styles.datePickerButton, { color: theme.colors.primary }]}>
+                                  Done
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                            <DateTimePicker
+                              value={formData.dob ? new Date(formData.dob) : new Date()}
+                              mode="date"
+                              display="spinner"
+                              maximumDate={new Date()}
+                              onChange={(event, date) => {
+                                if (date) {
+                                  handleFieldChange('dob', date.toISOString().split('T')[0]);
+                                }
+                              }}
+                              textColor={theme.colors.textPrimary}
+                            />
+                          </View>
+                        </View>
+                      </Modal>
+                    )}
+
+                    {/* Date Picker for Android */}
+                    {Platform.OS === 'android' && showDatePicker && (
+                      <DateTimePicker
+                        value={formData.dob ? new Date(formData.dob) : new Date()}
+                        mode="date"
+                        display="default"
+                        maximumDate={new Date()}
+                        onChange={(event, date) => {
+                          setShowDatePicker(false);
+                          if (date && event.type === 'set') {
+                            handleFieldChange('dob', date.toISOString().split('T')[0]);
+                          }
+                        }}
+                      />
+                    )}
+
 
                     {/* Gender */}
                     <View>
-                      <Text style={styles.label}>Gender *</Text>
+                      <Text style={[styles.label, { color: theme.colors.textSecondary }]}>Gender *</Text>
                       <View style={styles.genderRow}>
                         {['male', 'female', 'other'].map((g) => (
                           <TouchableOpacity
@@ -1062,7 +1333,7 @@ export default function SignupMultiStepScreen() {
                           <MaterialCommunityIcons
                             name="shield-check"
                             size={moderateScale(18)}
-                            color="#10B981"
+                            color="#F18902"
                           />
                         </Animated.View>
                         <Text style={[styles.safetyText, { color: theme.colors.textSecondary }]}>
@@ -1115,7 +1386,7 @@ export default function SignupMultiStepScreen() {
                           <MaterialCommunityIcons
                             name="shield-check"
                             size={moderateScale(18)}
-                            color="#10B981"
+                            color="#F18902"
                           />
                         </Animated.View>
                         <Text style={[styles.safetyText, { color: theme.colors.textSecondary }]}>
@@ -1158,20 +1429,73 @@ export default function SignupMultiStepScreen() {
                           icon="home-group"
                         />
 
-                        {/* Banking Information */}
                         <InputField
-                          label="Bank Name *"
-                          value={formData.bankName}
+                          label="Emergency Contact Name *"
+                          value={formData.emergencyContactName}
                           onChangeText={(text) =>
-                            handleFieldChange('bankName', text)
+                            handleFieldChange('emergencyContactName', text)
                           }
-                          placeholder="e.g., GTBank, Access Bank"
-                          error={errors.bankName}
-                          icon="bank-outline"
+                          placeholder="Emergency contact full name"
+                          error={errors.emergencyContactName}
+                          icon="account-alert-outline"
                         />
 
                         <InputField
-                          // placeholder='+23412345678'
+                          label="Emergency Contact Phone *"
+                          value={formData.emergencyContactPhone}
+                          onChangeText={(text) =>
+                            handleFieldChange('emergencyContactPhone', text)
+                          }
+                          placeholder="08012345678"
+                          error={errors.emergencyContactPhone}
+                          keyboardType="phone-pad"
+                          icon="phone-alert"
+                        />
+
+                        {/* Banking Information */}
+                        <View>
+                          <Text style={[styles.label, { color: theme.colors.textSecondary }]}>Bank *</Text>
+                          <TouchableOpacity
+                            onPress={() => setBankPickerVisible(true)}
+                            activeOpacity={0.85}
+                            style={[
+                              styles.inputWrapper,
+                              {
+                                borderColor: errors.bankCode ? theme.colors.error : theme.colors.border,
+                                backgroundColor: theme.colors.inputBackground,
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                              },
+                              errors.bankCode ? styles.inputWrapperError : null,
+                            ]}
+                          >
+                            <MaterialCommunityIcons
+                              name="bank-outline"
+                              size={moderateScale(16)}
+                              color={theme.colors.textSecondary}
+                              style={styles.inputIcon}
+                            />
+                            <Text
+                              style={{
+                                flex: 1,
+                                color: formData.bankName ? theme.colors.textPrimary : theme.colors.inputPlaceholder,
+                                fontSize: moderateScale(12),
+                              }}
+                            >
+                              {formData.bankName || (loadingBanks ? 'Loading banks...' : 'Select bank')}
+                            </Text>
+                            <MaterialCommunityIcons
+                              name="chevron-down"
+                              size={moderateScale(18)}
+                              color={theme.colors.textSecondary}
+                            />
+                          </TouchableOpacity>
+                          {errors.bankCode && (
+                            <Text style={[styles.errorText, { color: theme.colors.error }]}>{errors.bankCode}</Text>
+                          )}
+                        </View>
+
+                        <InputField
                           label="Bank Account Number *"
                           value={formData.bankAccountNumber}
                           onChangeText={(text) =>
@@ -1183,9 +1507,53 @@ export default function SignupMultiStepScreen() {
                           icon="numeric-outline"
                         />
 
+                        <TouchableOpacity
+                          onPress={handleVerifyBankAccount}
+                          disabled={verifyingAccount || !formData.bankCode || formData.bankAccountNumber.length !== 10}
+                          style={[
+                            styles.verifyButton,
+                            {
+                              backgroundColor: theme.colors.primary,
+                              opacity:
+                                verifyingAccount || !formData.bankCode || formData.bankAccountNumber.length !== 10
+                                  ? 0.6
+                                  : 1,
+                            },
+                          ]}
+                        >
+                          {verifyingAccount ? (
+                            <ActivityIndicator size="small" color="#fff" />
+                          ) : (
+                            <Text style={styles.verifyButtonText}>Verify Account</Text>
+                          )}
+                        </TouchableOpacity>
+
+                        {accountVerified && (
+                          <View style={styles.verifiedBox}>
+                            <Text style={styles.verifiedTitle}>
+                              {formData.verifiedAccountName ? 'Account Verified' : 'Account Accepted'}
+                            </Text>
+                            {formData.verifiedAccountName ? (
+                              <Text style={styles.verifiedText}>{formData.verifiedAccountName}</Text>
+                            ) : (
+                              <Text style={styles.verifiedText}>{formData.bankAccountNumber}</Text>
+                            )}
+                          </View>
+                        )}
+
+                        {!accountVerified && formData.bankAccountNumber.length === 10 && formData.bankCode ? (
+                          <TouchableOpacity onPress={handleProceedWithoutVerification} style={styles.manualProceedButton}>
+                            <Text style={styles.manualProceedText}>Proceed without verification</Text>
+                          </TouchableOpacity>
+                        ) : null}
+
+                        {errors.bankVerification && (
+                          <Text style={[styles.errorText, { color: theme.colors.error }]}>{errors.bankVerification}</Text>
+                        )}
+
                         {/* Vehicle Photo */}
                         <View style={styles.uploadSection}>
-                          <Text style={styles.label}>Vehicle Photo *</Text>
+                          <Text style={[styles.label, { color: theme.colors.textSecondary }]}>Vehicle Photo *</Text>
                           <TouchableOpacity
                             onPress={pickVehicleImage}
                             style={styles.uploadBox}
@@ -1211,7 +1579,7 @@ export default function SignupMultiStepScreen() {
                                 <MaterialCommunityIcons
                                   name="car-outline"
                                   size={moderateScale(32)}
-                                  color="rgba(193, 232, 255, 0.5)"
+                                  color="rgba(241, 137, 2, 0.94)"
                                 />
                                 <Text style={[styles.uploadBoxText, { color: theme.colors.textSecondary }]}>
                                   Upload Vehicle Photo
@@ -1226,7 +1594,7 @@ export default function SignupMultiStepScreen() {
 
                         {/* License Photo */}
                         <View style={styles.uploadSection}>
-                          <Text style={styles.label}>License Photo *</Text>
+                          <Text style={[styles.label, { color: theme.colors.textSecondary }]}>License Photo *</Text>
                           <TouchableOpacity
                             onPress={pickLicenseImage}
                             style={styles.uploadBox}
@@ -1252,7 +1620,7 @@ export default function SignupMultiStepScreen() {
                                 <MaterialCommunityIcons
                                   name="image-multiple-outline"
                                   size={moderateScale(32)}
-                                  color="rgba(193, 232, 255, 0.5)"
+                                  color="rgba(241, 137, 2, 0.94)"
                                 />
                                 <Text style={[styles.uploadBoxText, { color: theme.colors.textSecondary }]}>
                                   Upload License Photo
@@ -1278,18 +1646,27 @@ export default function SignupMultiStepScreen() {
 
                   <View style={styles.form}>
                     <View>
-                      <Text style={styles.label}>Password *</Text>
-                      <View style={[styles.inputWrapper, errors.password ? styles.inputWrapperError : null]}>
+                      <Text style={[styles.label, { color: theme.colors.textSecondary }]}>Password *</Text>
+                      <View
+                        style={[
+                          styles.inputWrapper,
+                          {
+                            borderColor: errors.password ? theme.colors.error : theme.colors.border,
+                            backgroundColor: theme.colors.inputBackground,
+                          },
+                          errors.password ? styles.inputWrapperError : null,
+                        ]}
+                      >
                         <MaterialCommunityIcons
                           name="lock-outline"
                           size={moderateScale(16)}
-                          color="rgba(193, 232, 255, 0.5)"
+                          color="rgba(241, 137, 2, 0.94)"
                           style={styles.inputIcon}
                         />
                         <TextInput
-                          style={[styles.input, styles.passwordInput]}
+                          style={[styles.input, styles.passwordInput, { color: theme.colors.textPrimary }]}
                           placeholder="Minimum 8 characters"
-                          placeholderTextColor="rgba(193, 232, 255, 0.3)"
+                          placeholderTextColor={theme.colors.inputPlaceholder}
                           secureTextEntry={!showPassword}
                           value={formData.password}
                           onChangeText={(text) =>
@@ -1323,7 +1700,7 @@ export default function SignupMultiStepScreen() {
                             style={[
                               styles.strengthDot,
                               {
-                                backgroundColor: req.met ? '#10B981' : theme.colors.border,
+                                backgroundColor: req.met ? '#F18902' : theme.colors.border,
                                 transform: [{ scale: req.met ? strengthDotScale[idx] : 1 }],
                               },
                             ]}
@@ -1331,7 +1708,7 @@ export default function SignupMultiStepScreen() {
                           <Text
                             style={[
                               styles.strengthText,
-                              { color: req.met ? '#10B981' : theme.colors.textTertiary },
+                              { color: req.met ? '#F18902' : theme.colors.textTertiary },
                             ]}
                           >
                             {req.label}
@@ -1341,18 +1718,27 @@ export default function SignupMultiStepScreen() {
                     </View>
 
                     <View>
-                      <Text style={styles.label}>Confirm Password *</Text>
-                      <View style={[styles.inputWrapper, errors.confirmPassword ? styles.inputWrapperError : null]}>
+                      <Text style={[styles.label, { color: theme.colors.textSecondary }]}>Confirm Password *</Text>
+                      <View
+                        style={[
+                          styles.inputWrapper,
+                          {
+                            borderColor: errors.confirmPassword ? theme.colors.error : theme.colors.border,
+                            backgroundColor: theme.colors.inputBackground,
+                          },
+                          errors.confirmPassword ? styles.inputWrapperError : null,
+                        ]}
+                      >
                         <MaterialCommunityIcons
                           name="lock-check-outline"
                           size={moderateScale(16)}
-                          color="rgba(193, 232, 255, 0.5)"
+                          color="rgba(241, 137, 2, 0.94)"
                           style={styles.inputIcon}
                         />
                         <TextInput
-                          style={[styles.input, styles.passwordInput]}
+                          style={[styles.input, styles.passwordInput, { color: theme.colors.textPrimary }]}
                           placeholder="Re-enter password"
-                          placeholderTextColor="rgba(193, 232, 255, 0.3)"
+                          placeholderTextColor={theme.colors.inputPlaceholder}
                           secureTextEntry={!showConfirmPassword}
                           value={formData.confirmPassword}
                           onChangeText={(text) =>
@@ -1389,7 +1775,7 @@ export default function SignupMultiStepScreen() {
                 <MaterialCommunityIcons
                   name="arrow-left"
                   size={moderateScale(16)}
-                  color="#C1E8FF"
+                  color="#F18902"
                 />
                 <Text style={styles.backButtonText}>Back</Text>
               </TouchableOpacity>
@@ -1402,7 +1788,7 @@ export default function SignupMultiStepScreen() {
                     style={{ flex: 1 }}
                   >
                     <LinearGradient
-                      colors={['#C1E8FF', '#A3C9E2']}
+                      colors={theme.mode === 'light' ? ['#1B150CBE', '#643B06C4'] : ['#F1890240', '#F1890260']}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 0 }}
                       style={styles.nextButtonGradient}
@@ -1427,13 +1813,13 @@ export default function SignupMultiStepScreen() {
                     style={{ flex: 1 }}
                   >
                     <LinearGradient
-                      colors={['#C1E8FF', '#A3C9E2']}
+                      colors={theme.mode === 'light' ? ['#55330788', '#29180386'] : ['#F1890250', '#F1890270']}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 0 }}
                       style={styles.nextButtonGradient}
                     >
                       {isLoading ? (
-                        <ActivityIndicator size="small" color={BRAND.primary} />
+                        <ActivityIndicator size="small" color={BRAND.secondary} />
                       ) : (
                         <>
                           <Text style={styles.nextButtonText}>Create Account</Text>
@@ -1441,7 +1827,7 @@ export default function SignupMultiStepScreen() {
                             <MaterialCommunityIcons
                               name="check"
                               size={moderateScale(14)}
-                              color={BRAND.primary}
+                              color={BRAND.secondary}
                             />
                           </View>
                         </>
@@ -1462,28 +1848,54 @@ export default function SignupMultiStepScreen() {
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
-    </LinearGradient>
+
+      <Modal
+        visible={bankPickerVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setBankPickerVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: theme.colors.card }]}
+          >
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>Select Bank</Text>
+              <TouchableOpacity onPress={() => setBankPickerVisible(false)}>
+                <MaterialCommunityIcons name="close" size={moderateScale(18)} color={theme.colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <View style={[styles.modalSearch, { borderColor: theme.colors.border, backgroundColor: theme.colors.inputBackground }]}>
+              <TextInput
+                placeholder="Search bank"
+                placeholderTextColor={theme.colors.inputPlaceholder}
+                value={bankSearch}
+                onChangeText={setBankSearch}
+                style={[styles.modalSearchInput, { color: theme.colors.textPrimary }]}
+              />
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {(bankSearch
+                ? banks.filter((bank) => bank.name.toLowerCase().includes(bankSearch.toLowerCase()))
+                : banks
+              ).map((bank) => (
+                <TouchableOpacity
+                  key={bank.code}
+                  onPress={() => handleSelectBank(bank)}
+                  style={[styles.modalRow, { borderBottomColor: theme.colors.border }]}
+                >
+                  <Text style={[styles.modalRowText, { color: theme.colors.textPrimary }]}>{bank.name}</Text>
+                </TouchableOpacity>
+              ))}
+              {!loadingBanks && banks.length === 0 && (
+                <Text style={[styles.modalEmptyText, { color: theme.colors.textSecondary }]}>No banks available</Text>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
-
-// Generate theme-aware style overrides
-const getThemeColors = (theme: any) => ({
-  label: { color: theme.colors.textPrimary },
-  text: { color: theme.colors.textPrimary },
-  secondaryText: { color: theme.colors.textSecondary },
-  tertiaryText: { color: theme.colors.textTertiary },
-  border: { borderColor: theme.colors.border },
-  placeholder: theme.colors.placeholder,
-  error: { color: theme.colors.error },
-  success: { color: '#10B981' },
-  input: {
-    color: theme.colors.textPrimary,
-    borderColor: theme.colors.border,
-  },
-  background: { backgroundColor: theme.colors.background },
-  surface: { backgroundColor: theme.colors.surfaceLight },
-  stepCounter: { color: theme.colors.textPrimary },
-});
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
@@ -1494,7 +1906,7 @@ const styles = StyleSheet.create({
     width: width * 0.5,
     height: width * 0.5,
     borderRadius: width * 0.25,
-    backgroundColor: 'rgba(193, 232, 255, 0.04)',
+    backgroundColor: 'rgba(214, 186, 148, 0.94)',
   },
   decorOrb2: {
     position: 'absolute',
@@ -1508,32 +1920,31 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   keyboardView: { flex: 1 },
   scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: scale(24),
     paddingTop: verticalScale(12),
     paddingBottom: verticalScale(40),
   },
-  backBtn: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: scale(10),
-    marginBottom: verticalScale(20),
-    paddingVertical: verticalScale(8),
+    justifyContent: 'space-between',
+    marginBottom: verticalScale(18),
   },
-  backBtnCircle: {
-    width: scale(34),
-    height: scale(34),
-    borderRadius: scale(17),
-    backgroundColor: 'rgba(193, 232, 255, 0.08)',
+  headerTitle: {
+    fontSize: moderateScale(18),
+    fontWeight: '700',
+  },
+  headerSpacer: {
+    width: scale(24),
+  },
+  backBtn: {
+    width: scale(36),
+    height: scale(36),
+    borderRadius: scale(12),
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(193, 232, 255, 0.1)',
-  },
-  backText: {
-    color: '#C1E8FF',
-    fontWeight: '600',
-    fontSize: moderateScale(13),
-    letterSpacing: 0.2,
+    backgroundColor: 'rgba(0, 0, 0, 0)',
   },
   stepIndicator: {
     flexDirection: 'row',
@@ -1550,7 +1961,7 @@ const styles = StyleSheet.create({
     width: scale(50),
     height: scale(50),
     borderRadius: scale(25),
-    backgroundColor: 'rgba(193, 232, 255, 0.15)',
+    backgroundColor: 'rgba(241, 137, 2, 0.12)',
     top: -scale(7),
   },
   stepCircle: {
@@ -1562,19 +1973,16 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(6),
   },
   stepNumber: {
-    color: '#C1E8FF',
     fontWeight: '700',
     fontSize: moderateScale(13),
   },
   stepLabel: {
-    color: 'rgba(193, 232, 255, 0.6)',
     fontSize: moderateScale(9),
     fontWeight: '500',
     letterSpacing: 0.2,
   },
   stepLabelActive: {
     fontWeight: '700',
-    color: '#C1E8FF',
   },
   stepLine: {
     flex: 1,
@@ -1587,14 +1995,14 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(10),
   },
   stepTitle: {
-    color: '#fff',
+    color: '#000000',
     fontSize: moderateScale(22),
     fontWeight: '800',
     marginBottom: verticalScale(2),
     letterSpacing: 0.1,
   },
   stepDescription: {
-    color: 'rgba(193, 232, 255, 0.65)',
+    color: 'rgb(0, 0, 0)',
     fontSize: moderateScale(12),
     marginBottom: verticalScale(22),
     fontWeight: '400',
@@ -1607,7 +2015,7 @@ const styles = StyleSheet.create({
   },
   halfField: { flex: 1 },
   label: {
-    color: 'rgba(193, 232, 255, 0.8)',
+    color: 'rgb(0, 0, 0)',
     fontSize: moderateScale(11),
     fontWeight: '600',
     marginBottom: verticalScale(2),
@@ -1617,11 +2025,11 @@ const styles = StyleSheet.create({
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: '#FFFFFF',
     borderRadius: scale(12),
     paddingHorizontal: scale(14),
-    borderWidth: 1.5,
-    borderColor: 'rgba(193, 232, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
   },
   inputWrapperError: {
     borderColor: '#ef4444',
@@ -1650,7 +2058,7 @@ const styles = StyleSheet.create({
   imageUploadContainer: {
     borderWidth: 1.5,
     borderStyle: 'dashed',
-    borderColor: 'rgba(193, 232, 255, 0.15)',
+    borderColor: 'rgba(241, 137, 2, 0.61)',
     borderRadius: scale(16),
     overflow: 'hidden',
     marginBottom: verticalScale(2),
@@ -1671,7 +2079,7 @@ const styles = StyleSheet.create({
     width: scale(30),
     height: scale(30),
     borderRadius: scale(15),
-    backgroundColor: BRAND.primary,
+    backgroundColor: BRAND.secondary,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
@@ -1711,18 +2119,18 @@ const styles = StyleSheet.create({
   roleCard: {
     paddingVertical: verticalScale(22),
     paddingHorizontal: scale(20),
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: 'rgba(216, 128, 14, 0.48)',
     borderRadius: scale(16),
     borderWidth: 1.5,
-    borderColor: 'rgba(193, 232, 255, 0.1)',
+    borderColor: 'rgba(3, 24, 36, 0.1)',
     alignItems: 'center',
     gap: verticalScale(8),
     position: 'relative',
     overflow: 'hidden',
   },
   roleCardActive: {
-    backgroundColor: 'rgba(193, 232, 255, 0.08)',
-    borderColor: 'rgba(193, 232, 255, 0.35)',
+    backgroundColor: 'rgba(241, 137, 2, 0.53)',
+    borderColor: 'rgba(49, 29, 2, 0.94)',
   },
   roleCardGlow: {
     position: 'absolute',
@@ -1730,7 +2138,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(193, 232, 255, 1)',
+    backgroundColor: '#FFFFFF',
   },
   roleIconBg: {
     width: scale(60),
@@ -1768,22 +2176,22 @@ const styles = StyleSheet.create({
     paddingVertical: verticalScale(12),
     borderRadius: scale(12),
     borderWidth: 1.5,
-    borderColor: 'rgba(193, 232, 255, 0.1)',
+    borderColor: 'rgba(241, 137, 2, 0.53)',
     backgroundColor: 'rgba(255,255,255,0.04)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   genderBtnActive: {
-    backgroundColor: 'rgba(193, 232, 255, 0.12)',
-    borderColor: 'rgba(193, 232, 255, 0.35)',
+    backgroundColor: 'rgba(241, 137, 2, 0.12)',
+    borderColor: 'rgba(241, 137, 2, 0.35)',
   },
   genderText: {
-    color: 'rgba(193, 232, 255, 0.4)',
+    color: 'rgba(241, 137, 2, 0.77)',
     fontWeight: '600',
     fontSize: moderateScale(11),
   },
   genderTextActive: {
-    color: '#C1E8FF',
+    color: '#F18902',
   },
   eyeIcon: {
     position: 'absolute',
@@ -1817,17 +2225,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: scale(10),
-    backgroundColor: 'rgba(16, 185, 129, 0.08)',
+    backgroundColor: 'rgba(241, 137, 2, 0.53)',
     borderRadius: scale(12),
     paddingVertical: verticalScale(12),
     paddingHorizontal: scale(14),
     marginBottom: verticalScale(20),
     borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.15)',
+    borderColor: 'rgba(100, 59, 6, 0.56)',
   },
   safetyText: {
     flex: 1,
-    color: 'rgba(193, 232, 255, 0.7)',
+    color: 'rgba(241, 137, 2, 0.53)',
     fontSize: moderateScale(11),
     lineHeight: moderateScale(16),
     fontWeight: '400',
@@ -1835,7 +2243,8 @@ const styles = StyleSheet.create({
   footer: {
     flexDirection: 'row',
     gap: scale(12),
-    marginTop: verticalScale(24),
+    marginTop: 'auto',
+    paddingTop: verticalScale(24),
   },
   backButton: {
     flex: 1,
@@ -1843,14 +2252,14 @@ const styles = StyleSheet.create({
     paddingVertical: verticalScale(14),
     borderRadius: scale(12),
     borderWidth: 1.5,
-    borderColor: 'rgba(193, 232, 255, 0.15)',
+    borderColor: 'rgba(241, 137, 2, 0.94)',
     alignItems: 'center',
     justifyContent: 'center',
     gap: scale(6),
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: 'rgba(104, 60, 3, 0.38)',
   },
   backButtonText: {
-    color: '#C1E8FF',
+    color: '#F18902',
     fontWeight: '600',
     fontSize: moderateScale(13),
   },
@@ -1860,13 +2269,13 @@ const styles = StyleSheet.create({
     borderRadius: scale(12),
     ...Platform.select({
       ios: {
-        shadowColor: 'rgba(193, 232, 255, 0.3)',
+        shadowColor: 'rgb(241, 137, 2)',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
       },
       android: {
-        elevation: 4,
+        elevation: 0,
       },
     }),
   },
@@ -1891,19 +2300,153 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  verifyButton: {
+    paddingVertical: verticalScale(12),
+    borderRadius: moderateScale(12),
+    alignItems: 'center',
+  },
+  verifyButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: moderateScale(13),
+  },
+  verifiedBox: {
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    borderRadius: moderateScale(12),
+    padding: moderateScale(12),
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.35)',
+  },
+  verifiedTitle: {
+    fontSize: moderateScale(12),
+    fontWeight: '700',
+    color: '#0F766E',
+    marginBottom: moderateScale(4),
+  },
+  verifiedText: {
+    fontSize: moderateScale(12),
+    color: '#0F766E',
+  },
+  manualProceedButton: {
+    marginTop: verticalScale(6),
+    alignItems: 'center',
+  },
+  manualProceedText: {
+    color: '#F18902',
+    fontWeight: '600',
+    fontSize: moderateScale(12),
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  modalCard: {
+    borderTopLeftRadius: moderateScale(18),
+    borderTopRightRadius: moderateScale(18),
+    padding: moderateScale(16),
+    maxHeight: '70%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: verticalScale(10),
+  },
+  modalTitle: {
+    fontSize: moderateScale(15),
+    fontWeight: '700',
+  },
+  modalSearch: {
+    borderWidth: 1,
+    borderRadius: moderateScale(10),
+    paddingHorizontal: moderateScale(12),
+    paddingVertical: verticalScale(8),
+    marginBottom: verticalScale(10),
+  },
+  modalSearchInput: {
+    fontSize: moderateScale(12),
+  },
+  modalRow: {
+    paddingVertical: verticalScale(10),
+    borderBottomWidth: 1,
+  },
+  modalRowText: {
+    fontSize: moderateScale(13),
+  },
+  modalEmptyText: {
+    textAlign: 'center',
+    marginTop: verticalScale(20),
+  },
   signInContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
     marginTop: verticalScale(18),
   },
   signInText: {
-    color: 'rgba(193, 232, 255, 0.55)',
+    color: 'rgb(241, 137, 2)',
     fontSize: moderateScale(12),
   },
   signInLink: {
-    color: '#C1E8FF',
+    color: '#F18902',
     fontSize: moderateScale(12),
     fontWeight: '700',
     textDecorationLine: 'underline',
+  },
+  uploadSection: {
+    marginBottom: verticalScale(16),
+  },
+  uploadBox: {
+    width: scale(120),
+    height: scale(120),
+    borderRadius: scale(60),
+    borderWidth: 2,
+    borderColor: '#E5E5E5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+    backgroundColor: '#F5F5F5',
+  },
+  uploadedImage: {
+    width: '100%',
+    height: '100%',
+  },
+  changePhotoOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  changePhotoText: {
+    color: '#FFFFFF',
+    fontSize: moderateScale(12),
+    fontWeight: '600',
+  },
+  uploadBoxText: {
+    color: '#666666',
+    fontSize: moderateScale(12),
+    textAlign: 'center',
+    marginTop: verticalScale(8),
+  },
+  datePickerModal: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  datePickerContainer: {
+    borderTopLeftRadius: moderateScale(20),
+    borderTopRightRadius: moderateScale(20),
+    paddingBottom: verticalScale(20),
+  },
+  datePickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    paddingHorizontal: moderateScale(20),
+    paddingTop: verticalScale(16),
+    paddingBottom: verticalScale(8),
+  },
+  datePickerButton: {
+    fontSize: moderateScale(17),
+    fontWeight: '600',
   },
 });

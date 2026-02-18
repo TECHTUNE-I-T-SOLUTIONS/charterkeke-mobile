@@ -6,9 +6,38 @@ export const isValidEmail = (email: string): boolean => {
 
 // Phone validation (Nigerian format)
 export const isValidPhone = (phone: string): boolean => {
-  const phoneRegex = /^(\+234|0)[789]\d{9}$/;
-  const cleanPhone = phone.replace(/\D/g, '');
-  return phoneRegex.test(cleanPhone) || cleanPhone.length === 11;
+  return normalizeNigerianPhone(phone) !== null;
+};
+
+// Normalize Nigerian phone number to +234XXXXXXXXXX
+export const normalizeNigerianPhone = (phone: string): string | null => {
+  if (!phone) return null;
+
+  const compact = phone.replace(/[\s()-]/g, '');
+  let digits = compact.replace(/\D/g, '');
+
+  if (compact.startsWith('+')) {
+    if (!compact.startsWith('+234')) return null;
+    digits = compact.slice(1).replace(/\D/g, '');
+  }
+
+  if (digits.length === 11 && digits.startsWith('0')) {
+    digits = `234${digits.slice(1)}`;
+  }
+
+  if (digits.length === 13 && digits.startsWith('2340')) {
+    digits = `234${digits.slice(4)}`;
+  }
+
+  if (digits.length !== 13 || !digits.startsWith('234')) {
+    return null;
+  }
+
+  const local = digits.slice(3);
+  if (local.length !== 10) return null;
+  if (!/^[789]\d{9}$/.test(local)) return null;
+
+  return `+${digits}`;
 };
 
 // Password validation

@@ -1,673 +1,493 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
   ScrollView,
   TouchableOpacity,
   Modal,
-  TextInput,
-  KeyboardAvoidingView,
-  SafeAreaView as RNSafeAreaView,
+  Alert,
+  StyleSheet,
+  ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Card from '@/components/ui/Card';
-import Button from '@/components/ui/Button';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useTheme } from '@/context/ThemeContext';
 import { COLORS } from '@/utils/colors';
+import { PaymentMethodsSkeleton } from '@/components/PaymentMethodsSkeleton';
 
 interface PaymentMethod {
   id: string;
-  type: 'card' | 'bank' | 'wallet';
+  type: 'card' | 'wallet' | 'bank';
   name: string;
-  details: string;
+  last4: string;
+  expiryDate?: string;
   isDefault: boolean;
 }
 
 export default function PaymentMethodsScreen() {
   const router = useRouter();
-  const [isDark, setIsDark] = useState(false);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [paymentType, setPaymentType] = useState<'card' | 'bank' | 'wallet'>('card');
-
+  const { theme, mode } = useTheme();
+  const isDark = mode === 'dark';
   const colors = isDark ? COLORS.dark : COLORS.light;
 
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([
-    {
-      id: '1',
-      type: 'wallet',
-      name: 'Charter Keke Wallet',
-      details: 'Balance: ₦15,000',
-      isDefault: true,
-    },
-    {
-      id: '2',
-      type: 'card',
-      name: 'Visa Card',
-      details: '•••• •••• •••• 4242',
-      isDefault: false,
-    },
-    {
-      id: '3',
-      type: 'bank',
-      name: 'First Bank',
-      details: 'Account ending in 4567',
-      isDefault: false,
-    },
-  ]);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const screenLaunchedOnce = useRef(false);
 
-  const [formData, setFormData] = useState({
-    cardName: '',
-    cardNumber: '',
-    expiryDate: '',
-    cvv: '',
-    bankName: '',
-    accountNumber: '',
-    accountName: '',
-  });
+  useFocusEffect(
+    React.useCallback(() => {
+      if (!screenLaunchedOnce.current) {
+        screenLaunchedOnce.current = true;
+        fetchPaymentMethods();
+      }
+    }, [])
+  );
+
+  const fetchPaymentMethods = async () => {
+    try {
+      setLoading(true);
+      console.log('📤 [PAYMENT-METHODS] Fetching payment methods...');
+      // In production, fetch from /user/payment-methods or similar endpoint
+      // For now, initializing with sample data
+      setPaymentMethods([
+        {
+          id: '1',
+          type: 'card',
+          name: 'Visa',
+          last4: '4242',
+          expiryDate: '12/26',
+          isDefault: true,
+        },
+        {
+          id: '2',
+          type: 'wallet',
+          name: 'Charter Keke Wallet',
+          last4: '',
+          isDefault: false,
+        },
+      ]);
+    } catch (error) {
+      console.error('❌ [PAYMENT-METHODS] Error fetching:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSetDefault = (id: string) => {
-    setPaymentMethods(
-      paymentMethods.map((method) => ({
-        ...method,
-        isDefault: method.id === id,
-      }))
-    );
+    const updated = paymentMethods.map(method => ({
+      ...method,
+      isDefault: method.id === id,
+    }));
+    setPaymentMethods(updated);
+    
+    // In production, call API to save default payment method
+    console.log('📤 [PAYMENT-METHODS] Setting default payment method:', id);
   };
 
   const handleDeleteMethod = (id: string) => {
-    setPaymentMethods(
-      paymentMethods.filter((method) => method.id !== id)
+    Alert.alert(
+      'Delete Payment Method',
+      'Are you sure you want to delete this payment method?',
+      [
+        { text: 'Cancel' },
+        {
+          text: 'Delete',
+          onPress: () => {
+            const updated = paymentMethods.filter(method => method.id !== id);
+            setPaymentMethods(updated);
+            
+            // In production, call API to delete payment method
+            console.log('📤 [PAYMENT-METHODS] Deleting payment method:', id);
+          },
+          style: 'destructive',
+        },
+      ]
     );
-  };
-
-  const handleAddPaymentMethod = () => {
-    // In a real app, this would validate and process the payment method
-    if (paymentType === 'card' && !formData.cardNumber) {
-      alert('Please enter card number');
-      return;
-    }
-    if (paymentType === 'bank' && !formData.accountNumber) {
-      alert('Please enter account number');
-      return;
-    }
-
-    // Add new payment method
-    setShowAddModal(false);
-    setFormData({
-      cardName: '',
-      cardNumber: '',
-      expiryDate: '',
-      cvv: '',
-      bankName: '',
-      accountNumber: '',
-      accountName: '',
-    });
-    alert('Payment method added successfully!');
   };
 
   const getPaymentIcon = (type: string) => {
     switch (type) {
       case 'card':
-        return '💳';
-      case 'bank':
-        return '🏦';
+        return 'credit-card';
       case 'wallet':
-        return '💰';
+        return 'wallet';
+      case 'bank':
+        return 'bank';
       default:
-        return '💰';
+        return 'payment';
     }
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Header */}
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <TouchableOpacity onPress={() => router.back()}>
+          <MaterialCommunityIcons name="arrow-left" size={24} color={colors.primary} />
+        </TouchableOpacity>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Payment Methods</Text>
+        <TouchableOpacity onPress={() => setShowAddModal(true)}>
+          <MaterialCommunityIcons name="plus" size={24} color={colors.primary} />
+        </TouchableOpacity>
+      </View>
+
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 20 }}
+        contentContainerStyle={{ paddingBottom: 80 }}
       >
-        {/* Header */}
-        <View
-          style={{
-            paddingHorizontal: 20,
-            paddingVertical: 16,
-            borderBottomWidth: 1,
-            borderBottomColor: colors.border,
-            flexDirection: 'row',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
-          <TouchableOpacity onPress={() => router.back()}>
-            <Text style={{ fontSize: 28, color: colors.primary }}>←</Text>
-          </TouchableOpacity>
-          <Text style={{ fontSize: 24, fontWeight: 'bold', color: colors.text }}>
-            Payment Methods
-          </Text>
-          <View style={{ width: 24 }} />
-        </View>
-
-        {/* Info Card */}
-        <Card isDark={isDark}>
-          <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 20 }}>
-            Manage your payment methods for faster and easier transactions. You can add credit cards, debit cards, and bank accounts.
-          </Text>
-        </Card>
-
-        {/* Payment Methods List */}
-        <View style={{ paddingHorizontal: 20, gap: 12 }}>
-          {paymentMethods.map((method) => (
-            <Card key={method.id} isDark={isDark}>
+        {loading ? (
+          <PaymentMethodsSkeleton />
+        ) : paymentMethods.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <MaterialCommunityIcons name="credit-card" size={48} color={colors.textSecondary} />
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+              No payment methods added
+            </Text>
+            <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>
+              Add a payment method to book rides
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.methodsList}>
+            {paymentMethods.map((method) => (
               <View
-                style={{
-                  flexDirection: 'row',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: 12,
-                }}
+                key={method.id}
+                style={[
+                  styles.methodCard,
+                  {
+                    borderColor: method.isDefault ? colors.primary : colors.border,
+                    backgroundColor: colors.card || colors.background,
+                    borderWidth: method.isDefault ? 2 : 1,
+                  }
+                ]}
               >
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    flex: 1,
-                  }}
-                >
-                  <Text style={{ fontSize: 24, marginRight: 12 }}>
-                    {getPaymentIcon(method.type)}
-                  </Text>
-                  <View style={{ flex: 1 }}>
-                    <Text
-                      style={{
-                        fontSize: 14,
-                        fontWeight: '600',
-                        color: colors.text,
-                        marginBottom: 2,
-                      }}
+                <View style={styles.methodHeader}>
+                  <View style={styles.methodLeft}>
+                    <View
+                      style={[
+                        styles.methodIconContainer,
+                        { backgroundColor: colors.primary + '20' }
+                      ]}
                     >
-                      {method.name}
-                    </Text>
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        color: colors.textSecondary,
-                      }}
-                    >
-                      {method.details}
-                    </Text>
+                      <MaterialCommunityIcons
+                        name={getPaymentIcon(method.type) as any}
+                        size={24}
+                        color={colors.primary}
+                      />
+                    </View>
+                    <View style={styles.methodInfo}>
+                      <Text style={[styles.methodName, { color: colors.text }]}>
+                        {method.name}
+                      </Text>
+                      {method.last4 && (
+                        <Text style={[styles.methodDetails, { color: colors.textSecondary }]}>
+                          ••••{method.last4}
+                        </Text>
+                      )}
+                      {method.expiryDate && (
+                        <Text style={[styles.methodDetails, { color: colors.textSecondary }]}>
+                          Expires: {method.expiryDate}
+                        </Text>
+                      )}
+                      {method.isDefault && (
+                        <View
+                          style={[
+                            styles.defaultBadge,
+                            { backgroundColor: colors.primary + '20' }
+                          ]}
+                        >
+                          <Text style={[styles.defaultBadgeText, { color: colors.primary }]}>
+                            Default
+                          </Text>
+                        </View>
+                      )}
+                    </View>
                   </View>
+                  <TouchableOpacity>
+                    <MaterialCommunityIcons name="chevron-right" size={20} color={colors.textSecondary} />
+                  </TouchableOpacity>
                 </View>
 
-                {method.isDefault && (
-                  <View
-                    style={{
-                      paddingHorizontal: 8,
-                      paddingVertical: 4,
-                      backgroundColor: colors.success + '20',
-                      borderRadius: 4,
-                      marginRight: 8,
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 10,
-                        fontWeight: '600',
-                        color: colors.success,
-                      }}
+                <View style={[styles.methodActions, { borderTopColor: colors.border }]}>
+                  {!method.isDefault && (
+                    <TouchableOpacity
+                      onPress={() => handleSetDefault(method.id)}
+                      style={styles.actionButton}
                     >
-                      Default
-                    </Text>
-                  </View>
-                )}
-              </View>
-
-              {!method.isDefault && (
-                <TouchableOpacity
-                  onPress={() => handleSetDefault(method.id)}
-                  style={{
-                    paddingVertical: 8,
-                    marginBottom: 8,
-                    borderTopWidth: 1,
-                    borderTopColor: colors.border,
-                    paddingTop: 8,
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      color: colors.primary,
-                      fontWeight: '600',
-                    }}
-                  >
-                    Set as Default
-                  </Text>
-                </TouchableOpacity>
-              )}
-
-              {method.type !== 'wallet' && (
-                <TouchableOpacity
-                  onPress={() => handleDeleteMethod(method.id)}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingVertical: 8,
-                    borderTopWidth: 1,
-                    borderTopColor: colors.border,
-                    paddingTop: 8,
-                  }}
-                >
-                  <Text style={{ fontSize: 12, color: colors.error }}>
-                    🗑️ Remove
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </Card>
-          ))}
-        </View>
-
-        {/* Add Button */}
-        <View style={{ paddingHorizontal: 20, marginTop: 20 }}>
-          <Button
-            title="+ Add Payment Method"
-            onPress={() => setShowAddModal(true)}
-            isDark={isDark}
-          />
-        </View>
-
-        {/* Security Info */}
-        <Card isDark={isDark}>
-          <Text
-            style={{
-              fontSize: 13,
-              fontWeight: '600',
-              color: colors.text,
-              marginBottom: 8,
-            }}
-          >
-            🔒 Your Payment Information
-          </Text>
-          <Text
-            style={{
-              fontSize: 12,
-              color: colors.textSecondary,
-              lineHeight: 18,
-            }}
-          >
-            All payment information is encrypted and stored securely. We never store your full card details on our servers.
-          </Text>
-        </Card>
-      </ScrollView>
-
-      {/* Add Payment Method Modal */}
-      <Modal
-        visible={showAddModal}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowAddModal(false)}
-      >
-        <KeyboardAvoidingView
-          behavior="padding"
-          style={{
-            flex: 1,
-            backgroundColor: '#00000060',
-            justifyContent: 'flex-end',
-          }}
-        >
-          <RNSafeAreaView
-            style={{
-              backgroundColor: colors.background,
-              borderTopLeftRadius: 20,
-              borderTopRightRadius: 20,
-              paddingHorizontal: 20,
-              paddingVertical: 20,
-            }}
-          >
-            <View
-              style={{
-                width: 40,
-                height: 4,
-                backgroundColor: colors.border,
-                borderRadius: 2,
-                alignSelf: 'center',
-                marginBottom: 16,
-              }}
-            />
-
-            <Text
-              style={{
-                fontSize: 18,
-                fontWeight: 'bold',
-                color: colors.text,
-                marginBottom: 16,
-              }}
-            >
-              Add Payment Method
-            </Text>
-
-            {/* Payment Type Selection */}
-            <View style={{ marginBottom: 16 }}>
-              <Text
-                style={{
-                  fontSize: 12,
-                  color: colors.textSecondary,
-                  marginBottom: 8,
-                  fontWeight: '500',
-                }}
-              >
-                Payment Type
-              </Text>
-              <View
-                style={{
-                  flexDirection: 'row',
-                  gap: 8,
-                }}
-              >
-                {[
-                  { type: 'card', label: 'Card' },
-                  { type: 'bank', label: 'Bank' },
-                ].map((option) => (
+                      <Text style={[styles.actionButtonText, { color: colors.primary }]}>
+                        Set as Default
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                   <TouchableOpacity
-                    key={option.type}
-                    onPress={() => setPaymentType(option.type as 'card' | 'bank')}
-                    style={{
-                      flex: 1,
-                      paddingVertical: 10,
-                      borderRadius: 8,
-                      borderWidth: 2,
-                      borderColor:
-                        paymentType === option.type
-                          ? colors.primary
-                          : colors.border,
-                      backgroundColor:
-                        paymentType === option.type
-                          ? colors.primary + '15'
-                          : colors.background,
-                      alignItems: 'center',
-                    }}
+                    onPress={() => handleDeleteMethod(method.id)}
+                    style={[styles.actionButton, { borderLeftColor: colors.border, borderLeftWidth: !method.isDefault ? 1 : 0 }]}
                   >
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        fontWeight: '600',
-                        color:
-                          paymentType === option.type
-                            ? colors.primary
-                            : colors.textSecondary,
-                      }}
-                    >
-                      {option.label}
+                    <MaterialCommunityIcons name="delete" size={16} color={colors.destructive} />
+                    <Text style={[styles.deleteText, { color: colors.destructive }]}>
+                      Remove
                     </Text>
                   </TouchableOpacity>
-                ))}
+                </View>
               </View>
-            </View>
+            ))}
+          </View>
+        )}
 
-            {/* Card Fields */}
-            {paymentType === 'card' && (
-              <>
-                <View style={{ marginBottom: 12 }}>
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      color: colors.textSecondary,
-                      marginBottom: 6,
-                      fontWeight: '500',
-                    }}
-                  >
-                    Card Name
-                  </Text>
-                  <TextInput
-                    style={{
-                      paddingHorizontal: 12,
-                      paddingVertical: 10,
-                      borderWidth: 1,
-                      borderColor: colors.border,
-                      borderRadius: 8,
-                      fontSize: 14,
-                      color: colors.text,
-                      backgroundColor: colors.background,
-                    }}
-                    placeholder="E.g., My Visa Card"
-                    placeholderTextColor={colors.textSecondary}
-                    value={formData.cardName}
-                    onChangeText={(text) =>
-                      setFormData({ ...formData, cardName: text })
-                    }
-                  />
-                </View>
+        {/* Add Payment Reminder */}
+        <View
+          style={[
+            styles.infoCard,
+            { backgroundColor: colors.primary + '10', borderColor: colors.primary }
+          ]}
+        >
+          <MaterialCommunityIcons name="information" size={20} color={colors.primary} />
+          <View style={styles.infoText}>
+            <Text style={[styles.infoTitle, { color: colors.text }]}>Secure Payments</Text>
+            <Text style={[styles.infoDescription, { color: colors.textSecondary }]}>
+              Your payment information is encrypted and secure
+            </Text>
+          </View>
+        </View>
+      </ScrollView>
 
-                <View style={{ marginBottom: 12 }}>
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      color: colors.textSecondary,
-                      marginBottom: 6,
-                      fontWeight: '500',
-                    }}
-                  >
-                    Card Number
-                  </Text>
-                  <TextInput
-                    style={{
-                      paddingHorizontal: 12,
-                      paddingVertical: 10,
-                      borderWidth: 1,
-                      borderColor: colors.border,
-                      borderRadius: 8,
-                      fontSize: 14,
-                      color: colors.text,
-                      backgroundColor: colors.background,
-                    }}
-                    placeholder="1234 5678 9012 3456"
-                    placeholderTextColor={colors.textSecondary}
-                    keyboardType="numeric"
-                    value={formData.cardNumber}
-                    onChangeText={(text) =>
-                      setFormData({ ...formData, cardNumber: text })
-                    }
-                  />
-                </View>
+      {/* Add Payment Modal */}
+      <Modal
+        visible={showAddModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowAddModal(false)}
+      >
+        <SafeAreaView
+          style={[styles.modalContainer, { backgroundColor: colors.background }]}
+        >
+          <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+            <TouchableOpacity onPress={() => setShowAddModal(false)}>
+              <MaterialCommunityIcons name="close" size={24} color={colors.primary} />
+            </TouchableOpacity>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Add Payment Method</Text>
+            <View style={{ width: 24 }} />
+          </View>
 
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    gap: 12,
-                    marginBottom: 16,
-                  }}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        color: colors.textSecondary,
-                        marginBottom: 6,
-                        fontWeight: '500',
-                      }}
-                    >
-                      Expiry Date
-                    </Text>
-                    <TextInput
-                      style={{
-                        paddingHorizontal: 12,
-                        paddingVertical: 10,
-                        borderWidth: 1,
-                        borderColor: colors.border,
-                        borderRadius: 8,
-                        fontSize: 14,
-                        color: colors.text,
-                        backgroundColor: colors.background,
-                      }}
-                      placeholder="MM/YY"
-                      placeholderTextColor={colors.textSecondary}
-                      value={formData.expiryDate}
-                      onChangeText={(text) =>
-                        setFormData({ ...formData, expiryDate: text })
-                      }
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        color: colors.textSecondary,
-                        marginBottom: 6,
-                        fontWeight: '500',
-                      }}
-                    >
-                      CVV
-                    </Text>
-                    <TextInput
-                      style={{
-                        paddingHorizontal: 12,
-                        paddingVertical: 10,
-                        borderWidth: 1,
-                        borderColor: colors.border,
-                        borderRadius: 8,
-                        fontSize: 14,
-                        color: colors.text,
-                        backgroundColor: colors.background,
-                      }}
-                      placeholder="123"
-                      placeholderTextColor={colors.textSecondary}
-                      keyboardType="numeric"
-                      maxLength={4}
-                      value={formData.cvv}
-                      onChangeText={(text) =>
-                        setFormData({ ...formData, cvv: text })
-                      }
-                    />
-                  </View>
-                </View>
-              </>
-            )}
-
-            {/* Bank Fields */}
-            {paymentType === 'bank' && (
-              <>
-                <View style={{ marginBottom: 12 }}>
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      color: colors.textSecondary,
-                      marginBottom: 6,
-                      fontWeight: '500',
-                    }}
-                  >
-                    Bank Name
-                  </Text>
-                  <TextInput
-                    style={{
-                      paddingHorizontal: 12,
-                      paddingVertical: 10,
-                      borderWidth: 1,
-                      borderColor: colors.border,
-                      borderRadius: 8,
-                      fontSize: 14,
-                      color: colors.text,
-                      backgroundColor: colors.background,
-                    }}
-                    placeholder="E.g., First Bank, GT Bank"
-                    placeholderTextColor={colors.textSecondary}
-                    value={formData.bankName}
-                    onChangeText={(text) =>
-                      setFormData({ ...formData, bankName: text })
-                    }
-                  />
-                </View>
-
-                <View style={{ marginBottom: 12 }}>
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      color: colors.textSecondary,
-                      marginBottom: 6,
-                      fontWeight: '500',
-                    }}
-                  >
-                    Account Number
-                  </Text>
-                  <TextInput
-                    style={{
-                      paddingHorizontal: 12,
-                      paddingVertical: 10,
-                      borderWidth: 1,
-                      borderColor: colors.border,
-                      borderRadius: 8,
-                      fontSize: 14,
-                      color: colors.text,
-                      backgroundColor: colors.background,
-                    }}
-                    placeholder="0123456789"
-                    placeholderTextColor={colors.textSecondary}
-                    keyboardType="numeric"
-                    value={formData.accountNumber}
-                    onChangeText={(text) =>
-                      setFormData({ ...formData, accountNumber: text })
-                    }
-                  />
-                </View>
-
-                <View style={{ marginBottom: 16 }}>
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      color: colors.textSecondary,
-                      marginBottom: 6,
-                      fontWeight: '500',
-                    }}
-                  >
-                    Account Name
-                  </Text>
-                  <TextInput
-                    style={{
-                      paddingHorizontal: 12,
-                      paddingVertical: 10,
-                      borderWidth: 1,
-                      borderColor: colors.border,
-                      borderRadius: 8,
-                      fontSize: 14,
-                      color: colors.text,
-                      backgroundColor: colors.background,
-                    }}
-                    placeholder="Your name as it appears in the bank"
-                    placeholderTextColor={colors.textSecondary}
-                    value={formData.accountName}
-                    onChangeText={(text) =>
-                      setFormData({ ...formData, accountName: text })
-                    }
-                  />
-                </View>
-              </>
-            )}
-
-            {/* Buttons */}
-            <View style={{ gap: 8 }}>
-              <Button
-                title="Add Payment Method"
-                onPress={handleAddPaymentMethod}
-                isDark={isDark}
-              />
-              <TouchableOpacity
-                onPress={() => setShowAddModal(false)}
-                style={{
-                  paddingVertical: 12,
-                  borderRadius: 8,
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                }}
-              >
-                <Text
-                  style={{
-                    textAlign: 'center',
-                    fontWeight: '600',
-                    color: colors.text,
-                  }}
-                >
-                  Cancel
+          <ScrollView style={styles.modalContent}>
+            <TouchableOpacity
+              style={[
+                styles.paymentOption,
+                { borderColor: colors.border, backgroundColor: colors.card || colors.background }
+              ]}
+            >
+              <MaterialCommunityIcons name="credit-card" size={24} color={colors.primary} />
+              <View style={styles.optionInfo}>
+                <Text style={[styles.optionTitle, { color: colors.text }]}>Debit/Credit Card</Text>
+                <Text style={[styles.optionDescription, { color: colors.textSecondary }]}>
+                  Visa, Mastercard, etc.
                 </Text>
-              </TouchableOpacity>
-            </View>
-          </RNSafeAreaView>
-        </KeyboardAvoidingView>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={20} color={colors.textSecondary} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.paymentOption,
+                { borderColor: colors.border, backgroundColor: colors.card || colors.background }
+              ]}
+            >
+              <MaterialCommunityIcons name="bank" size={24} color={colors.primary} />
+              <View style={styles.optionInfo}>
+                <Text style={[styles.optionTitle, { color: colors.text }]}>Bank Transfer</Text>
+                <Text style={[styles.optionDescription, { color: colors.textSecondary }]}>
+                  Direct bank account
+                </Text>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={20} color={colors.textSecondary} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.paymentOption,
+                { borderColor: colors.border, backgroundColor: colors.card || colors.background }
+              ]}
+            >
+              <MaterialCommunityIcons name="phone" size={24} color={colors.primary} />
+              <View style={styles.optionInfo}>
+                <Text style={[styles.optionTitle, { color: colors.text }]}>Mobile Wallet</Text>
+                <Text style={[styles.optionDescription, { color: colors.textSecondary }]}>
+                  PayStack, Stripe, etc.
+                </Text>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={20} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </ScrollView>
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 100,
+  },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 16,
+  },
+  emptySubtext: {
+    fontSize: 12,
+    marginTop: 8,
+  },
+  methodsList: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  methodCard: {
+    marginBottom: 12,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  methodHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  methodLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 12,
+  },
+  methodIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  methodInfo: {
+    flex: 1,
+  },
+  methodName: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  methodDetails: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  defaultBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginTop: 4,
+  },
+  defaultBadgeText: {
+    fontSize: 9,
+    fontWeight: '600',
+  },
+  methodActions: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+  },
+  actionButton: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 4,
+  },
+  actionButtonText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  deleteText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  infoCard: {
+    marginHorizontal: 16,
+    marginTop: 24,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  infoText: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  infoTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  infoDescription: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  modalContainer: {
+    flex: 1,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  modalContent: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  paymentOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    marginBottom: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  optionInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  optionTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  optionDescription: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+});

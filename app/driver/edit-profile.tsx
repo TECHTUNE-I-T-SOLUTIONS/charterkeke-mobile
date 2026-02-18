@@ -7,7 +7,6 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  ActivityIndicator,
   Dimensions,
   Alert,
 } from 'react-native';
@@ -17,6 +16,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '@context/ThemeContext';
 import { useAuth } from '@context/AuthContext';
 import { apiService } from '@services/api';
+import { cacheService } from '@services/cache';
+import { ListScreenSkeleton } from '@/components/ListScreenSkeleton';
 import Button from '@components/ui/Button';
 import { COLORS } from '@utils/colors';
 
@@ -37,32 +38,46 @@ export default function EditProfileScreen() {
     unionName: '',
     emergencyContact: '',
   });
+  const [hasCached, setHasCached] = useState(false);
 
   const colors = mode === 'dark' ? COLORS.dark : COLORS.light;
 
   useEffect(() => {
-    fetchDriverDetails();
+    loadDriverDetails();
   }, []);
 
-  const fetchDriverDetails = async () => {
+  const loadDriverDetails = async () => {
+    const cached = await cacheService.get<any>('driver_profile_edit');
+    if (cached) {
+      setFormData(cached);
+      setHasCached(true);
+      setLoading(false);
+    }
+
+    await fetchDriverDetails(!cached);
+  };
+
+  const fetchDriverDetails = async (showLoader: boolean = true) => {
     try {
-      setLoading(true);
+      if (showLoader) setLoading(true);
       const data = await apiService.getDriverDetails();
       const driverData = data.combined || data.driver || data.user || data;
       
-      setFormData({
+      const nextForm = {
         firstName: driverData?.first_name || '',
         lastName: driverData?.last_name || '',
         email: driverData?.email || '',
         phone: driverData?.phone_number || '',
         unionName: driverData?.union_name || '',
         emergencyContact: driverData?.emergency_contact || '',
-      });
+      };
+      setFormData(nextForm);
+      await cacheService.set('driver_profile_edit', nextForm);
     } catch (error) {
       console.error('❌ [EDIT-PROFILE] Error fetching details:', error);
       Alert.alert('Error', 'Failed to load profile details');
     } finally {
-      setLoading(false);
+      if (showLoader) setLoading(false);
     }
   };
 
@@ -100,8 +115,8 @@ export default function EditProfileScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={colors.primary} />
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+        <ListScreenSkeleton itemCount={4} />
       </SafeAreaView>
     );
   }

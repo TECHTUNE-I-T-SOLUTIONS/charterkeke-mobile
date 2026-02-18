@@ -4,20 +4,21 @@ import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
-  ScrollView,
   TouchableOpacity,
-  ActivityIndicator,
   FlatList,
   Dimensions,
   RefreshControl,
+  StyleSheet,
+  StatusBar,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useTheme } from '@context/ThemeContext';
-import { apiService } from '@services/api';
-import RiderBottomNavigation from '@components/RiderBottomNavigation';
-import { COLORS } from '@utils/colors';
+import { useTheme } from '@/context/ThemeContext';
+import { apiService } from '@/services/api';
+import { cacheService } from '@/services/cache';
+import { COLORS, BRAND } from '@/utils/colors';
+import { ListScreenSkeleton } from '@/components/ListScreenSkeleton';
 
 const { width } = Dimensions.get('window');
 const scale = (size: number) => (width / 375) * size;
@@ -34,40 +35,50 @@ interface Notification {
 
 export default function NotificationsScreen() {
   const router = useRouter();
-  const { mode } = useTheme();
+  const { theme, mode } = useTheme();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [hasCached, setHasCached] = useState(false);
 
-  const colors = mode === 'dark' ? COLORS.dark : COLORS.light;
+  const isLight = mode === 'light';
 
   useFocusEffect(
     React.useCallback(() => {
-      fetchNotifications();
+      loadNotifications();
     }, [])
   );
 
-  const fetchNotifications = async () => {
+  const loadNotifications = async () => {
+    const cached = await cacheService.get<Notification[]>('driver_notifications');
+    if (cached) {
+      setNotifications(cached);
+      setHasCached(true);
+      setLoading(false);
+    }
+
+    await fetchNotifications(!cached);
+  };
+
+  const fetchNotifications = async (showLoader: boolean = true) => {
     try {
-      setLoading(true);
-      console.log('📬 [NOTIFICATIONS] Fetching notifications...');
-      
+      if (showLoader) setLoading(true);
       const response = await apiService.get('/driver/notifications');
-      console.log('✅ [NOTIFICATIONS] Fetched:', response);
-      
       const data = (response as any)?.notifications || response || [];
-      setNotifications(Array.isArray(data) ? data : []);
+      const nextNotifications = Array.isArray(data) ? data : [];
+      setNotifications(nextNotifications);
+      await cacheService.set('driver_notifications', nextNotifications);
     } catch (error) {
-      console.error('❌ [NOTIFICATIONS] Error fetching:', error);
+      console.error('Error fetching notifications:', error);
       setNotifications([]);
     } finally {
-      setLoading(false);
+      if (showLoader) setLoading(false);
     }
   };
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await fetchNotifications();
+    await fetchNotifications(!hasCached);
     setRefreshing(false);
   };
 
@@ -75,8 +86,6 @@ export default function NotificationsScreen() {
     try {
       if (!notification.read) {
         await apiService.put(`/driver/notifications/${notification.id}`, { markAsRead: true });
-        
-        // Update local state
         setNotifications(notifications.map(n => 
           n.id === notification.id 
             ? { ...n, read: true, read_at: new Date().toISOString() }
@@ -84,165 +93,132 @@ export default function NotificationsScreen() {
         ));
       }
     } catch (error) {
-      console.error('❌ [NOTIFICATIONS] Error marking as read:', error);
+      console.error('Error marking as read:', error);
     }
   };
 
-  const getNotificationIcon = (type: string) => {
-    switch (type?.toLowerCase()) {
-      case 'ride':
-        return 'car';
-      case 'payment':
-        return 'wallet';
-      case 'document':
-        return 'file-document';
-      case 'alert':
-        return 'alert-circle';
-      case 'promotion':
-        return 'gift';
-      default:
-        return 'bell';
+  const getNotificationConfig = (type: string) => {
+    const t = type?.toLowerCase();
+    switch (t) {
+      case 'ride': return { icon: 'car-sports', color: '#3B82F6' };
+      case 'payment': return { icon: 'wallet', color: '#10B981' };
+      case 'document': return { icon: 'file-document-outline', color: '#F59E0B' };
+      case 'alert': return { icon: 'alert-circle-outline', color: '#EF4444' };
+      case 'promotion': return { icon: 'gift-outline', color: '#8B5CF6' };
+      default: return { icon: 'bell-outline', color: BRAND.primary };
     }
   };
 
-  const getNotificationColor = (type: string) => {
-    switch (type?.toLowerCase()) {
-      case 'ride':
-        return '#3b82f6';
-      case 'payment':
-        return '#10b981';
-      case 'document':
-        return '#f59e0b';
-      case 'alert':
-        return '#ef4444';
-      case 'promotion':
-        return '#8b5cf6';
-      default:
-        return colors.primary;
-    }
-  };
-
-  const renderNotificationItem = ({ item: notification }: { item: Notification }) => (
-    <TouchableOpacity
-      onPress={() => handleMarkAsRead(notification)}
-      style={{
-        marginBottom: scale(8),
-        marginHorizontal: scale(16),
-        paddingHorizontal: scale(12),
-        paddingVertical: scale(12),
-        backgroundColor: notification.read ? 'transparent' : colors.primary + '15',
-        borderLeftWidth: 4,
-        borderLeftColor: notification.read ? colors.border : colors.primary,
-        borderRadius: scale(8),
-        borderWidth: 1,
-        borderColor: colors.border,
-      }}
-    >
-      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: scale(12) }}>
-        <View style={{
-          width: scale(40),
-          height: scale(40),
-          borderRadius: scale(8),
-          backgroundColor: getNotificationColor(notification.type) + '20',
-          justifyContent: 'center',
-          alignItems: 'center',
-        }}>
-          <MaterialCommunityIcons
-            name={getNotificationIcon(notification.type) as any}
-            size={scale(20)}
-            color={getNotificationColor(notification.type)}
-          />
+  const renderNotificationItem = ({ item }: { item: Notification }) => {
+    const config = getNotificationConfig(item.type);
+    
+    return (
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={() => handleMarkAsRead(item)}
+        style={[
+          styles.itemContainer,
+          { 
+            backgroundColor: theme.colors.surface,
+            borderColor: theme.colors.border,
+            borderLeftColor: item.read ? theme.colors.border : config.color,
+            borderLeftWidth: 4,
+          }
+        ]}
+      >
+        <View style={[styles.iconContainer, { backgroundColor: config.color + '15' }]}>
+          <MaterialCommunityIcons name={config.icon as any} size={22} color={config.color} />
         </View>
         
-        <View style={{ flex: 1 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(8), marginBottom: scale(4) }}>
-            <Text style={{ fontSize: scale(13), fontWeight: '600', color: colors.foreground, flex: 1 }}>
-              {notification.title}
+        <View style={styles.contentContainer}>
+          <View style={styles.headerRow}>
+            <Text style={[styles.title, { color: theme.colors.textPrimary, fontWeight: item.read ? '600' : '700' }]}>
+              {item.title}
             </Text>
-            {!notification.read && (
-              <View style={{
-                width: scale(8),
-                height: scale(8),
-                borderRadius: scale(4),
-                backgroundColor: colors.primary,
-              }} />
-            )}
+            {!item.read && <View style={[styles.dot, { backgroundColor: config.color }]} />}
           </View>
           
-          <Text style={{ fontSize: scale(12), color: colors.mutedForeground, marginBottom: scale(6), lineHeight: scale(16) }}>
-            {notification.message}
+          <Text style={[styles.message, { color: theme.colors.textSecondary }]} numberOfLines={2}>
+            {item.message}
           </Text>
           
-          <Text style={{ fontSize: scale(11), color: colors.mutedForeground }}>
-            {new Date(notification.created_at).toLocaleDateString()} {new Date(notification.created_at).toLocaleTimeString()}
+          <Text style={[styles.time, { color: theme.colors.textTertiary }]}>
+            {new Date(item.created_at).toLocaleDateString()} • {new Date(item.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
           </Text>
         </View>
-      </View>
-    </TouchableOpacity>
-  );
-
-  const emptyState = (
-    <View style={{ justifyContent: 'center', alignItems: 'center', paddingVertical: scale(60) }}>
-      <MaterialCommunityIcons name="bell-off" size={48} color={colors.mutedForeground} />
-      <Text style={{ color: colors.mutedForeground, fontSize: scale(14), marginTop: scale(12), textAlign: 'center' }}>
-        No notifications yet
-      </Text>
-    </View>
-  );
-
-  if (loading) {
-    return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </SafeAreaView>
+      </TouchableOpacity>
     );
-  }
+  };
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
       <SafeAreaView style={{ flex: 1 }}>
         {/* Header */}
-        <View style={{
-          paddingHorizontal: scale(16),
-          paddingVertical: scale(16),
-          borderBottomWidth: 1,
-          borderBottomColor: colors.border,
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}>
-          <TouchableOpacity onPress={() => router.back()}>
-            <MaterialCommunityIcons name="chevron-left" size={scale(24)} color={colors.foreground} />
+        <View style={[styles.header, { borderBottomColor: theme.colors.border }]}>
+          <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: theme.colors.inputBackground }]}>
+            <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={{ fontSize: scale(20), fontWeight: 'bold', color: colors.foreground }}>
-            Notifications
-          </Text>
-          <View style={{ width: scale(24) }} />
+          <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>Notifications</Text>
+          <View style={{ width: 40 }} />
         </View>
 
-        {/* Notifications List */}
-        <FlatList
-          data={notifications}
-          renderItem={renderNotificationItem}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={{
-            paddingVertical: scale(8),
-            paddingBottom: scale(100),
-            flexGrow: 1,
-          }}
-          ListEmptyComponent={emptyState}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={handleRefresh}
-              tintColor={colors.primary}
-            />
-          }
-        />
+        {loading ? (
+          <View style={styles.center}>
+            <ListScreenSkeleton itemCount={5} />
+          </View>
+        ) : (
+          <FlatList
+            data={notifications}
+            renderItem={renderNotificationItem}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.listContent}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={BRAND.primary} />}
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <View style={[styles.emptyIcon, { backgroundColor: theme.colors.inputBackground }]}>
+                  <MaterialCommunityIcons name="bell-off-outline" size={40} color={theme.colors.textTertiary} />
+                </View>
+                <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>No notifications yet</Text>
+              </View>
+            }
+          />
+        )}
       </SafeAreaView>
-
-      {/* Bottom Navigation */}
-      <RiderBottomNavigation />
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+  },
+  backBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
+  headerTitle: { fontSize: 18, fontWeight: '700' },
+  listContent: { padding: 20, paddingBottom: 100 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  itemContainer: {
+    flexDirection: 'row',
+    padding: 16,
+    marginBottom: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'flex-start',
+  },
+  iconContainer: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', marginRight: 16 },
+  contentContainer: { flex: 1 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  title: { fontSize: 14 },
+  dot: { width: 8, height: 8, borderRadius: 4 },
+  message: { fontSize: 13, lineHeight: 18, marginBottom: 8 },
+  time: { fontSize: 11 },
+  emptyState: { alignItems: 'center', paddingVertical: 60 },
+  emptyIcon: { width: 80, height: 80, borderRadius: 40, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
+  emptyText: { fontSize: 14, fontWeight: '500' },
+});

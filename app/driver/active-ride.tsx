@@ -10,6 +10,7 @@ import {
   Animated,
   Easing,
   Dimensions,
+  TextInput,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,6 +19,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRide } from '@/context/RideContext';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
+import { ListScreenSkeleton } from '@/components/ListScreenSkeleton';
 import { COLORS } from '@/utils/colors';
 
 const { width, height } = Dimensions.get('window');
@@ -111,7 +113,10 @@ export default function DriverActiveRideScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+      {isLoading ? (
+        <ListScreenSkeleton itemCount={4} />
+      ) : (
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
         {/* Elegant Header */}
         <LinearGradient
           colors={isDark ? ['rgba(30, 30, 30, 0.8)', 'rgba(20, 20, 20, 0.6)'] : ['rgba(240, 240, 240, 0.8)', 'rgba(255, 255, 255, 0.6)']}
@@ -206,10 +211,10 @@ export default function DriverActiveRideScreen() {
             justifyContent: 'space-around',
           }}
         >
-          <StatusStep label="Accepted" icon="✓" isActive={rideStatus === 'accepted'} isCompleted={['arrived', 'started', 'completed'].includes(rideStatus)} index={0} />
-          <StatusStep label="Arrived" icon="📍" isActive={rideStatus === 'arrived'} isCompleted={['started', 'completed'].includes(rideStatus)} index={1} />
-          <StatusStep label="Started" icon="▶" isActive={rideStatus === 'started'} isCompleted={rideStatus === 'completed'} index={2} />
-          <StatusStep label="Completed" icon="✓" isActive={rideStatus === 'completed'} isCompleted={false} index={3} />
+          <StatusStep label="Accepted" icon="✓" isActive={rideStatus === 'accepted'} isCompleted={['arrived', 'started', 'completed'].includes(rideStatus)} />
+          <StatusStep label="Arrived" icon="📍" isActive={rideStatus === 'arrived'} isCompleted={['started', 'completed'].includes(rideStatus)} />
+          <StatusStep label="Started" icon="▶" isActive={rideStatus === 'started'} isCompleted={rideStatus === 'completed'} />
+          <StatusStep label="Completed" icon="✓" isActive={rideStatus === 'completed'} isCompleted={false} />
         </View>
 
         {/* Rider Info Card */}
@@ -257,7 +262,7 @@ export default function DriverActiveRideScreen() {
               From
             </Text>
             <Text style={{ fontSize: scale(14), fontWeight: '600', color: colors.foreground }}>
-              📍 {currentRide?.pickupLocation?.address || 'Pickup Location'}
+              📍 {(currentRide?.pickupLocation as any)?.address || 'Pickup Location'}
             </Text>
           </View>
 
@@ -268,7 +273,7 @@ export default function DriverActiveRideScreen() {
               To
             </Text>
             <Text style={{ fontSize: scale(14), fontWeight: '600', color: colors.foreground }}>
-              📍 {currentRide?.pickupLocation?.address || 'Dropoff Location'}
+              📍 {(currentRide as any)?.dropoffLocation?.address || 'Dropoff Location'}
             </Text>
           </View>
         </Card>
@@ -394,7 +399,8 @@ export default function DriverActiveRideScreen() {
             />
           )}
         </View>
-      </ScrollView>
+        </ScrollView>
+      )}
 
       {/* Cancel Confirmation */}
       {showCancelConfirm && (

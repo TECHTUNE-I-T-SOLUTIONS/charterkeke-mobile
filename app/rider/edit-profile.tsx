@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,543 +6,380 @@ import {
   TouchableOpacity,
   Image,
   TextInput,
-  Switch,
+  Alert,
+  StyleSheet,
+  ActivityIndicator,
   KeyboardAvoidingView,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Card from '@/components/ui/Card';
-import Button from '@/components/ui/Button';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import { useTheme } from '@/context/ThemeContext';
+import { apiService } from '@/services/api';
 import { COLORS } from '@/utils/colors';
-import { validateEmail, isValidPhone } from '@/utils/validation';
+import { isValidEmail, isValidPhone, normalizeNigerianPhone } from '@/utils/validation';
+import { EditProfileSkeleton } from '@/components/EditProfileSkeleton';
+
+interface ProfileData {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone_number: string;
+  profile_picture_url?: string;
+}
 
 export default function EditProfileScreen() {
   const router = useRouter();
-  const [isDark, setIsDark] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [editMode, setEditMode] = useState(false);
-
+  const { theme, mode } = useTheme();
+  const isDark = mode === 'dark';
   const colors = isDark ? COLORS.dark : COLORS.light;
 
-  // Form state
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+
   const [formData, setFormData] = useState({
-    firstName: 'Bukola',
-    lastName: 'Adeyemi',
-    email: 'bukola@example.com',
-    phone: '+2349012345678',
-    dateOfBirth: '1995-03-15',
-    gender: 'female',
-    city: 'Lagos',
-    address: '123 Ikoyi Road, Ikoyi',
-    profileImage: 'https://avatar.vercel.sh/bukola?size=200',
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    profileImage: '',
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const screenLaunchedOnce = useRef(false);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      if (!screenLaunchedOnce.current) {
+        screenLaunchedOnce.current = true;
+        fetchProfileData();
+      }
+    }, [])
+  );
+
+  const fetchProfileData = async () => {
+    try {
+      setLoading(true);
+      console.log('📤 [EDIT-PROFILE] Fetching profile data...');
+      
+      const profileRes = await apiService.get('/user/details');
+      console.log('✅ [EDIT-PROFILE] Profile fetched:', profileRes);
+      
+      const user = profileRes.user;
+      setFormData({
+        firstName: user.first_name || '',
+        lastName: user.last_name || '',
+        email: user.email || '',
+        phone: user.phone_number || '',
+        profileImage: user.profile_picture_url || `https://avatar.vercel.sh/${user.first_name}?size=100`,
+      });
+    } catch (error) {
+      console.error('❌ [EDIT-PROFILE] Error fetching profile:', error);
+      Alert.alert('Error', 'Could not load profile data');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
 
     if (!formData.firstName.trim()) newErrors.firstName = 'First name is required';
     if (!formData.lastName.trim()) newErrors.lastName = 'Last name is required';
-    if (!validateEmail(formData.email)) newErrors.email = 'Invalid email address';
+    if (!isValidEmail(formData.email)) newErrors.email = 'Invalid email address';
     if (!isValidPhone(formData.phone)) newErrors.phone = 'Invalid phone number';
-    if (!formData.city.trim()) newErrors.city = 'City is required';
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSave = async () => {
-    if (!validateForm()) return;
-
-    setIsSaving(true);
+  const uploadProfileImage = async () => {
     try {
-      // Simulate saving
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      setEditMode(false);
-      alert('Profile updated successfully!');
+      setUploadingImage(true);
+
+      // Request permissions
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult.granted) {
+        Alert.alert('Permission', 'Permission to access media library is required');
+        return;
+      }
+
+      // Pick image
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (result.canceled) {
+        setUploadingImage(false);
+        return;
+      }
+
+      const uri = result.assets[0].uri;
+      const filename = uri.split('/').pop() || 'profile.jpg';
+      const mimeType = 'image/jpeg';
+
+      // Create FormData
+      const formDataObj = new FormData();
+      formDataObj.append('profilePicture', {
+        uri,
+        name: filename,
+        type: mimeType,
+      } as any);
+
+      console.log('📤 Uploading profile image...');
+
+      // Upload image via authenticated API service
+      const uploadData: any = await apiService.post('/user/profile/avatar', formDataObj, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      console.log('✅ Image uploaded:', uploadData);
+
+      // Update form data with new image URL
+      setFormData(prev => ({
+        ...prev,
+        profileImage: uploadData?.user?.profile_picture_url || uploadData.publicUrl || uploadData.url,
+      }));
+
+      Alert.alert('Success', 'Profile picture updated successfully!');
     } catch (error) {
-      alert('Failed to update profile');
+      console.error('❌ Image upload error:', error);
+      Alert.alert('Error', error instanceof Error ? error.message : 'Failed to upload image');
     } finally {
-      setIsSaving(false);
+      setUploadingImage(false);
     }
   };
 
-  const handleImageChange = () => {
-    // In a real app, this would open image picker
-    alert('Image picker would open here');
+  const handleSave = async () => {
+    if (!validateForm()) return;
+
+    const normalizedPhone = normalizeNigerianPhone(formData.phone);
+    if (!normalizedPhone) {
+      setErrors((prev) => ({ ...prev, phone: 'Invalid phone number' }));
+      return;
+    }
+
+    setSaving(true);
+    try {
+      console.log('📤 [EDIT-PROFILE] Saving profile...');
+      
+      await apiService.put('/user/details', {
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        email: formData.email,
+        phone: normalizedPhone,
+      });
+
+      setFormData((prev) => ({ ...prev, phone: normalizedPhone }));
+
+      console.log('✅ [EDIT-PROFILE] Profile saved');
+      Alert.alert('Success', 'Profile updated successfully!');
+      setEditMode(false);
+    } catch (error) {
+      console.error('❌ [EDIT-PROFILE] Error saving profile:', error);
+      Alert.alert('Error', 'Failed to save profile. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
+  const handleInputChange = (field: string, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) {
+      setErrors(prev => ({ ...prev, [field]: '' }));
+    }
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+          <TouchableOpacity onPress={() => router.back()}>
+            <MaterialCommunityIcons name="arrow-left" size={24} color={colors.primary} />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Edit Profile</Text>
+          <View style={{ width: 24 }} />
+        </View>
+        <EditProfileSkeleton />
+      </SafeAreaView>
+    );
+  }
+
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-      <KeyboardAvoidingView
-        behavior="padding"
-        style={{ flex: 1 }}
-      >
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 20 }}
+          contentContainerStyle={{ paddingBottom: 80 }}
         >
           {/* Header */}
-          <View
-            style={{
-              paddingHorizontal: 20,
-              paddingVertical: 16,
-              borderBottomWidth: 1,
-              borderBottomColor: colors.border,
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            }}
-          >
+          <View style={[styles.header, { borderBottomColor: colors.border }]}>
             <TouchableOpacity onPress={() => router.back()}>
-              <Text style={{ fontSize: 28, color: colors.primary }}>←</Text>
+              <MaterialCommunityIcons name="arrow-left" size={24} color={colors.primary} />
             </TouchableOpacity>
-            <Text style={{ fontSize: 24, fontWeight: 'bold', color: colors.text }}>
-              Edit Profile
-            </Text>
+            <Text style={[styles.headerTitle, { color: colors.text }]}>Edit Profile</Text>
             {!editMode ? (
               <TouchableOpacity onPress={() => setEditMode(true)}>
-                <Text style={{ fontSize: 14, color: colors.primary, fontWeight: '600' }}>
-                  Edit
-                </Text>
+                <MaterialCommunityIcons name="pencil" size={24} color={colors.primary} />
               </TouchableOpacity>
             ) : (
               <TouchableOpacity onPress={() => setEditMode(false)}>
-                <Text style={{ fontSize: 14, color: colors.error, fontWeight: '600' }}>
-                  Cancel
-                </Text>
+                <MaterialCommunityIcons name="close" size={24} color={colors.destructive} />
               </TouchableOpacity>
             )}
           </View>
 
           {/* Profile Picture */}
-          <Card isDark={isDark}>
-            <View style={{ alignItems: 'center', marginBottom: 16 }}>
-              <View
-                style={{
-                  position: 'relative',
-                  marginBottom: 12,
-                }}
-              >
+          <View style={[styles.card, { backgroundColor: colors.card || colors.background, borderColor: colors.border }]}>
+            <TouchableOpacity 
+              onPress={editMode ? uploadProfileImage : undefined}
+              style={styles.profileImageSection}
+              disabled={!editMode || uploadingImage}
+            >
+              <View style={styles.profileImageContainer}>
                 <Image
                   source={{ uri: formData.profileImage }}
-                  style={{
-                    width: 100,
-                    height: 100,
-                    borderRadius: 50,
-                  }}
+                  style={styles.profileImage}
                 />
                 {editMode && (
-                  <TouchableOpacity
-                    onPress={handleImageChange}
-                    style={{
-                      position: 'absolute',
-                      bottom: 0,
-                      right: 0,
-                      width: 36,
-                      height: 36,
-                      borderRadius: 18,
-                      backgroundColor: colors.primary,
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      borderWidth: 3,
-                      borderColor: colors.background,
-                    }}
-                  >
-                    <Text style={{ fontSize: 16 }}>📷</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-              <Text
-                style={{
-                  fontSize: 16,
-                  fontWeight: 'bold',
-                  color: colors.text,
-                  marginBottom: 2,
-                }}
-              >
-                {formData.firstName} {formData.lastName}
-              </Text>
-              <Text style={{ fontSize: 12, color: colors.textSecondary }}>
-                {formData.email}
-              </Text>
-            </View>
-          </Card>
-
-          {/* Personal Information */}
-          <Card isDark={isDark}>
-            <Text
-              style={{
-                fontSize: 15,
-                fontWeight: 'bold',
-                color: colors.text,
-                marginBottom: 12,
-              }}
-            >
-              Personal Information
-            </Text>
-
-            <View style={{ gap: 12 }}>
-              {/* First Name */}
-              <View>
-                <Text
-                  style={{
-                    fontSize: 12,
-                    color: colors.textSecondary,
-                    marginBottom: 6,
-                    fontWeight: '500',
-                  }}
-                >
-                  First Name
-                </Text>
-                <TextInput
-                  style={{
-                    paddingHorizontal: 12,
-                    paddingVertical: 10,
-                    borderWidth: 1,
-                    borderColor: errors.firstName ? colors.error : colors.border,
-                    borderRadius: 8,
-                    fontSize: 14,
-                    color: colors.text,
-                    backgroundColor: editMode ? colors.background : colors.border + '20',
-                  }}
-                  value={formData.firstName}
-                  onChangeText={(text) =>
-                    setFormData({ ...formData, firstName: text })
-                  }
-                  editable={editMode}
-                  placeholderTextColor={colors.textSecondary}
-                />
-                {errors.firstName && (
-                  <Text style={{ fontSize: 11, color: colors.error, marginTop: 4 }}>
-                    {errors.firstName}
-                  </Text>
-                )}
-              </View>
-
-              {/* Last Name */}
-              <View>
-                <Text
-                  style={{
-                    fontSize: 12,
-                    color: colors.textSecondary,
-                    marginBottom: 6,
-                    fontWeight: '500',
-                  }}
-                >
-                  Last Name
-                </Text>
-                <TextInput
-                  style={{
-                    paddingHorizontal: 12,
-                    paddingVertical: 10,
-                    borderWidth: 1,
-                    borderColor: errors.lastName ? colors.error : colors.border,
-                    borderRadius: 8,
-                    fontSize: 14,
-                    color: colors.text,
-                    backgroundColor: editMode ? colors.background : colors.border + '20',
-                  }}
-                  value={formData.lastName}
-                  onChangeText={(text) =>
-                    setFormData({ ...formData, lastName: text })
-                  }
-                  editable={editMode}
-                  placeholderTextColor={colors.textSecondary}
-                />
-                {errors.lastName && (
-                  <Text style={{ fontSize: 11, color: colors.error, marginTop: 4 }}>
-                    {errors.lastName}
-                  </Text>
-                )}
-              </View>
-
-              {/* Email */}
-              <View>
-                <Text
-                  style={{
-                    fontSize: 12,
-                    color: colors.textSecondary,
-                    marginBottom: 6,
-                    fontWeight: '500',
-                  }}
-                >
-                  Email Address
-                </Text>
-                <TextInput
-                  style={{
-                    paddingHorizontal: 12,
-                    paddingVertical: 10,
-                    borderWidth: 1,
-                    borderColor: errors.email ? colors.error : colors.border,
-                    borderRadius: 8,
-                    fontSize: 14,
-                    color: colors.text,
-                    backgroundColor: editMode ? colors.background : colors.border + '20',
-                  }}
-                  value={formData.email}
-                  onChangeText={(text) =>
-                    setFormData({ ...formData, email: text })
-                  }
-                  editable={editMode}
-                  keyboardType="email-address"
-                  placeholderTextColor={colors.textSecondary}
-                />
-                {errors.email && (
-                  <Text style={{ fontSize: 11, color: colors.error, marginTop: 4 }}>
-                    {errors.email}
-                  </Text>
-                )}
-              </View>
-
-              {/* Phone */}
-              <View>
-                <Text
-                  style={{
-                    fontSize: 12,
-                    color: colors.textSecondary,
-                    marginBottom: 6,
-                    fontWeight: '500',
-                  }}
-                >
-                  Phone Number
-                </Text>
-                <TextInput
-                  style={{
-                    paddingHorizontal: 12,
-                    paddingVertical: 10,
-                    borderWidth: 1,
-                    borderColor: errors.phone ? colors.error : colors.border,
-                    borderRadius: 8,
-                    fontSize: 14,
-                    color: colors.text,
-                    backgroundColor: editMode ? colors.background : colors.border + '20',
-                  }}
-                  value={formData.phone}
-                  onChangeText={(text) =>
-                    setFormData({ ...formData, phone: text })
-                  }
-                  editable={editMode}
-                  keyboardType="phone-pad"
-                  placeholderTextColor={colors.textSecondary}
-                />
-                {errors.phone && (
-                  <Text style={{ fontSize: 11, color: colors.error, marginTop: 4 }}>
-                    {errors.phone}
-                  </Text>
-                )}
-              </View>
-            </View>
-          </Card>
-
-          {/* Additional Information */}
-          <Card isDark={isDark}>
-            <Text
-              style={{
-                fontSize: 15,
-                fontWeight: 'bold',
-                color: colors.text,
-                marginBottom: 12,
-              }}
-            >
-              Additional Information
-            </Text>
-
-            <View style={{ gap: 12 }}>
-              {/* Date of Birth */}
-              <View>
-                <Text
-                  style={{
-                    fontSize: 12,
-                    color: colors.textSecondary,
-                    marginBottom: 6,
-                    fontWeight: '500',
-                  }}
-                >
-                  Date of Birth
-                </Text>
-                <TextInput
-                  style={{
-                    paddingHorizontal: 12,
-                    paddingVertical: 10,
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                    borderRadius: 8,
-                    fontSize: 14,
-                    color: colors.text,
-                    backgroundColor: editMode ? colors.background : colors.border + '20',
-                  }}
-                  value={formData.dateOfBirth}
-                  onChangeText={(text) =>
-                    setFormData({ ...formData, dateOfBirth: text })
-                  }
-                  editable={editMode}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor={colors.textSecondary}
-                />
-              </View>
-
-              {/* Gender */}
-              <View>
-                <Text
-                  style={{
-                    fontSize: 12,
-                    color: colors.textSecondary,
-                    marginBottom: 6,
-                    fontWeight: '500',
-                  }}
-                >
-                  Gender
-                </Text>
-                {editMode ? (
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    {['male', 'female', 'other'].map((option) => (
-                      <TouchableOpacity
-                        key={option}
-                        onPress={() =>
-                          setFormData({ ...formData, gender: option })
-                        }
-                        style={{
-                          flex: 1,
-                          paddingVertical: 10,
-                          borderRadius: 8,
-                          borderWidth: 2,
-                          borderColor:
-                            formData.gender === option
-                              ? colors.primary
-                              : colors.border,
-                          backgroundColor:
-                            formData.gender === option
-                              ? colors.primary + '15'
-                              : colors.background,
-                          alignItems: 'center',
-                        }}
-                      >
-                        <Text
-                          style={{
-                            fontSize: 12,
-                            fontWeight: '600',
-                            color:
-                              formData.gender === option
-                                ? colors.primary
-                                : colors.textSecondary,
-                            textTransform: 'capitalize',
-                          }}
-                        >
-                          {option}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                ) : (
-                  <View
-                    style={{
-                      paddingHorizontal: 12,
-                      paddingVertical: 10,
-                      borderWidth: 1,
-                      borderColor: colors.border,
-                      borderRadius: 8,
-                      backgroundColor: colors.border + '20',
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 14,
-                        color: colors.text,
-                        textTransform: 'capitalize',
-                      }}
-                    >
-                      {formData.gender}
-                    </Text>
+                  <View style={[styles.uploadOverlay, { backgroundColor: 'rgba(0, 0, 0, 0.4)' }]}>
+                    {uploadingImage ? (
+                      <ActivityIndicator color="white" size="large" />
+                    ) : (
+                      <>
+                        <MaterialCommunityIcons name="camera-plus" size={40} color="white" />
+                        <Text style={styles.uploadText}>Change Photo</Text>
+                      </>
+                    )}
                   </View>
                 )}
               </View>
+              <Text style={[styles.profileImageLabel, { color: colors.textSecondary }]}>
+                {editMode ? 'Tap to change photo' : 'Profile Photo'}
+              </Text>
+            </TouchableOpacity>
+          </View>
 
-              {/* City */}
-              <View>
-                <Text
-                  style={{
-                    fontSize: 12,
-                    color: colors.textSecondary,
-                    marginBottom: 6,
-                    fontWeight: '500',
-                  }}
-                >
-                  City
-                </Text>
-                <TextInput
-                  style={{
-                    paddingHorizontal: 12,
-                    paddingVertical: 10,
-                    borderWidth: 1,
-                    borderColor: errors.city ? colors.error : colors.border,
-                    borderRadius: 8,
-                    fontSize: 14,
+          {/* Form Fields */}
+          <View style={[styles.card, { backgroundColor: colors.card || colors.background, borderColor: colors.border }]}>
+            {/* First Name */}
+            <View style={styles.formGroup}>
+              <Text style={[styles.label, { color: colors.text }]}>First Name *</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: isDark ? colors.background : '#F5F5F5',
                     color: colors.text,
-                    backgroundColor: editMode ? colors.background : colors.border + '20',
-                  }}
-                  value={formData.city}
-                  onChangeText={(text) =>
-                    setFormData({ ...formData, city: text })
+                    borderColor: errors.firstName ? colors.destructive : colors.border,
                   }
-                  editable={editMode}
-                  placeholderTextColor={colors.textSecondary}
-                />
-                {errors.city && (
-                  <Text style={{ fontSize: 11, color: colors.error, marginTop: 4 }}>
-                    {errors.city}
-                  </Text>
-                )}
-              </View>
-
-              {/* Address */}
-              <View>
-                <Text
-                  style={{
-                    fontSize: 12,
-                    color: colors.textSecondary,
-                    marginBottom: 6,
-                    fontWeight: '500',
-                  }}
-                >
-                  Address
-                </Text>
-                <TextInput
-                  style={{
-                    paddingHorizontal: 12,
-                    paddingVertical: 10,
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                    borderRadius: 8,
-                    fontSize: 14,
-                    color: colors.text,
-                    backgroundColor: editMode ? colors.background : colors.border + '20',
-                    minHeight: 70,
-                    textAlignVertical: 'top',
-                  }}
-                  value={formData.address}
-                  onChangeText={(text) =>
-                    setFormData({ ...formData, address: text })
-                  }
-                  editable={editMode}
-                  multiline
-                  numberOfLines={3}
-                  placeholderTextColor={colors.textSecondary}
-                />
-              </View>
+                ]}
+                placeholder="Enter first name"
+                placeholderTextColor={colors.textSecondary}
+                value={formData.firstName}
+                onChangeText={(value) => handleInputChange('firstName', value)}
+                editable={editMode}
+              />
+              {errors.firstName && (
+                <Text style={[styles.errorText, { color: colors.destructive }]}>{errors.firstName}</Text>
+              )}
             </View>
-          </Card>
+
+            {/* Last Name */}
+            <View style={styles.formGroup}>
+              <Text style={[styles.label, { color: colors.text }]}>Last Name *</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: isDark ? colors.background : '#F5F5F5',
+                    color: colors.text,
+                    borderColor: errors.lastName ? colors.destructive : colors.border,
+                  }
+                ]}
+                placeholder="Enter last name"
+                placeholderTextColor={colors.textSecondary}
+                value={formData.lastName}
+                onChangeText={(value) => handleInputChange('lastName', value)}
+                editable={editMode}
+              />
+              {errors.lastName && (
+                <Text style={[styles.errorText, { color: colors.destructive }]}>{errors.lastName}</Text>
+              )}
+            </View>
+
+            {/* Email */}
+            <View style={styles.formGroup}>
+              <Text style={[styles.label, { color: colors.text }]}>Email *</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: isDark ? colors.background : '#F5F5F5',
+                    color: colors.text,
+                    borderColor: errors.email ? colors.destructive : colors.border,
+                  }
+                ]}
+                placeholder="Enter email address"
+                placeholderTextColor={colors.textSecondary}
+                value={formData.email}
+                onChangeText={(value) => handleInputChange('email', value)}
+                keyboardType="email-address"
+                editable={editMode}
+              />
+              {errors.email && (
+                <Text style={[styles.errorText, { color: colors.destructive }]}>{errors.email}</Text>
+              )}
+            </View>
+
+            {/* Phone */}
+            <View style={[styles.formGroup, { marginTop: 0 }]}>
+              <Text style={[styles.label, { color: colors.text }]}>Phone Number *</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: isDark ? colors.background : '#F5F5F5',
+                    color: colors.text,
+                    borderColor: errors.phone ? colors.destructive : colors.border,
+                  }
+                ]}
+                placeholder="Enter phone number"
+                placeholderTextColor={colors.textSecondary}
+                value={formData.phone}
+                onChangeText={(value) => handleInputChange('phone', value)}
+                keyboardType="phone-pad"
+                editable={editMode}
+              />
+              {errors.phone && (
+                <Text style={[styles.errorText, { color: colors.destructive }]}>{errors.phone}</Text>
+              )}
+            </View>
+          </View>
 
           {/* Save Button */}
           {editMode && (
-            <View style={{ paddingHorizontal: 20, gap: 12, marginTop: 20 }}>
-              <Button
-                title={isSaving ? 'Saving...' : 'Save Changes'}
+            <View style={styles.buttonSection}>
+              <TouchableOpacity
                 onPress={handleSave}
-                isDark={isDark}
-                disabled={isSaving}
-              />
+                disabled={saving}
+                style={[styles.saveButton, { backgroundColor: colors.primary }]}
+              >
+                {saving ? (
+                  <ActivityIndicator color="white" size="small" />
+                ) : (
+                  <>
+                    <MaterialCommunityIcons name="check" size={20} color="white" />
+                    <Text style={styles.saveButtonText}>Save Changes</Text>
+                  </>
+                )}
+              </TouchableOpacity>
             </View>
           )}
         </ScrollView>
@@ -550,3 +387,105 @@ export default function EditProfileScreen() {
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  card: {
+    marginHorizontal: 16,
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  profileImageSection: {
+    alignItems: 'center',
+  },
+  profileImageContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  profileImage: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+  },
+  uploadOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 60,
+  },
+  uploadText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 8,
+  },
+  profileImageLabel: {
+    fontSize: 12,
+    marginTop: 12,
+  },
+  formGroup: {
+    marginBottom: 16,
+  },
+  label: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  input: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+  },
+  errorText: {
+    fontSize: 11,
+    marginTop: 4,
+  },
+  buttonSection: {
+    paddingHorizontal: 16,
+    marginTop: 20,
+  },
+  saveButton: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 8,
+  },
+  saveButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+});

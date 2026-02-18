@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"path": "../easely"
+		},
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"powershell.cwd": "ck"
+	}
+}

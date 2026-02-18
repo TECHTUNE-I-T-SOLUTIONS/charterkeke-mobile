@@ -7,63 +7,36 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/context/AuthContext';
 import { useLocation } from '@/context/LocationContext';
 import { useRide } from '@/context/RideContext';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
+import { ListScreenSkeleton } from '@/components/ListScreenSkeleton';
 import { COLORS } from '@/utils/colors';
-import { formatCurrency, formatDistance, formatDuration } from '@/utils/formatting';
+import { formatDistance } from '@/utils/formatting';
+import { useWindowDimensions } from 'react-native';
 
 export default function AvailableRidesScreen() {
-  const router = useRouter();
-  const { user } = useAuth();
+  const { width } = useWindowDimensions();
+  const scale = (value: number) => (width / 375) * value;
   const { currentLocation } = useLocation();
   const { availableRides, isLoading, getAvailableRides, acceptRide } = useRide();
   const [isDark, setIsDark] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedRideId, setSelectedRideId] = useState<string | null>(null);
+  const { focusRide } = useLocalSearchParams<{ focusRide: string }>();
+
+  // Set focus ride from deep-link
+  useEffect(() => {
+    if (focusRide) {
+      setSelectedRideId(focusRide);
+    }
+  }, [focusRide]);
 
   const colors = isDark ? COLORS.dark : COLORS.light;
-
-  useEffect(() => {
-    loadRides();
-  }, []);
-
-  const loadRides = async () => {
-    if (currentLocation) {
-      await getAvailableRides({
-        latitude: currentLocation.latitude,
-        longitude: currentLocation.longitude,
-        radiusKm: 5,
-      });
-    }
-  };
-
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await loadRides();
-    setRefreshing(false);
-  };
-
-  const handleAcceptRide = async (rideId: string) => {
-    setSelectedRideId(rideId);
-    try {
-      const result = await acceptRide(rideId);
-      if (result.success) {
-        router.push({
-          pathname: '/driver/active-ride',
-          params: { rideId },
-        });
-      }
-    } catch (error) {
-      console.error('Accept ride error:', error);
-    } finally {
-      setSelectedRideId(null);
-    }
-  };
 
   // Mock available rides data
   const mockRides = [
@@ -135,34 +108,77 @@ export default function AvailableRidesScreen() {
     },
   ];
 
-  const renderRideCard = ({ item }: { item: (typeof mockRides)[0] }) => (
-    <Card isDark={isDark}>
-      {/* Rider Info */}
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <View>
-          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
-            {item.rider.name}
-          </Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-            <Text style={{ color: colors.warning, marginRight: 4 }}>★</Text>
-            <Text style={{ fontSize: 12, color: colors.textSecondary }}>
-              {item.rider.rating}
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    if (currentLocation) {
+      await getAvailableRides(currentLocation.latitude, currentLocation.longitude);
+    }
+    setRefreshing(false);
+  };
+
+  const handleAcceptRide = async (rideId: string) => {
+    setSelectedRideId(rideId);
+    await acceptRide(rideId);
+    setSelectedRideId(null);
+  };
+
+  useEffect(() => {
+    handleRefresh();
+  }, []);
+
+
+  const renderRideCard = ({ item }: { item: (typeof mockRides)[0] }) => {
+    const isFocused = selectedRideId === item.id;
+    
+    return (
+      <View style={{ marginBottom: 12, marginHorizontal: 16 }}>
+        {isFocused && (
+          <View
+            style={{
+              position: 'absolute',
+              top: -8,
+              left: 0,
+              right: 0,
+              backgroundColor: COLORS.light.primary,
+              paddingHorizontal: 12,
+              paddingVertical: 4,
+              borderTopLeftRadius: 8,
+              borderTopRightRadius: 8,
+              zIndex: 10,
+            }}
+          >
+            <Text style={{ fontSize: 11, fontWeight: '600', color: '#fff', textAlign: 'center' }}>
+              🎯 Deep-linked from notification
             </Text>
           </View>
-        </View>
-        <View
-          style={{
-            paddingHorizontal: 12,
-            paddingVertical: 6,
-            borderRadius: 6,
-            backgroundColor: colors.primary + '15',
-          }}
-        >
-          <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primary }}>
-            {formatDistance(item.distanceFromYou)} away
-          </Text>
-        </View>
-      </View>
+        )}
+        <Card isDark={isDark} style={{ borderWidth: isFocused ? 2 : 1, borderColor: isFocused ? COLORS.light.primary : colors.border, marginTop: isFocused ? 12 : 0 }}>
+          {/* Rider Info */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <View>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
+                {item.rider.name}
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                <Text style={{ color: colors.primary, marginRight: 4 }}>★</Text>
+                <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+                  {item.rider.rating}
+                </Text>
+              </View>
+            </View>
+            <View
+              style={{
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                borderRadius: 6,
+                backgroundColor: colors.primary + '15',
+              }}
+            >
+              <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primary }}>
+                {formatDistance(item.distanceFromYou)} away
+              </Text>
+            </View>
+          </View>
 
       {/* Route Info */}
       <View style={{ marginBottom: 12 }}>
@@ -255,8 +271,10 @@ export default function AvailableRidesScreen() {
         isDark={isDark}
         disabled={selectedRideId !== null}
       />
-    </Card>
-  );
+        </Card>
+      </View>
+    );
+  };
 
   if (isLoading && mockRides.length === 0) {
     return (

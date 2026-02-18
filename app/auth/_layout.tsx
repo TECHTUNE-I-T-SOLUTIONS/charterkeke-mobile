@@ -7,13 +7,10 @@ export default function AuthLayout() {
     <Stack
       screenOptions={{
         headerShown: false,
-        cardStyle: {
+        contentStyle: {
           backgroundColor: COLORS.light.background,
         },
-        transitionSpec: {
-          open: { animation: 'timing', config: { duration: 0 } },
-          close: { animation: 'timing', config: { duration: 0 } },
-        },
+        animation: 'none',
       }}
     >
       <Stack.Screen name="welcome" />

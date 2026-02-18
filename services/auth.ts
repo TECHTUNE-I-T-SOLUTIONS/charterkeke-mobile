@@ -20,6 +20,12 @@ class AuthService {
   private refreshToken: string | null = null;
   private tokenExpiryTime: number | null = null;
 
+  private isFormDataPayload = (data: any): boolean => {
+    if (!data) return false;
+    if (typeof FormData !== 'undefined' && data instanceof FormData) return true;
+    return typeof data?.append === 'function' && typeof data?.getParts === 'function';
+  };
+
   /**
    * Initialize auth service
    */
@@ -89,12 +95,77 @@ class AuthService {
    */
   async signup(payload: any): Promise<AuthResponse> {
     try {
-      const response = await apiService.signup({
-        ...payload,
-        deviceId: await this.getDeviceId(),
-      });
-      await this.handleAuthResponse(response);
-      return response;
+      const deviceId = await this.getDeviceId();
+      let signupPayload = payload;
+      const isFormData = this.isFormDataPayload(payload);
+
+      if (isFormData) {
+        payload.append('deviceId', deviceId);
+        signupPayload = payload;
+      } else {
+        signupPayload = {
+          ...payload,
+          deviceId,
+        };
+      }
+
+      const signupResponse = await apiService.signup(signupPayload);
+
+      const roleFromPayload = isFormData
+        ? ((payload.get('role') as string) || '')
+        : (payload?.role || '');
+      const normalizedRole = roleFromPayload === 'rider' ? 'user' : roleFromPayload;
+
+      const createdUserId = (signupResponse as any)?.user?.id || (signupResponse as any)?.userId;
+
+      if (normalizedRole === 'driver' && isFormData && createdUserId) {
+        const driverPayload = new FormData();
+        const emergencyContactName = String(payload.get('emergencyContactName') || '').trim();
+        const emergencyContactPhone = String(payload.get('emergencyContactPhone') || '').trim();
+        const combinedEmergencyContact = [emergencyContactName, emergencyContactPhone].filter(Boolean).join(' - ');
+
+        driverPayload.append('userId', String(createdUserId));
+        driverPayload.append('vehicleType', String(payload.get('vehicleType') || 'keke'));
+        driverPayload.append('plateNumber', String(payload.get('plateNumber') || ''));
+        driverPayload.append('unionName', String(payload.get('unionName') || ''));
+        driverPayload.append('operatingZones', String(payload.get('operatingZones') || '[]'));
+        driverPayload.append('bankName', String(payload.get('bankName') || ''));
+        driverPayload.append('bankAccountNumber', String(payload.get('bankAccountNumber') || ''));
+        driverPayload.append('emergencyContact', combinedEmergencyContact || String(payload.get('emergencyContact') || ''));
+
+        const vehiclePicture = payload.get('vehiclePicture') || payload.get('vehicleImage');
+        const licensePicture = payload.get('licensePicture') || payload.get('licenseImage');
+
+        if (vehiclePicture) {
+          driverPayload.append('vehiclePicture', vehiclePicture as any);
+        }
+
+        if (licensePicture) {
+          driverPayload.append('licensePicture', licensePicture as any);
+        }
+
+        await apiService.post('/drivers', driverPayload, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+      }
+
+      if ((signupResponse as any)?.token && (signupResponse as any)?.refreshToken) {
+        await this.handleAuthResponse(signupResponse as AuthResponse);
+        return signupResponse as AuthResponse;
+      }
+
+      const email = isFormData ? String(payload.get('email') || '') : String(payload?.email || '');
+      const phone = isFormData ? String(payload.get('phone') || '') : String(payload?.phone || '');
+      const password = isFormData ? String(payload.get('password') || '') : String(payload?.password || '');
+      const loginIdentifier = email || phone;
+
+      if (!loginIdentifier || !password) {
+        throw new Error('Signup succeeded but login credentials are missing. Please log in manually.');
+      }
+
+      const loginResponse = await apiService.login(loginIdentifier, password);
+      await this.handleAuthResponse(loginResponse);
+      return loginResponse;
     } catch (error) {
       console.error('Signup error:', error);
       throw error;

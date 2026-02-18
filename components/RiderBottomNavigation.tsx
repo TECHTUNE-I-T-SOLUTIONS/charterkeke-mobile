@@ -3,6 +3,7 @@ import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@context/ThemeContext';
+import { COLORS } from '@/utils/colors';
 
 interface NavItem {
   name: string;
@@ -22,7 +23,9 @@ const RIDER_NAV_ITEMS: NavItem[] = [
 export default function RiderBottomNavigation() {
   const router = useRouter();
   const pathname = usePathname();
-  const { theme } = useTheme();
+  const { theme, mode } = useTheme();
+  const isDark = mode === 'dark';
+  const colors = isDark ? COLORS.dark : COLORS.light;
 
   const getNavItems = () => {
     if (pathname.includes('/driver')) {
@@ -34,35 +37,67 @@ export default function RiderBottomNavigation() {
   const navItems = getNavItems();
   const isActive = (route: string) => pathname === route;
 
+  const handleNavigation = (route: string) => {
+    // Only navigate if not already on that route
+    if (!isActive(route)) {
+      router.replace(route); // Use replace() instead of push() to avoid stacking
+    }
+  };
+
   return (
     <View style={[styles.container, { 
-      backgroundColor: theme.colors.background,
-      borderTopColor: theme.colors.border,
+      backgroundColor: colors.background,
+      borderTopColor: colors.border,
     }]}>
       {navItems.map((item) => {
         const active = isActive(item.route);
         return (
           <TouchableOpacity
             key={item.name}
-            style={styles.navItem}
-            onPress={() => router.push(item.route)}
+            style={[
+              styles.navItem,
+              active && styles.navItemActive,
+            ]}
+            onPress={() => handleNavigation(item.route)}
+            activeOpacity={0.7}
           >
-            <MaterialIcons
-              name={item.icon as any}
-              size={24}
-              color={active ? theme.colors.primary : theme.colors.textSecondary}
-            />
+            <View
+              style={[
+                styles.iconContainer,
+                active && {
+                  backgroundColor: colors.primary + '15',
+                  borderRadius: 12,
+                  padding: 8,
+                },
+              ]}
+            >
+              <MaterialIcons
+                name={item.icon as any}
+                size={24}
+                color={active ? colors.primary : colors.textSecondary}
+              />
+            </View>
             <Text
               style={[
                 styles.label,
                 {
-                  color: active ? theme.colors.primary : theme.colors.textSecondary,
-                  fontWeight: active ? '600' : '400',
+                  color: active ? colors.primary : colors.textSecondary,
+                  fontWeight: active ? '700' : '500',
+                  fontSize: active ? 11 : 10,
                 },
               ]}
+              numberOfLines={1}
             >
               {item.label}
             </Text>
+            {active && (
+              <View
+                style={[
+                  styles.activeDot,
+                  { backgroundColor: colors.primary },
+                ]}
+              />
+            )}
           </TouchableOpacity>
         );
       })}
@@ -94,9 +129,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 8,
     paddingHorizontal: 4,
+    position: 'relative',
+  },
+  navItemActive: {
+    // Additional styling for active state
+  },
+  iconContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   label: {
-    fontSize: 10,
     marginTop: 4,
+  },
+  activeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    position: 'absolute',
+    bottom: 0,
   },
 });

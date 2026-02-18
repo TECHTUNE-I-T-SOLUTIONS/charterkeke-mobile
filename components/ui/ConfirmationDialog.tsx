@@ -36,9 +36,9 @@ const ConfirmationDialog = ({
   const getIconColor = () => {
     switch (type) {
       case 'warning':
-        return colors.warning;
+        return colors.warning || colors.primary;
       case 'danger':
-        return colors.error;
+        return colors.destructive || colors.error;
       case 'info':
       default:
         return colors.primary;
@@ -60,9 +60,9 @@ const ConfirmationDialog = ({
   const getButtonColor = () => {
     switch (type) {
       case 'warning':
-        return colors.warning;
+        return colors.warning || colors.primary;
       case 'danger':
-        return colors.error;
+        return colors.destructive || colors.error;
       case 'info':
       default:
         return colors.primary;

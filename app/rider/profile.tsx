@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,382 +7,255 @@ import {
   TouchableOpacity,
   Image,
   Switch,
+  Alert,
+  StyleSheet,
+  StatusBar,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '@/context/AuthContext';
-import Button from '@/components/ui/Button';
-import Card from '@/components/ui/Card';
+import { useTheme } from '@/context/ThemeContext';
 import ConfirmationDialog from '@/components/ui/ConfirmationDialog';
-import { COLORS } from '@/utils/colors';
+import { ProfileSkeleton } from '@/components/ProfileSkeleton';
+import { apiService } from '@/services/api';
+import { BRAND, COLORS } from '@/utils/colors';
+
+interface ProfileData {
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone_number: string;
+  profile_picture_url?: string;
+}
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user, logout, clearCache } = useAuth();
-  const [isDark, setIsDark] = useState(false);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [shareLocationEnabled, setShareLocationEnabled] = useState(true);
-  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const { logout, clearCache } = useAuth();
+  const { theme, mode } = useTheme();
+  
+  const [profileData, setProfileData] = useState<ProfileData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [showLogout, setShowLogout] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [notifEnabled, setNotifEnabled] = useState(true);
+  const renderedOnce = useRef(false);
 
-  const colors = isDark ? COLORS.dark : COLORS.light;
+  const isLight = theme.mode === 'light';
 
-  const profileMenuItems = [
-    { id: 'edit', label: 'Edit Profile', icon: '✏️', action: () => router.push('/rider/edit-profile') },
-    {
-      id: 'verification',
-      label: 'Verification',
-      icon: '✓',
-      action: () => router.push('/rider/verification'),
-    },
-    {
-      id: 'emergency',
-      label: 'Emergency Contacts',
-      icon: '☎️',
-      action: () => router.push('/rider/emergency-contacts'),
-    },
-    {
-      id: 'payment',
-      label: 'Payment Methods',
-      icon: '💳',
-      action: () => router.push('/rider/payment-methods'),
-    },
-  ];
+  useFocusEffect(
+    React.useCallback(() => {
+      if (!renderedOnce.current) {
+        renderedOnce.current = true;
+        loadProfile();
+      }
+    }, [])
+  );
 
-  const settingsMenuItems = [
-    { id: 'language', label: 'Language', icon: '🌐', value: 'English' },
-    { id: 'currency', label: 'Currency', icon: '💱', value: 'NGN (₦)' },
-    { id: 'privacy', label: 'Privacy Settings', icon: '🔒', action: () => {} },
-    { id: 'about', label: 'About Charter Keke', icon: 'ℹ️', action: () => {} },
-  ];
+  const loadProfile = async () => {
+    try {
+      setLoading(true);
+      const res = await apiService.get('/user/profile');
+      setProfileData(res.user || res);
+    } catch (error) { console.error(error); } 
+    finally { setLoading(false); }
+  };
 
   const handleLogout = async () => {
     try {
-      console.log('📤 [RIDER-PROFILE] Logging out...');
-      if (clearCache) {
-        await clearCache();
-      }
+      if (clearCache) await clearCache();
       await logout();
-      console.log('✅ [RIDER-PROFILE] Logout successful');
-      router.replace('/auth/login');
+      router.replace('/auth/welcome');
+    } catch (e) { Alert.alert('Error', 'Logout failed'); }
+  };
+
+  const handlePickAndUploadAvatar = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission required', 'Please allow photo library access to upload your profile picture.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.8,
+      });
+
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      const fileName = asset.fileName || asset.uri.split('/').pop() || 'avatar.jpg';
+      const fileType = asset.mimeType || 'image/jpeg';
+
+      const formData = new FormData();
+      formData.append('profilePicture', {
+        uri: asset.uri,
+        type: fileType,
+        name: fileName,
+      } as any);
+
+      setUploadingAvatar(true);
+      const response: any = await apiService.post('/user/profile/avatar', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      const newUrl = response?.user?.profile_picture_url;
+      if (newUrl) {
+        setProfileData((prev) => (prev ? { ...prev, profile_picture_url: newUrl } : prev));
+      }
+
+      Alert.alert('Success', 'Profile picture updated successfully.');
     } catch (error) {
-      console.error('❌ [RIDER-PROFILE] Logout error:', error);
+      console.error('Avatar upload failed:', error);
+      Alert.alert('Upload Failed', 'Unable to update profile picture. Please try again.');
+    } finally {
+      setUploadingAvatar(false);
     }
   };
 
+  if (loading) return <SafeAreaView style={{flex:1, backgroundColor: theme.colors.background}}><ProfileSkeleton isDark={!isLight}/></SafeAreaView>;
+
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 20 }}
-      >
-        {/* Header */}
-        <View
-          style={{
-            paddingHorizontal: 20,
-            paddingVertical: 16,
-            borderBottomWidth: 1,
-            borderBottomColor: colors.border,
-          }}
-        >
-          <TouchableOpacity onPress={() => router.back()}>
-            <Text style={{ fontSize: 28, color: colors.primary }}>←</Text>
-          </TouchableOpacity>
-          <Text style={{ fontSize: 28, fontWeight: 'bold', color: colors.text, marginTop: 12 }}>
-            Profile
-          </Text>
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
+      <SafeAreaView style={{ flex: 1 }}>
+        <View style={styles.header}>
+           <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: theme.colors.inputBackground }]}>
+             <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.textPrimary} />
+           </TouchableOpacity>
+           <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>Profile</Text>
+           <View style={{ width: 40 }} />
         </View>
 
-        {/* Profile Card */}
-        <Card isDark={isDark}>
-          <View style={{ alignItems: 'center' }}>
-            <Image
-              source={{
-                uri: user?.profileImage || 'https://avatar.vercel.sh/user?size=100',
-              }}
-              style={{
-                width: 100,
-                height: 100,
-                borderRadius: 50,
-                marginBottom: 12,
-              }}
-            />
-            <Text style={{ fontSize: 20, fontWeight: 'bold', color: colors.text }}>
-              {user?.firstName} {user?.lastName}
-            </Text>
-            <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 4 }}>
-              {user?.email}
-            </Text>
-
-            {/* Rating & Stats */}
-            {user?.userType === 'rider' && (
-              <View
-                style={{
-                  flexDirection: 'row',
-                  gap: 20,
-                  marginTop: 16,
-                  paddingTop: 16,
-                  borderTopWidth: 1,
-                  borderTopColor: colors.border,
-                  width: '100%',
-                  justifyContent: 'center',
-                }}
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          {/* Profile Header */}
+          <View style={styles.profileSection}>
+            <View style={styles.avatarContainer}>
+              <Image 
+                source={{ uri: profileData?.profile_picture_url || `https://ui-avatars.com/api/?name=${profileData?.first_name}&background=FF9101&color=000` }} 
+                style={styles.avatar} 
+              />
+              <TouchableOpacity
+                style={[styles.editBadge, { borderColor: theme.colors.card }]}
+                onPress={handlePickAndUploadAvatar}
+                disabled={uploadingAvatar}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               >
-                <View style={{ alignItems: 'center' }}>
-                  <Text style={{ fontSize: 16, fontWeight: 'bold', color: colors.text }}>
-                    {user?.totalRides || 0}
-                  </Text>
-                  <Text style={{ fontSize: 11, color: colors.textSecondary }}>Rides</Text>
+                 <MaterialCommunityIcons name="pencil" size={14} color="#000" />
+              </TouchableOpacity>
+            </View>
+            {uploadingAvatar ? (
+              <Text style={[styles.uploadingText, { color: theme.colors.textSecondary }]}>Uploading...</Text>
+            ) : null}
+            <Text style={[styles.name, { color: theme.colors.textPrimary }]}>{profileData?.first_name} {profileData?.last_name}</Text>
+            <Text style={[styles.email, { color: theme.colors.textSecondary }]}>{profileData?.email}</Text>
+          </View>
+
+          {/* Stats */}
+          <View style={[styles.statsContainer, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+             <View style={styles.stat}>
+               <Text style={[styles.statNum, { color: theme.colors.textPrimary }]}>0</Text>
+               <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Rides</Text>
+             </View>
+             <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
+             <View style={styles.stat}>
+               <Text style={[styles.statNum, { color: theme.colors.textPrimary }]}>5.0</Text>
+               <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Rating</Text>
+             </View>
+             <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
+             <View style={styles.stat}>
+               <Text style={[styles.statNum, { color: theme.colors.textPrimary }]}>1</Text>
+               <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Years</Text>
+             </View>
+          </View>
+
+          {/* Menu */}
+          <View style={styles.menuContainer}>
+             <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary }]}>ACCOUNT</Text>
+             <MenuItem icon="account-outline" label="Edit Profile" onPress={() => router.push('/rider/edit-profile')} theme={theme} />
+             <MenuItem icon="credit-card-outline" label="Payment Methods" onPress={() => router.push('/rider/payment-methods')} theme={theme} />
+             
+             <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary, marginTop: 24 }]}>PREFERENCES</Text>
+             <View style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+                <View style={styles.menuLeft}>
+                   <View style={[styles.iconBox, { backgroundColor: theme.colors.inputBackground }]}>
+                      <MaterialCommunityIcons name="bell-outline" size={20} color={theme.colors.textPrimary} />
+                   </View>
+                   <Text style={[styles.menuText, { color: theme.colors.textPrimary }]}>Notifications</Text>
                 </View>
-                <View
-                  style={{
-                    width: 1,
-                    backgroundColor: colors.border,
-                  }}
+                <Switch 
+                  value={notifEnabled} 
+                  onValueChange={setNotifEnabled} 
+                  trackColor={{ true: BRAND.primary, false: theme.colors.border }}
+                  thumbColor="#FFF"
                 />
-                <View style={{ alignItems: 'center' }}>
-                  <Text style={{ fontSize: 16, fontWeight: 'bold', color: colors.warning }}>
-                    {user?.rating?.toFixed(1) || '-'}★
-                  </Text>
-                  <Text style={{ fontSize: 11, color: colors.textSecondary }}>Rating</Text>
-                </View>
-              </View>
-            )}
+             </View>
+             <MenuItem icon="shield-check-outline" label="Privacy & Security" onPress={() => router.push('/rider/privacy-settings')} theme={theme} />
+
+             <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary, marginTop: 24 }]}>SUPPORT</Text>
+             <MenuItem icon="help-circle-outline" label="Help & Support" onPress={() => router.push('/rider/help-and-support')} theme={theme} />
+             
+             <TouchableOpacity style={[styles.logoutBtn, { borderColor: COLORS.light.destructive }]} onPress={() => setShowLogout(true)}>
+                <MaterialCommunityIcons name="logout" size={20} color={COLORS.light.destructive} />
+                <Text style={{ color: COLORS.light.destructive, fontWeight: '600' }}>Log Out</Text>
+             </TouchableOpacity>
           </View>
-        </Card>
+        </ScrollView>
+      </SafeAreaView>
 
-        {/* Profile Menu */}
-        <View style={{ paddingHorizontal: 20, marginTop: 20, marginBottom: 20 }}>
-          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text, marginBottom: 12 }}>
-            Account
-          </Text>
-          {profileMenuItems.map((item) => (
-            <TouchableOpacity
-              key={item.id}
-              onPress={item.action}
-              style={{
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                paddingHorizontal: 12,
-                paddingVertical: 12,
-                marginBottom: 8,
-                borderRadius: 8,
-                backgroundColor: colors.background,
-                borderWidth: 1,
-                borderColor: colors.border,
-              }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                <Text style={{ fontSize: 18, marginRight: 12 }}>{item.icon}</Text>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: colors.text }}>
-                  {item.label}
-                </Text>
-              </View>
-              <Text style={{ fontSize: 16, color: colors.textSecondary }}>›</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Settings */}
-        <View style={{ paddingHorizontal: 20, marginBottom: 20 }}>
-          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text, marginBottom: 12 }}>
-            Preferences
-          </Text>
-
-          {/* Notifications Toggle */}
-          <View
-            style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              paddingHorizontal: 12,
-              paddingVertical: 12,
-              marginBottom: 8,
-              borderRadius: 8,
-              backgroundColor: colors.background,
-              borderWidth: 1,
-              borderColor: colors.border,
-            }}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-              <Text style={{ fontSize: 18, marginRight: 12 }}>🔔</Text>
-              <View>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: colors.text }}>
-                  Notifications
-                </Text>
-                <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>
-                  Ride updates & offers
-                </Text>
-              </View>
-            </View>
-            <Switch
-              value={notificationsEnabled}
-              onValueChange={setNotificationsEnabled}
-              trackColor={{ false: colors.border, true: colors.primary + '50' }}
-              thumbColor={notificationsEnabled ? colors.primary : colors.border}
-            />
-          </View>
-
-          {/* Location Sharing Toggle */}
-          <View
-            style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              paddingHorizontal: 12,
-              paddingVertical: 12,
-              marginBottom: 8,
-              borderRadius: 8,
-              backgroundColor: colors.background,
-              borderWidth: 1,
-              borderColor: colors.border,
-            }}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-              <Text style={{ fontSize: 18, marginRight: 12 }}>📍</Text>
-              <View>
-                <Text style={{ fontSize: 13, fontWeight: '500', color: colors.text }}>
-                  Share Location
-                </Text>
-                <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>
-                  With drivers during rides
-                </Text>
-              </View>
-            </View>
-            <Switch
-              value={shareLocationEnabled}
-              onValueChange={setShareLocationEnabled}
-              trackColor={{ false: colors.border, true: colors.primary + '50' }}
-              thumbColor={shareLocationEnabled ? colors.primary : colors.border}
-            />
-          </View>
-
-          {/* Other Settings */}
-          {settingsMenuItems.map((item) => (
-            <TouchableOpacity
-              key={item.id}
-              onPress={item.action}
-              style={{
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                paddingHorizontal: 12,
-                paddingVertical: 12,
-                marginBottom: 8,
-                borderRadius: 8,
-                backgroundColor: colors.background,
-                borderWidth: 1,
-                borderColor: colors.border,
-              }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                <Text style={{ fontSize: 18, marginRight: 12 }}>{item.icon}</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '500', color: colors.text }}>
-                    {item.label}
-                  </Text>
-                  {'value' in item && (
-                    <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>
-                      {item.value}
-                    </Text>
-                  )}
-                </View>
-              </View>
-              <Text style={{ fontSize: 16, color: colors.textSecondary }}>›</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Support & Info */}
-        <View style={{ paddingHorizontal: 20, marginBottom: 20 }}>
-          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text, marginBottom: 12 }}>
-            Support
-          </Text>
-          <TouchableOpacity
-            style={{
-              paddingHorizontal: 12,
-              paddingVertical: 12,
-              borderRadius: 8,
-              backgroundColor: colors.background,
-              borderWidth: 1,
-              borderColor: colors.border,
-              marginBottom: 8,
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            }}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-              <Text style={{ fontSize: 18, marginRight: 12 }}>💬</Text>
-              <Text style={{ fontSize: 13, fontWeight: '500', color: colors.text }}>
-                Help & Support
-              </Text>
-            </View>
-            <Text style={{ fontSize: 16, color: colors.textSecondary }}>›</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={{
-              paddingHorizontal: 12,
-              paddingVertical: 12,
-              borderRadius: 8,
-              backgroundColor: colors.background,
-              borderWidth: 1,
-              borderColor: colors.border,
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            }}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-              <Text style={{ fontSize: 18, marginRight: 12 }}>ℹ️</Text>
-              <Text style={{ fontSize: 13, fontWeight: '500', color: colors.text }}>
-                App Version 1.0.0
-              </Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        {/* Logout Button */}
-        <View style={{ paddingHorizontal: 20, marginBottom: 20 }}>
-          <TouchableOpacity
-            onPress={() => setShowLogoutModal(true)}
-            style={{
-              paddingVertical: 12,
-              borderRadius: 8,
-              borderWidth: 2,
-              borderColor: colors.destructive,
-            }}
-          >
-            <Text
-              style={{
-                textAlign: 'center',
-                fontWeight: '600',
-                color: colors.destructive,
-                fontSize: 14,
-              }}
-            >
-              Log Out
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-
-      {/* Logout Confirmation Modal */}
       <ConfirmationDialog
-        visible={showLogoutModal}
+        visible={showLogout}
         title="Log Out"
-        message="Are you sure you want to log out? You'll need to log in again to access your account."
-        onCancel={() => setShowLogoutModal(false)}
-        onConfirm={async () => {
-          setShowLogoutModal(false);
-          await handleLogout();
-        }}
+        message="Are you sure you want to log out?"
+        onCancel={() => setShowLogout(false)}
+        onConfirm={handleLogout}
         cancelText="Cancel"
         confirmText="Log Out"
-        isDark={isDark}
+        isDark={!isLight}
         type="danger"
       />
-    </SafeAreaView>
+    </View>
   );
 }
+
+const MenuItem = ({ icon, label, onPress, theme }: any) => (
+  <TouchableOpacity onPress={onPress} style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+    <View style={styles.menuLeft}>
+       <View style={[styles.iconBox, { backgroundColor: theme.colors.inputBackground }]}>
+          <MaterialCommunityIcons name={icon} size={20} color={theme.colors.textPrimary} />
+       </View>
+       <Text style={[styles.menuText, { color: theme.colors.textPrimary }]}>{label}</Text>
+    </View>
+    <MaterialCommunityIcons name="chevron-right" size={20} color={theme.colors.textSecondary} />
+  </TouchableOpacity>
+);
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 10 },
+  backBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
+  headerTitle: { fontSize: 18, fontWeight: '700' },
+  content: { paddingBottom: 40 },
+  profileSection: { alignItems: 'center', marginTop: 10, marginBottom: 24 },
+  avatarContainer: { position: 'relative', marginBottom: 16 },
+  avatar: { width: 100, height: 100, borderRadius: 50, borderWidth: 4, borderColor: BRAND.primary },
+  editBadge: { position: 'absolute', bottom: 0, right: 0, backgroundColor: BRAND.primary, width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#FFF' },
+  uploadingText: { fontSize: 12, marginTop: -8, marginBottom: 8, fontWeight: '500' },
+  name: { fontSize: 22, fontWeight: '800', marginBottom: 4 },
+  email: { fontSize: 14 },
+  statsContainer: { flexDirection: 'row', marginHorizontal: 20, borderRadius: 16, padding: 16, borderWidth: 1, marginBottom: 24 },
+  stat: { flex: 1, alignItems: 'center' },
+  statNum: { fontSize: 18, fontWeight: '700', marginBottom: 4 },
+  statLabel: { fontSize: 12 },
+  divider: { width: 1, height: '100%' },
+  menuContainer: { paddingHorizontal: 20 },
+  sectionLabel: { fontSize: 12, fontWeight: '700', marginBottom: 8, marginLeft: 4 },
+  menuItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderRadius: 12, marginBottom: 8, borderWidth: 1 },
+  menuLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  iconBox: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  menuText: { fontSize: 14, fontWeight: '600' },
+  logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, borderRadius: 12, borderWidth: 1, marginTop: 20, gap: 8 },
+});

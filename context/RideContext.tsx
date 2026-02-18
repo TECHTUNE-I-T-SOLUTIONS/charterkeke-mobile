@@ -1,8 +1,7 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { apiService } from '@services/api';
-import { cacheService } from '@services/cache';
-import { syncService } from '@services/sync';
-import { Ride, RideRequest, Review } from '@types/index';
+import { apiService } from '@/services/api';
+import { cacheService } from '@/services/cache';
+import { Ride, RideRequest } from '@/types';
 
 interface RideContextType {
   currentRide: Ride | null;
@@ -16,7 +15,7 @@ interface RideContextType {
   completeRide: (rideId: string) => Promise<Ride>;
   getRideDetails: (rideId: string) => Promise<Ride>;
   getAvailableRides: (latitude: number, longitude: number) => Promise<Ride[]>;
-  getRideHistory: (page?: number) => Promise<Ride[]>;
+  getRideHistory: (limit?: number) => Promise<Ride[]>;
   submitRating: (rideId: string, rating: number, review?: string) => Promise<void>;
   setCurrentRide: (ride: Ride | null) => void;
   clearError: () => void;
@@ -146,12 +145,13 @@ export const RideProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const handleGetRideHistory = async (page: number = 1): Promise<Ride[]> => {
+  const handleGetRideHistory = async (limit: number = 20): Promise<Ride[]> => {
     try {
       setError(null);
       setIsLoading(true);
-      const rides = await apiService.getRiderRides(page);
-      setRecentRides(rides);
+      const data = await apiService.getRiderRides(limit);
+      const rides = data.rides || [];
+      setRecentRides(rides || []);
 
       // Cache rides
       for (const ride of rides) {

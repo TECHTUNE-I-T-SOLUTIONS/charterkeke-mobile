@@ -1,4 +1,3 @@
-// 'use client';
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -6,386 +5,183 @@ import {
   Text,
   ScrollView,
   TouchableOpacity,
-  FlatList,
-  Switch,
   Dimensions,
   Animated,
   ActivityIndicator,
+  StyleSheet,
+  StatusBar,
 } from 'react-native';
-import { useTheme } from '@context/ThemeContext';
+import { useTheme } from '@/context/ThemeContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import Card from '@/components/ui/Card';
-import Button from '@/components/ui/Button';
-import RiderBottomNavigation from '@/components/RiderBottomNavigation';
 import { apiService } from '@/services/api';
-import { COLORS } from '@/utils/colors';
-import { STATUS_COLORS } from '@/utils/colors';
+import { cacheService } from '@/services/cache';
+import { ListScreenSkeleton } from '@/components/ListScreenSkeleton';
+import { BRAND, COLORS } from '@/utils/colors';
 
 const { width } = Dimensions.get('window');
-const scale = (size: number) => (width / 375) * size;
-
-type ColorScheme = typeof COLORS.light;
 
 export default function DriverEarningsScreen() {
-  const { mode } = useTheme();
+  const { theme, mode } = useTheme();
   const [timeFilter, setTimeFilter] = useState<'today' | 'week' | 'month'>('today');
-  const [isOnline, setIsOnline] = useState(true);
   const [earningsData, setEarningsData] = useState<any>(null);
-  const [recentRides, setRecentRides] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const scaleAnim = React.useRef(new Animated.Value(0)).current;
+  const [hasCached, setHasCached] = useState(false);
 
-  const colors = mode === 'dark' ? COLORS.dark : COLORS.light;
-
-  useEffect(() => {
-    Animated.spring(scaleAnim, {
-      toValue: 1,
-      useNativeDriver: true,
-      speed: 8,
-    }).start();
-  }, [scaleAnim]);
+  const isLight = theme.mode === 'light';
 
   useEffect(() => {
-    fetchEarningsData();
+    Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, speed: 8 }).start();
+  }, []);
+
+  useEffect(() => {
+    loadEarnings();
   }, [timeFilter]);
 
-  const fetchEarningsData = async () => {
-    try {
-      setLoading(true);
-      console.log(`📊 [EARNINGS] Fetching earnings for timeframe: ${timeFilter}`);
-      
-      // Map frontend filter names to backend parameter values
-      const timeframeMap: Record<string, string> = {
-        'today': 'day',
-        'week': 'week',
-        'month': 'month'
-      };
-      
-      const timeframeValue = timeframeMap[timeFilter] || 'day';
-      // Note: DO NOT include /api/ prefix - baseURL already has it
-      const data = await apiService.get(`/driver/earnings?timeframe=${timeframeValue}`);
-      console.log('✅ [EARNINGS] Earnings data:', data);
-      
-      // Backend returns { earnings: {...} }
-      setEarningsData(data.earnings || {});
-      setRecentRides(data.recentRides || []);
-    } catch (error) {
-      console.error('❌ [EARNINGS] Error fetching earnings:', error);
-      setEarningsData({});
-      setRecentRides([]);
-    } finally {
+  const loadEarnings = async () => {
+    const cacheKey = `driver_earnings_${timeFilter}`;
+    const cached = await cacheService.get<any>(cacheKey);
+    if (cached) {
+      setEarningsData(cached);
+      setHasCached(true);
       setLoading(false);
+    }
+
+    await fetchEarningsData(!cached, cacheKey);
+  };
+
+  const fetchEarningsData = async (showLoader: boolean = true, cacheKey?: string) => {
+    try {
+      if (showLoader) setLoading(true);
+      const timeframeMap: Record<string, string> = { 'today': 'day', 'week': 'week', 'month': 'month' };
+      const data = await apiService.get(`/driver/earnings?timeframe=${timeframeMap[timeFilter]}`);
+      const nextData = data.earnings || {};
+      setEarningsData(nextData);
+      if (cacheKey) {
+        await cacheService.set(cacheKey, nextData);
+      }
+    } catch (error) {
+      setEarningsData({});
+    } finally {
+      if (showLoader) setLoading(false);
     }
   };
 
-  const currentData = earningsData?.[timeFilter] || { total: 0, rides: 0, avgRating: 0, distances: 0, onlineTime: 0, estimate: 0 };
-
-  const handleWithdraw = () => {
-    // Navigate to withdrawal screen
-  };
+  const currentData = earningsData?.[timeFilter] || { total: 0, rides: 0, avgRating: 0, distances: 0, onlineTime: 0 };
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
       <SafeAreaView style={{ flex: 1 }}>
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: scale(100) }}>
-        {/* Header with Online Status */}
-        <LinearGradient
-          colors={mode === 'dark' ? ['rgba(30, 30, 30, 0.8)', 'rgba(20, 20, 20, 0.6)'] : ['rgba(240, 240, 240, 0.8)', 'rgba(255, 255, 255, 0.6)']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={{
-            paddingHorizontal: scale(20),
-            paddingVertical: scale(16),
-            borderBottomWidth: 1,
-            borderBottomColor: colors.border,
-            flexDirection: 'row',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
-          <View>
-            <Text style={{ fontSize: scale(28), fontWeight: 'bold', color: colors.foreground }}>
-              Earnings
-            </Text>
-            <Text style={{ fontSize: scale(12), color: colors.secondary, marginTop: 2 }}>
-              Track your daily income
-            </Text>
-          </View>
-          <View
-            style={{
-              alignItems: 'center',
-              paddingHorizontal: scale(12),
-              paddingVertical: scale(8),
-              borderRadius: scale(8),
-              backgroundColor: isOnline ? colors.primary + '15' : colors.secondary + '15',
-            }}
-          >
-            <Switch
-              value={isOnline}
-              onValueChange={setIsOnline}
-              trackColor={{ false: colors.border, true: colors.primary + '40' }}
-              thumbColor={isOnline ? colors.primary : colors.secondary}
-              style={{ marginBottom: 4 }}
-            />
-            <Text
-              style={{
-                fontSize: scale(10),
-                color: isOnline ? colors.primary : colors.secondary,
-                fontWeight: '600',
-              }}
+        <View style={styles.header}>
+           <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>Earnings</Text>
+        </View>
+
+        {loading ? (
+          <ListScreenSkeleton itemCount={4} />
+        ) : (
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+          
+          {/* Main Card */}
+          <Animated.View style={[styles.mainCard, { transform: [{ scale: scaleAnim }] }]}>
+            <LinearGradient
+              colors={[BRAND.primary, '#E68200']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.cardGradient}
             >
-              {isOnline ? 'Online' : 'Offline'}
-            </Text>
-          </View>
-        </LinearGradient>
-
-        {/* Main Earnings Card */}
-        <Animated.View style={{ paddingHorizontal: scale(20), marginTop: scale(20), marginBottom: scale(12), transform: [{ scale: scaleAnim }] }}>
-          <LinearGradient
-            colors={[colors.primary, colors.primary + 'DD']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={{
-              paddingHorizontal: scale(20),
-              paddingVertical: scale(24),
-              borderRadius: scale(12),
-              shadowColor: colors.primary,
-              shadowOpacity: 0.3,
-              shadowRadius: 8,
-              elevation: 5,
-            }}
-          >
-            <Text style={{ fontSize: scale(12), color: '#ffffff80', marginBottom: 8 }}>
-              Total Earnings ({timeFilter === 'today' ? 'Today' : timeFilter === 'week' ? 'This Week' : 'This Month'})
-            </Text>
-            <Text style={{ fontSize: scale(40), fontWeight: 'bold', color: '#ffffff', marginBottom: scale(20) }}>
-              ₦{currentData.total.toLocaleString()}
-            </Text>
-
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <View>
-                <Text style={{ fontSize: scale(11), color: '#ffffff80', marginBottom: 4 }}>
-                  Trips
-                </Text>
-                <Text style={{ fontSize: scale(18), fontWeight: 'bold', color: '#ffffff' }}>
-                  {currentData.rides}
-                </Text>
+              <Text style={styles.cardLabel}>Total Earnings</Text>
+              <Text style={styles.balanceText}>₦{currentData.total.toLocaleString()}</Text>
+              
+              <View style={styles.statsRow}>
+                 <View>
+                    <Text style={styles.statLabel}>Trips</Text>
+                    <Text style={styles.statValue}>{currentData.rides}</Text>
+                 </View>
+                 <View>
+                    <Text style={styles.statLabel}>Hrs Online</Text>
+                    <Text style={styles.statValue}>{Math.floor((currentData.onlineTime || 0) / 60)}h</Text>
+                 </View>
+                 <View>
+                    <Text style={styles.statLabel}>Rating</Text>
+                    <Text style={styles.statValue}>{currentData.avgRating}★</Text>
+                 </View>
               </View>
-              <View>
-                <Text style={{ fontSize: scale(11), color: '#ffffff80', marginBottom: 4 }}>
-                  Distance
-                </Text>
-                <Text style={{ fontSize: scale(18), fontWeight: 'bold', color: '#ffffff' }}>
-                  {currentData.distances} km
-                </Text>
-              </View>
-              <View>
-                <Text style={{ fontSize: scale(11), color: '#ffffff80', marginBottom: 4 }}>
-                  Rating
-                </Text>
-                <Text style={{ fontSize: scale(18), fontWeight: 'bold', color: '#ffffff' }}>
-                  {currentData.avgRating}★
-                </Text>
-              </View>
-            </View>
-          </LinearGradient>
-        </Animated.View>
+            </LinearGradient>
+          </Animated.View>
 
-        {/* Time Filter */}
-        <View style={{ paddingHorizontal: scale(20), flexDirection: 'row', gap: scale(8), marginBottom: scale(20) }}>
-          {['today', 'week', 'month'].map((filter) => (
-            <TouchableOpacity
-              key={filter}
-              onPress={() => setTimeFilter(filter as 'today' | 'week' | 'month')}
-              style={{
-                paddingHorizontal: scale(16),
-                paddingVertical: scale(8),
-                borderRadius: scale(8),
-                backgroundColor: timeFilter === filter ? colors.primary : colors.border + '30',
-              }}
-            >
-              <Text
-                style={{
-                  fontSize: scale(12),
-                  fontWeight: '600',
-                  color: timeFilter === filter ? '#ffffff' : colors.mutedForeground,
-                  textTransform: 'capitalize',
-                }}
+          {/* Filters */}
+          <View style={styles.filterRow}>
+            {['today', 'week', 'month'].map((filter) => (
+              <TouchableOpacity
+                key={filter}
+                onPress={() => setTimeFilter(filter as any)}
+                style={[
+                  styles.filterBtn,
+                  timeFilter === filter ? { backgroundColor: BRAND.primary } : { backgroundColor: theme.colors.card, borderWidth: 1, borderColor: theme.colors.border }
+                ]}
               >
-                {filter === 'today' ? 'Today' : filter === 'week' ? 'Week' : 'Month'}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Quick Stats */}
-        <View style={{ paddingHorizontal: scale(20), gap: scale(12), marginBottom: scale(20) }}>
-          <Card isDark={mode === 'dark'}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <View>
-                <Text style={{ fontSize: scale(12), color: colors.mutedForeground, marginBottom: 8, fontWeight: '500' }}>
-                  Online Time
+                <Text style={[styles.filterText, { color: timeFilter === filter ? '#000' : theme.colors.textSecondary }]}>
+                  {filter.charAt(0).toUpperCase() + filter.slice(1)}
                 </Text>
-                <Text style={{ fontSize: scale(18), fontWeight: 'bold', color: colors.foreground }}>
-                  {Math.floor((currentData.onlineTime || 0) / 60)}h {(currentData.onlineTime || 0) % 60}m
-                </Text>
-              </View>
-              <View>
-                <Text style={{ fontSize: scale(12), color: colors.mutedForeground, marginBottom: 8, fontWeight: '500' }}>
-                  Avg Per Trip
-                </Text>
-                <Text style={{ fontSize: scale(18), fontWeight: 'bold', color: colors.foreground }}>
-                  ₦{currentData.rides > 0 ? Math.floor(currentData.total / currentData.rides).toLocaleString() : '0'}
-                </Text>
-              </View>
-              <View>
-                <Text style={{ fontSize: scale(12), color: colors.mutedForeground, marginBottom: 8, fontWeight: '500' }}>
-                  Hourly Rate
-                </Text>
-                <Text style={{ fontSize: scale(18), fontWeight: 'bold', color: colors.foreground }}>
-                  ₦{(currentData.onlineTime || 0) > 0 ? Math.floor((currentData.total / currentData.onlineTime) * 60).toLocaleString() : '0'}
-                </Text>
-              </View>
-            </View>
-          </Card>
-        </View>
+              </TouchableOpacity>
+            ))}
+          </View>
 
-        {/* Commission Info */}
-        <View style={{ paddingHorizontal: scale(20), marginBottom: scale(20) }}>
-          <Card isDark={mode === 'dark'}>
-            <View style={{ marginBottom: scale(12) }}>
-              <Text style={{ fontSize: scale(12), color: colors.mutedForeground, marginBottom: 4, fontWeight: '500' }}>
-                Platform Commission Rate
-              </Text>
-              <Text style={{ fontSize: scale(16), fontWeight: 'bold', color: colors.foreground }}>
-                20%
-              </Text>
-            </View>
-            <View
-              style={{
-                paddingHorizontal: scale(12),
-                paddingVertical: scale(10),
-                backgroundColor: colors.background,
-                borderRadius: scale(6),
-                marginTop: scale(12),
-              }}
-            >
-              <Text style={{ fontSize: scale(11), color: colors.mutedForeground, lineHeight: scale(16) }}>
-                Your earnings are calculated as 80% of the ride fare. Commission helps us maintain the platform and insurance.
-              </Text>
-            </View>
-          </Card>
-        </View>
+          {/* Detailed Stats */}
+          <View style={styles.detailsContainer}>
+             <DetailCard label="Avg. per Trip" value={`₦${currentData.rides > 0 ? Math.floor(currentData.total / currentData.rides).toLocaleString() : '0'}`} icon="cash-multiple" theme={theme} />
+             <DetailCard label="Hourly Rate" value={`₦${(currentData.onlineTime || 0) > 0 ? Math.floor((currentData.total / currentData.onlineTime) * 60).toLocaleString() : '0'}`} icon="clock-time-four-outline" theme={theme} />
+             <DetailCard label="Total Distance" value={`${currentData.distances} km`} icon="map-marker-distance" theme={theme} />
+          </View>
 
-        {/* Recent Rides Breakdown */}
-        <View style={{ paddingHorizontal: scale(20), marginTop: scale(20), marginBottom: scale(12) }}>
-          <Text style={{ fontSize: scale(16), fontWeight: 'bold', color: colors.foreground, marginBottom: scale(12) }}>
-            Recent Trips
-          </Text>
-
-          <FlatList
-            data={recentRides}
-            scrollEnabled={false}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item, index }) => (
-              <View
-                key={item.id}
-                style={{
-                  paddingHorizontal: scale(12),
-                  paddingVertical: scale(12),
-                  borderRadius: scale(8),
-                  backgroundColor: colors.background,
-                  marginBottom: index < recentRides.length - 1 ? scale(8) : 0,
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                }}
-              >
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: scale(8) }}>
-                  <View>
-                    <Text style={{ fontSize: scale(13), fontWeight: '600', color: colors.foreground, marginBottom: 2 }}>
-                      {item.rider}
-                    </Text>
-                    <Text style={{ fontSize: scale(11), color: colors.mutedForeground }}>
-                      {item.time} • {item.distance} • {item.duration}
-                    </Text>
-                  </View>
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <View style={{ flexDirection: 'row', marginBottom: 2 }}>
-                      {[...Array(5)].map((_, i) => (
-                        <Text key={i} style={{ fontSize: scale(12), color: i < item.rating ? STATUS_COLORS.warning : colors.border }}>
-                          ★
-                        </Text>
-                      ))}
-                    </View>
-                    <Text style={{ fontSize: scale(12), fontWeight: '600', color: STATUS_COLORS.success }}>
-                      +₦{item.earnings}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingTop: scale(8), borderTopWidth: 1, borderTopColor: colors.border }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: scale(10), color: colors.mutedForeground }}>
-                      Fare
-                    </Text>
-                    <Text style={{ fontSize: scale(12), fontWeight: '600', color: colors.foreground }}>
-                      ₦{item.fare}
-                    </Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: scale(10), color: colors.mutedForeground }}>
-                      Commission
-                    </Text>
-                    <Text style={{ fontSize: scale(12), fontWeight: '600', color: STATUS_COLORS.error }}>
-                      -₦{item.commission}
-                    </Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: scale(10), color: colors.mutedForeground }}>
-                      You Earn
-                    </Text>
-                    <Text style={{ fontSize: scale(12), fontWeight: 'bold', color: STATUS_COLORS.success }}>
-                      ₦{item.earnings}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            )}
-          />
-        </View>
-
-        {/* Withdraw Button */}
-        <View style={{ paddingHorizontal: scale(20), gap: scale(12), marginTop: scale(20) }}>
-          <Button
-            title={`Withdraw ₦${(currentData.total * 0.9).toFixed(0)}`}
-            onPress={handleWithdraw}
-            isDark={mode === 'dark'}
-          />
-          <TouchableOpacity
-            style={{
-              paddingVertical: scale(12),
-              borderRadius: scale(8),
-              borderWidth: 1,
-              borderColor: colors.border,
-            }}
-          >
-            <Text
-              style={{
-                textAlign: 'center',
-                fontWeight: '600',
-                color: colors.mutedForeground,
-                fontSize: scale(14),
-              }}
-            >
-              View Full History
-            </Text>
-          </TouchableOpacity>
-        </View>
-        </ScrollView>
+          {/* Info Box */}
+          <View style={[styles.infoBox, { backgroundColor: theme.colors.inputBackground }]}>
+             <MaterialCommunityIcons name="information-outline" size={20} color={theme.colors.textSecondary} />
+             <Text style={[styles.infoText, { color: theme.colors.textSecondary }]}>
+               Earnings are calculated after deducting the platform fee (20%).
+             </Text>
+          </View>
+          </ScrollView>
+        )}
       </SafeAreaView>
-      <RiderBottomNavigation />
     </View>
   );
 }
+
+const DetailCard = ({ label, value, icon, theme }: any) => (
+  <View style={[styles.detailCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+     <View style={[styles.detailIcon, { backgroundColor: theme.colors.inputBackground }]}>
+        <MaterialCommunityIcons name={icon} size={20} color={theme.colors.textPrimary} />
+     </View>
+     <View>
+       <Text style={[styles.detailLabel, { color: theme.colors.textSecondary }]}>{label}</Text>
+       <Text style={[styles.detailValue, { color: theme.colors.textPrimary }]}>{value}</Text>
+     </View>
+  </View>
+);
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  header: { padding: 20 },
+  headerTitle: { fontSize: 28, fontWeight: '800' },
+  mainCard: { marginHorizontal: 20, marginBottom: 20 },
+  cardGradient: { borderRadius: 20, padding: 24, elevation: 8, shadowColor: BRAND.primary, shadowOpacity: 0.3, shadowOffset: { width: 0, height: 8 } },
+  cardLabel: { fontSize: 14, color: 'rgba(0,0,0,0.6)', fontWeight: '600' },
+  balanceText: { fontSize: 40, fontWeight: '800', color: '#000', marginVertical: 8 },
+  statsRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 16 },
+  statLabel: { fontSize: 12, color: 'rgba(0,0,0,0.6)' },
+  statValue: { fontSize: 18, fontWeight: '700', color: '#000' },
+  filterRow: { flexDirection: 'row', paddingHorizontal: 20, gap: 10, marginBottom: 20 },
+  filterBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  filterText: { fontWeight: '600', fontSize: 13 },
+  detailsContainer: { paddingHorizontal: 20, gap: 12 },
+  detailCard: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 16, borderWidth: 1, gap: 16 },
+  detailIcon: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
+  detailLabel: { fontSize: 12 },
+  detailValue: { fontSize: 18, fontWeight: '700' },
+  infoBox: { margin: 20, padding: 16, borderRadius: 12, flexDirection: 'row', gap: 12, alignItems: 'center' },
+  infoText: { flex: 1, fontSize: 12, lineHeight: 18 },
+});

@@ -8,7 +8,7 @@ import {
   Dimensions,
   RefreshControl,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
@@ -16,7 +16,6 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useAuth } from '@/context/AuthContext';
 import { useLocation } from '@/context/LocationContext';
 import { useTheme } from '@/context/ThemeContext';
-import RiderBottomNavigation from '@/components/RiderBottomNavigation';
 import { COLORS } from '@/utils/colors';
 
 const { width, height } = Dimensions.get('window');
@@ -45,6 +44,7 @@ export default function ActiveRideScreen() {
   const { theme } = useTheme();
   const { user } = useAuth();
   const { currentLocation } = useLocation();
+  const { rideId } = useLocalSearchParams<{ rideId: string }>();
   const [activeRide, setActiveRide] = useState<ActiveRide | null>(null);
   const [driverLocation, setDriverLocation] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -55,17 +55,33 @@ export default function ActiveRideScreen() {
 
   useEffect(() => {
     fetchActiveRide();
-  }, []);
+  }, [rideId]);
 
   const fetchActiveRide = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/user/active-rides');
+      let res;
+      
+      // If rideId is provided via deep-link, fetch that specific ride
+      if (rideId) {
+        res = await fetch(`/api/user/active-rides/${rideId}`);
+      } else {
+        // Otherwise fetch the current active ride
+        res = await fetch('/api/user/active-rides');
+      }
+      
       const data = await res.json();
       
       if (data.rides && data.rides.length > 0) {
         setActiveRide(data.rides[0]);
         // Simulate driver location for demo
+        setDriverLocation({
+          latitude: (currentLocation?.latitude || 6.5244) + Math.random() * 0.02,
+          longitude: (currentLocation?.longitude || 3.3792) + Math.random() * 0.02,
+        });
+      } else if (data.ride) {
+        // Handle single ride response
+        setActiveRide(data.ride);
         setDriverLocation({
           latitude: (currentLocation?.latitude || 6.5244) + Math.random() * 0.02,
           longitude: (currentLocation?.longitude || 3.3792) + Math.random() * 0.02,
@@ -177,13 +193,7 @@ export default function ActiveRideScreen() {
           style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 20 }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-            <TouchableOpacity onPress={() => router.back()}>
-              <MaterialCommunityIcons
-                name="arrow-left"
-                size={28}
-                color={isDark ? '#000000' : '#FFFFFF'}
-              />
-            </TouchableOpacity>
+            <View style={{ width: 28 }} />
             <Text
               style={{
                 fontSize: 20,
@@ -560,9 +570,6 @@ export default function ActiveRideScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
-
-      {/* Bottom Navigation */}
-      <RiderBottomNavigation />
     </SafeAreaView>
   );
 }

@@ -1,6 +1,5 @@
-// 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,535 +7,288 @@ import {
   TouchableOpacity,
   Image,
   Switch,
-  Linking,
-  ActivityIndicator,
-  Dimensions,
+  Alert,
+  StyleSheet,
+  StatusBar,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import Card from '@/components/ui/Card';
-import Button from '@/components/ui/Button';
-import RiderBottomNavigation from '@/components/RiderBottomNavigation';
+import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
+import ConfirmationDialog from '@/components/ui/ConfirmationDialog';
+import { ProfileSkeleton } from '@/components/ProfileSkeleton';
 import { apiService } from '@/services/api';
-import { COLORS } from '@/utils/colors';
+import { cacheService } from '@/services/cache';
+import { BRAND, COLORS } from '@/utils/colors';
 
-const { width } = Dimensions.get('window');
-const scale = (size: number) => (width / 375) * size;
+interface ProfileData {
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone_number: string;
+  profile_picture_url?: string;
+  total_rides_completed?: number;
+  average_rating?: number;
+}
 
 export default function DriverProfileScreen() {
   const router = useRouter();
-  const { user, logout, clearCache } = useAuth();
-  const { mode } = useTheme();
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [locationSharing, setLocationSharing] = useState(true);
-  const [showLogoutModal, setShowLogoutModal] = useState(false);
-  const [driverDetails, setDriverDetails] = useState<any>(null);
+  const { logout, clearCache, user } = useAuth();
+  const { theme, mode } = useTheme();
+  
+  const [profileData, setProfileData] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showLogout, setShowLogout] = useState(false);
+  const [notifEnabled, setNotifEnabled] = useState(true);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const renderedOnce = useRef(false);
+  const [hasCached, setHasCached] = useState(false);
 
-  const colors = mode === 'dark' ? COLORS.dark : COLORS.light;
+  const isLight = theme.mode === 'light';
 
   useFocusEffect(
     React.useCallback(() => {
-      fetchDriverDetails();
+      if (!renderedOnce.current) {
+        renderedOnce.current = true;
+        loadProfile();
+      }
     }, [])
   );
 
-  const fetchDriverDetails = async () => {
-    try {
-      setLoading(true);
-      const data = await apiService.getDriverDetails();
-      console.log('✅ [DRIVER-PROFILE] Fetched driver details:', data);
-      // Use the 'combined' property which has all merged driver + user data
-      // Fallback: use driver data or user data if combined is not available
-      const mergedData = data.combined || data.driver || data.user || data;
-      setDriverDetails(mergedData);
-    } catch (error) {
-      console.error('❌ [DRIVER-PROFILE] Error fetching driver details:', error);
-      setDriverDetails(user);
-    } finally {
+  const loadProfile = async () => {
+    const cached = await cacheService.get<ProfileData>('driver_profile');
+    if (cached) {
+      setProfileData(cached);
+      setHasCached(true);
       setLoading(false);
     }
+
+    await fetchProfile(!cached);
+  };
+
+  const fetchProfile = async (showLoader: boolean = true) => {
+    try {
+      if (showLoader) setLoading(true);
+      const res = await apiService.getDriverDetails();
+      const data = res.driver || res.user || res;
+      const nextProfile: ProfileData = {
+        first_name: data?.first_name || (user as any)?.first_name || (user as any)?.firstName || '',
+        last_name: data?.last_name || (user as any)?.last_name || (user as any)?.lastName || '',
+        email: data?.email || (user as any)?.email || '',
+        phone_number: data?.phone_number || (user as any)?.phone_number || (user as any)?.phone || '',
+        profile_picture_url:
+          data?.profile_picture_url ||
+          data?.avatar ||
+          (user as any)?.profile_picture_url ||
+          (user as any)?.avatar ||
+          (user as any)?.photo_url,
+        total_rides_completed: data?.total_rides_completed || data?.rides_completed,
+        average_rating: data?.average_rating || data?.rating,
+      };
+
+      setProfileData(nextProfile);
+      await cacheService.set('driver_profile', nextProfile);
+    } catch (error) { console.error(error); } 
+    finally { if (showLoader) setLoading(false); }
   };
 
   const handleLogout = async () => {
     try {
-      console.log('📤 [DRIVER-PROFILE] Logging out...');
-      router.replace('/');
       if (clearCache) await clearCache();
       await logout();
-      console.log('✅ [DRIVER-PROFILE] Logout successful');
+      router.replace('/auth/welcome');
+    } catch (e) { Alert.alert('Error', 'Logout failed'); }
+  };
+
+  const handlePickAndUploadAvatar = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission required', 'Please allow photo library access to upload your profile picture.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.8,
+      });
+
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      const fileName = asset.fileName || asset.uri.split('/').pop() || 'avatar.jpg';
+      const fileType = asset.mimeType || 'image/jpeg';
+
+      const formData = new FormData();
+      formData.append('profilePicture', {
+        uri: asset.uri,
+        type: fileType,
+        name: fileName,
+      } as any);
+
+      setUploadingAvatar(true);
+      const response: any = await apiService.post('/user/profile/avatar', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      const newUrl = response?.user?.profile_picture_url;
+      if (newUrl) {
+        const next = {
+          ...(profileData || {
+            first_name: '',
+            last_name: '',
+            email: '',
+            phone_number: '',
+          }),
+          profile_picture_url: newUrl,
+        };
+
+        setProfileData(next);
+        await cacheService.set('driver_profile', next);
+      }
+
+      Alert.alert('Success', 'Profile picture updated successfully.');
     } catch (error) {
-      console.error('❌ [DRIVER-PROFILE] Logout error:', error);
+      console.error('Driver avatar upload failed:', error);
+      Alert.alert('Upload Failed', 'Unable to update profile picture. Please try again.');
+    } finally {
+      setUploadingAvatar(false);
     }
   };
 
-  const handleCallSupport = () => {
-    Linking.openURL('tel:+2341234567890');
-  };
-
-  if (loading) {
-    return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </SafeAreaView>
-    );
-  }
-
-  const driverData = driverDetails || {};
-
-  const menuItems = [
-    { title: 'Edit Profile', icon: '✏️' },
-    { title: 'Verify Documents', icon: '✅' },
-    { title: 'Vehicle Details', icon: '🚗' },
-    { title: 'Bank Accounts', icon: '🏦' },
-  ];
-
-  const settingsItems = [
-    { title: 'Language', value: 'English', icon: '🌐' },
-    { title: 'Currency', value: 'NGN (₦)', icon: '💱' },
-    { title: 'Privacy Policy', icon: '🔒' },
-    { title: 'Terms & Conditions', icon: '📋' },
-  ];
+  if (loading) return <SafeAreaView style={{flex:1, backgroundColor: theme.colors.background}}><ProfileSkeleton isDark={!isLight}/></SafeAreaView>;
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
       <SafeAreaView style={{ flex: 1 }}>
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: scale(100) }}>
-        {/* Header */}
-        <LinearGradient
-          colors={mode === 'dark' ? ['rgba(30, 30, 30, 0.8)', 'rgba(20, 20, 20, 0.6)'] : ['rgba(240, 240, 240, 0.8)', 'rgba(255, 255, 255, 0.6)']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={{
-            paddingHorizontal: scale(20),
-            paddingVertical: scale(16),
-            borderBottomWidth: 1,
-            borderBottomColor: colors.border,
-            flexDirection: 'row',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
-          <TouchableOpacity onPress={() => router.back()}>
-            <MaterialCommunityIcons name="chevron-left" size={scale(24)} color={colors.foreground} />
-          </TouchableOpacity>
-          <Text style={{ fontSize: scale(24), fontWeight: 'bold', color: colors.foreground }}>
-            Profile
-          </Text>
-          <TouchableOpacity
-            style={{
-              width: scale(44),
-              height: scale(44),
-              borderRadius: scale(8),
-              backgroundColor: colors.card,
-              justifyContent: 'center',
-              alignItems: 'center',
-            }}
-          >
-            <MaterialCommunityIcons name="cog" size={scale(20)} color={colors.primary} />
-          </TouchableOpacity>
-        </LinearGradient>
-
-        {/* Profile Header Card */}
-        <View style={{ marginHorizontal: scale(16), marginTop: scale(16), marginBottom: scale(16) }}>
-          <View style={{ backgroundColor: colors.card, borderRadius: scale(16), padding: scale(16), borderWidth: 1, borderColor: colors.border }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: scale(16) }}>
-              <Image
-                source={{ uri: driverData?.profile_picture_url || driverData?.avatar || 'https://via.placeholder.com/200' }}
-                style={{
-                  width: scale(80),
-                  height: scale(80),
-                  borderRadius: scale(40),
-                  marginRight: scale(16),
-                  backgroundColor: colors.border,
-                }}
-              />
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={{
-                    fontSize: scale(18),
-                    fontWeight: 'bold',
-                    color: colors.foreground,
-                    marginBottom: 4,
-                  }}
-                >
-                  {driverData?.first_name || 'Driver'} {driverData?.last_name || ''}
-                </Text>
-                <Text style={{ fontSize: scale(12), color: colors.mutedForeground, marginBottom: 2 }}>
-                  {driverData?.email || user?.email || ''}
-                </Text>
-                <Text style={{ fontSize: scale(11), color: colors.mutedForeground }}>
-                  {driverData?.vehicle_type ? driverData.vehicle_type.toUpperCase() : 'Vehicle'} • {driverData?.plate_number || 'N/A'}
-                </Text>
-              </View>
-            </View>
-
-            {/* Stats Grid */}
-            <View
-              style={{
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                paddingTop: scale(16),
-                borderTopWidth: 1,
-                borderTopColor: colors.border,
-              }}
-            >
-              <View style={{ flex: 1, alignItems: 'center' }}>
-                <Text style={{ fontSize: scale(12), color: colors.mutedForeground, marginBottom: 4 }}>
-                  Rating
-                </Text>
-                <Text style={{ fontSize: scale(18), fontWeight: 'bold', color: '#f59e0b' }}>
-                  {(driverData?.average_rating || 5).toFixed(1)}★
-                </Text>
-              </View>
-              <View
-                style={{
-                  width: 1,
-                  backgroundColor: colors.border,
-                }}
-              />
-              <View style={{ flex: 1, alignItems: 'center' }}>
-                <Text style={{ fontSize: scale(12), color: colors.mutedForeground, marginBottom: 4 }}>
-                  Total Rides
-                </Text>
-                <Text style={{ fontSize: scale(18), fontWeight: 'bold', color: colors.primary }}>
-                  {driverData?.total_rides_completed || 0}
-                </Text>
-              </View>
-              <View
-                style={{
-                  width: 1,
-                  backgroundColor: colors.border,
-                }}
-              />
-              <View style={{ flex: 1, alignItems: 'center' }}>
-                <Text style={{ fontSize: scale(12), color: colors.mutedForeground, marginBottom: 4 }}>
-                  Earnings
-                </Text>
-                <Text style={{ fontSize: scale(16), fontWeight: 'bold', color: '#10b981' }}>
-                  ₦{(driverData?.total_earnings || 0).toLocaleString()}
-                </Text>
-              </View>
-            </View>
-          </View>
+        <View style={styles.header}>
+           <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>Profile</Text>
         </View>
 
-        {/* Driver Details Card */}
-        <View style={{ marginHorizontal: scale(16), marginBottom: scale(16) }}>
-          <View style={{ backgroundColor: colors.card, borderRadius: scale(12), padding: scale(16), borderWidth: 1, borderColor: colors.border }}>
-            <Text style={{ fontSize: scale(14), fontWeight: '600', color: colors.foreground, marginBottom: scale(12) }}>Details</Text>
-            
-            <View style={{ gap: scale(12) }}>
-              {/* Phone */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                  <MaterialCommunityIcons name="phone" size={scale(18)} color={colors.primary} />
-                  <Text style={{ fontSize: scale(12), color: colors.mutedForeground, marginLeft: scale(8) }}>Phone</Text>
-                </View>
-                <Text style={{ fontSize: scale(13), color: colors.foreground, fontWeight: '500' }}>
-                  {driverData?.phone_number || 'N/A'}
-                </Text>
-              </View>
-
-              {/* Email */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                  <MaterialCommunityIcons name="email" size={scale(18)} color={colors.primary} />
-                  <Text style={{ fontSize: scale(12), color: colors.mutedForeground, marginLeft: scale(8) }}>Email</Text>
-                </View>
-                <Text style={{ fontSize: scale(12), color: colors.foreground, fontWeight: '500' }}>
-                  {driverData?.email || 'N/A'}
-                </Text>
-              </View>
-
-              {/* License */}
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          {/* Profile Header */}
+          <View style={styles.profileSection}>
+            <View style={styles.avatarContainer}>
+              <Image 
+                source={{ uri: profileData?.profile_picture_url || `https://ui-avatars.com/api/?name=${profileData?.first_name || 'Driver'}&background=FF9101&color=000` }} 
+                style={styles.avatar} 
+              />
               <TouchableOpacity
-                onPress={() => {
-                  if (driverData?.license_picture_url) {
-                    router.push({
-                      pathname: '/driver/document-viewer',
-                      params: { url: driverData.license_picture_url, title: 'Driver License' },
-                    });
-                  }
-                }}
-                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                style={[styles.editBadge, { borderColor: theme.colors.card }]}
+                onPress={handlePickAndUploadAvatar}
+                disabled={uploadingAvatar}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               >
-                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                  <MaterialCommunityIcons name="card-account-details" size={scale(18)} color={colors.primary} />
-                  <Text style={{ fontSize: scale(12), color: colors.mutedForeground, marginLeft: scale(8) }}>License</Text>
-                </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Text style={{ fontSize: scale(12), color: colors.foreground, fontWeight: '500', marginRight: scale(6) }}>
-                    {driverData?.license_picture_url ? 'View' : 'N/A'}
-                  </Text>
-                  {driverData?.license_picture_url && <MaterialCommunityIcons name="chevron-right" size={scale(18)} color={colors.primary} />}
-                </View>
+                <MaterialCommunityIcons name="pencil" size={14} color="#000" />
               </TouchableOpacity>
-
-              {/* Vehicle Type */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                  <MaterialCommunityIcons name="car" size={scale(18)} color={colors.primary} />
-                  <Text style={{ fontSize: scale(12), color: colors.mutedForeground, marginLeft: scale(8) }}>Vehicle Type</Text>
-                </View>
-                <Text style={{ fontSize: scale(12), color: colors.foreground, fontWeight: '500', textTransform: 'uppercase' }}>
-                  {driverData?.vehicle_type || 'N/A'}
-                </Text>
-              </View>
-
-              {/* Plate Number */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                  <MaterialCommunityIcons name="shield-account" size={scale(18)} color={colors.primary} />
-                  <Text style={{ fontSize: scale(12), color: colors.mutedForeground, marginLeft: scale(8) }}>Plate Number</Text>
-                </View>
-                <Text style={{ fontSize: scale(12), color: colors.foreground, fontWeight: '500' }}>
-                  {driverData?.plate_number || 'N/A'}
-                </Text>
-              </View>
-
-              {/* Union */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                  <MaterialCommunityIcons name="shield-account" size={scale(18)} color={colors.primary} />
-                  <Text style={{ fontSize: scale(12), color: colors.mutedForeground, marginLeft: scale(8) }}>Union</Text>
-                </View>
-                <Text style={{ fontSize: scale(12), color: colors.foreground, fontWeight: '500' }}>
-                  {driverData?.union_name || 'N/A'}
-                </Text>
-              </View>
-
-              {/* Bank */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                  <MaterialCommunityIcons name="bank" size={scale(18)} color={colors.primary} />
-                  <Text style={{ fontSize: scale(12), color: colors.mutedForeground, marginLeft: scale(8) }}>Bank</Text>
-                </View>
-                <Text style={{ fontSize: scale(12), color: colors.foreground, fontWeight: '500' }}>
-                  {driverData?.bank_name || 'N/A'}
-                </Text>
-              </View>
-
-              {/* Account Number */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                  <MaterialCommunityIcons name="account-cash" size={scale(18)} color={colors.primary} />
-                  <Text style={{ fontSize: scale(12), color: colors.mutedForeground, marginLeft: scale(8) }}>Account</Text>
-                </View>
-                <Text style={{ fontSize: scale(12), color: colors.foreground, fontWeight: '500' }}>
-                  {driverData?.bank_account_number || 'N/A'}
-                </Text>
+              <View style={styles.verifiedBadge}>
+                <MaterialCommunityIcons name="check-decagram" size={16} color="#FFF" />
               </View>
             </View>
-          </View>
-        </View>
-
-        {/* Status Card */}
-        <View style={{ marginHorizontal: scale(16), marginBottom: scale(16) }}>
-          <View style={{ backgroundColor: colors.card, borderRadius: scale(12), padding: scale(16), borderWidth: 1, borderColor: colors.border }}>
-            <Text style={{ fontSize: scale(14), fontWeight: '600', color: colors.foreground, marginBottom: scale(12) }}>Status</Text>
+            {uploadingAvatar ? (
+              <Text style={[styles.uploadingText, { color: theme.colors.textSecondary }]}>Uploading...</Text>
+            ) : null}
+            <Text style={[styles.name, { color: theme.colors.textPrimary }]}>{profileData?.first_name} {profileData?.last_name}</Text>
+            <Text style={[styles.email, { color: theme.colors.textSecondary }]}>{profileData?.email}</Text>
             
-            <View style={{ gap: scale(12) }}>
-              {/* Availability */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <MaterialCommunityIcons 
-                    name={driverData?.availability_status === 'online' ? 'check-circle' : 'clock-outline'} 
-                    size={scale(18)} 
-                    color={driverData?.availability_status === 'online' ? '#10b981' : '#f59e0b'} 
-                  />
-                  <Text style={{ fontSize: scale(12), color: colors.mutedForeground, marginLeft: scale(8) }}>Availability</Text>
+            <View style={styles.statsRow}>
+                <View style={styles.statItem}>
+                    <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{profileData?.total_rides_completed || 0}</Text>
+                    <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Rides</Text>
                 </View>
-                <View style={{
-                  paddingHorizontal: scale(12),
-                  paddingVertical: scale(6),
-                  backgroundColor: driverData?.availability_status === 'online' ? '#10b98120' : '#f59e0b20',
-                  borderRadius: scale(6),
-                }}>
-                  <Text style={{
-                    fontSize: scale(12),
-                    fontWeight: '600',
-                    color: driverData?.availability_status === 'online' ? '#10b981' : '#f59e0b',
-                    textTransform: 'capitalize'
-                  }}>
-                    {driverData?.availability_status || 'offline'}
-                  </Text>
+                <View style={[styles.vertDivider, { backgroundColor: theme.colors.border }]} />
+                <View style={styles.statItem}>
+                    <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{profileData?.average_rating?.toFixed(1) || '5.0'}</Text>
+                    <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Rating</Text>
                 </View>
-              </View>
-
-              {/* Verification */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <MaterialCommunityIcons 
-                    name={driverData?.verified ? 'shield-check' : 'shield-alert'} 
-                    size={scale(18)} 
-                    color={driverData?.verified ? '#10b981' : '#ef4444'} 
-                  />
-                  <Text style={{ fontSize: scale(12), color: colors.mutedForeground, marginLeft: scale(8) }}>Verification</Text>
-                </View>
-                <Text style={{ 
-                  fontSize: scale(12), 
-                  fontWeight: '600', 
-                  color: driverData?.verified ? '#10b981' : '#ef4444' 
-                }}>
-                  {driverData?.verified ? 'Verified' : 'Unverified'}
-                </Text>
-              </View>
-
-              {/* Profile Complete */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <MaterialCommunityIcons 
-                    name={driverData?.profile_complete ? 'check-circle' : 'alert-circle'} 
-                    size={scale(18)} 
-                    color={driverData?.profile_complete ? '#10b981' : '#f59e0b'} 
-                  />
-                  <Text style={{ fontSize: scale(12), color: colors.mutedForeground, marginLeft: scale(8) }}>Profile</Text>
-                </View>
-                <Text style={{ 
-                  fontSize: scale(12), 
-                  fontWeight: '600', 
-                  color: driverData?.profile_complete ? '#10b981' : '#f59e0b' 
-                }}>
-                  {driverData?.profile_complete ? 'Complete' : 'Incomplete'}
-                </Text>
-              </View>
             </View>
           </View>
-        </View>
 
-        {/* Account Settings Menu */}
-        <View style={{ marginHorizontal: scale(16), marginBottom: scale(16) }}>
-          <View style={{ backgroundColor: colors.card, borderRadius: scale(12), padding: scale(16), borderWidth: 1, borderColor: colors.border }}>
-            <Text style={{ fontSize: scale(14), fontWeight: '600', color: colors.foreground, marginBottom: scale(12) }}>
-              Settings
-            </Text>
+          {/* Menu */}
+          <View style={styles.menuContainer}>
+             <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary }]}>DRIVER ACCOUNT</Text>
+             <MenuItem icon="card-account-details-outline" label="Documents" onPress={() => router.push('/driver/documents')} theme={theme} />
+             <MenuItem icon="car-outline" label="Vehicle Details" onPress={() => router.push('/driver/vehicle')} theme={theme} />
+             <MenuItem icon="bank-outline" label="Bank Accounts" onPress={() => router.push('/driver/bank-accounts')} theme={theme} />
 
-            <View style={{ gap: scale(12) }}>
-              {[
-                { title: 'Edit Profile', icon: 'pencil', color: colors.primary, route: '/driver/edit-profile' },
-                { title: 'Bank Accounts', icon: 'bank', color: '#f59e0b', route: '/driver/bank-accounts' },
-                { title: 'Documents', icon: 'file-document', color: '#10b981', route: '/driver/documents' },
-              ].map((item: any, index) => (
-                <TouchableOpacity
-                  key={index}
-                  onPress={() => router.push(item.route)}
-                  style={{
-                    flexDirection: 'row',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    paddingVertical: scale(12),
-                    borderBottomWidth: index < 2 ? 1 : 0,
-                    borderBottomColor: colors.border,
-                  }}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <MaterialCommunityIcons name={item.icon as any} size={scale(20)} color={item.color} />
-                    <Text style={{ fontSize: scale(14), color: colors.foreground, fontWeight: '500', marginLeft: scale(12) }}>
-                      {item.title}
-                    </Text>
-                  </View>
-                  <MaterialCommunityIcons name="chevron-right" size={scale(20)} color={colors.mutedForeground} />
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        </View>
-
-        {/* Support Section */}
-        <View style={{ marginHorizontal: scale(16), marginBottom: scale(16) }}>
-          <View style={{ backgroundColor: colors.card, borderRadius: scale(12), padding: scale(16), borderWidth: 1, borderColor: colors.border }}>
-            <Text style={{ fontSize: scale(14), fontWeight: '600', color: colors.foreground, marginBottom: scale(12) }}>
-              Help &amp; Support
-            </Text>
-
-            <View style={{
-              paddingHorizontal: scale(12),
-              paddingVertical: scale(10),
-              backgroundColor: colors.background,
-              borderRadius: scale(6),
-            }}>
-              <Text style={{ fontSize: scale(13), color: colors.foreground, fontWeight: '500', marginBottom: 4 }}>
-                📧 Email Support
-              </Text>
-              <Text style={{ fontSize: scale(12), color: colors.mutedForeground }}>
-                support@example.com
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Logout Button */}
-        <View style={{ paddingHorizontal: scale(16), gap: scale(12), marginTop: scale(20), marginBottom: scale(24) }}>
-          <TouchableOpacity
-            onPress={() => setShowLogoutModal(true)}
-            style={{
-              paddingHorizontal: scale(16),
-              paddingVertical: scale(14),
-              backgroundColor: '#ef4444',
-              borderRadius: scale(12),
-              alignItems: 'center',
-            }}
-          >
-            <Text style={{ color: '#fff', fontSize: scale(16), fontWeight: '600' }}>Logout</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Logout Confirmation */}
-        {showLogoutModal && (
-          <View
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: 'rgba(0,0,0,0.5)',
-              justifyContent: 'center',
-              alignItems: 'center',
-              zIndex: 1000,
-            }}
-          >
-            <Card isDark={mode === 'dark'}>
-              <Text style={{ fontSize: scale(18), fontWeight: 'bold', color: colors.foreground, marginBottom: scale(12) }}>
-                Logout?
-              </Text>
-              <Text style={{ fontSize: scale(14), color: colors.secondary, marginBottom: scale(20) }}>
-                Are you sure you want to logout?
-              </Text>
-              <View style={{ flexDirection: 'row', gap: scale(12) }}>
-                <TouchableOpacity
-                  onPress={() => setShowLogoutModal(false)}
-                  style={{
-                    flex: 1,
-                    paddingVertical: scale(12),
-                    borderRadius: scale(8),
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                  }}
-                >
-                  <Text style={{ textAlign: 'center', fontWeight: '600', color: colors.foreground, fontSize: scale(14) }}>
-                    Cancel
-                  </Text>
-                </TouchableOpacity>
-                <View style={{ flex: 1 }}>
-                  <Button
-                    title="Logout"
-                    onPress={handleLogout}
-                    isDark={mode === 'dark'}
-                  />
+             <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary, marginTop: 24 }]}>SETTINGS</Text>
+             <View style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+                <View style={styles.menuLeft}>
+                   <View style={[styles.iconBox, { backgroundColor: theme.colors.inputBackground }]}>
+                      <MaterialCommunityIcons name="bell-outline" size={20} color={theme.colors.textPrimary} />
+                   </View>
+                   <Text style={[styles.menuText, { color: theme.colors.textPrimary }]}>Notifications</Text>
                 </View>
-              </View>
-            </Card>
+                <Switch 
+                  value={notifEnabled} 
+                  onValueChange={setNotifEnabled} 
+                  trackColor={{ true: BRAND.primary, false: theme.colors.border }}
+                  thumbColor="#FFF"
+                />
+             </View>
+             
+             <TouchableOpacity style={[styles.logoutBtn, { borderColor: COLORS.light.destructive }]} onPress={() => setShowLogout(true)}>
+                <MaterialCommunityIcons name="logout" size={20} color={COLORS.light.destructive} />
+                <Text style={{ color: COLORS.light.destructive, fontWeight: '600' }}>Log Out</Text>
+             </TouchableOpacity>
           </View>
-        )}
-      </ScrollView>
+        </ScrollView>
       </SafeAreaView>
-      <RiderBottomNavigation />
+
+      <ConfirmationDialog
+        visible={showLogout}
+        title="Log Out"
+        message="Are you sure you want to log out?"
+        onCancel={() => setShowLogout(false)}
+        onConfirm={handleLogout}
+        cancelText="Cancel"
+        confirmText="Log Out"
+        isDark={!isLight}
+        type="danger"
+      />
     </View>
   );
 }
+
+const MenuItem = ({ icon, label, onPress, theme }: any) => (
+  <TouchableOpacity onPress={onPress} style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+    <View style={styles.menuLeft}>
+       <View style={[styles.iconBox, { backgroundColor: theme.colors.inputBackground }]}>
+          <MaterialCommunityIcons name={icon} size={20} color={theme.colors.textPrimary} />
+       </View>
+       <Text style={[styles.menuText, { color: theme.colors.textPrimary }]}>{label}</Text>
+    </View>
+    <MaterialCommunityIcons name="chevron-right" size={20} color={theme.colors.textSecondary} />
+  </TouchableOpacity>
+);
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  header: { padding: 20 },
+  headerTitle: { fontSize: 28, fontWeight: '800' },
+  content: { paddingBottom: 100 },
+  profileSection: { alignItems: 'center', marginBottom: 32 },
+  avatarContainer: { position: 'relative', marginBottom: 16 },
+  avatar: { width: 100, height: 100, borderRadius: 50, borderWidth: 4, borderColor: BRAND.primary },
+  editBadge: { position: 'absolute', top: 0, right: 0, backgroundColor: BRAND.primary, width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 2, zIndex: 10 },
+  verifiedBadge: { position: 'absolute', bottom: 0, right: 0, backgroundColor: '#10B981', width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#FFF' },
+  uploadingText: { fontSize: 12, marginTop: -8, marginBottom: 8, fontWeight: '500' },
+  name: { fontSize: 22, fontWeight: '800', marginBottom: 4 },
+  email: { fontSize: 14 },
+  statsRow: { flexDirection: 'row', marginTop: 20, alignItems: 'center', gap: 20 },
+  statItem: { alignItems: 'center', minWidth: 60 },
+  statValue: { fontSize: 20, fontWeight: '800' },
+  statLabel: { fontSize: 12 },
+  vertDivider: { width: 1, height: 30 },
+  menuContainer: { paddingHorizontal: 20 },
+  sectionLabel: { fontSize: 12, fontWeight: '700', marginBottom: 8, marginLeft: 4 },
+  menuItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderRadius: 12, marginBottom: 8, borderWidth: 1 },
+  menuLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  iconBox: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  menuText: { fontSize: 14, fontWeight: '600' },
+  logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, borderRadius: 12, borderWidth: 1, marginTop: 20, gap: 8 },
+});

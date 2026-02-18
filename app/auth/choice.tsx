@@ -1,6 +1,6 @@
 // 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -9,607 +9,297 @@ import {
   Dimensions,
   TouchableOpacity,
   Animated,
-  Easing,
-  ScrollView,
-  Platform,
+  StatusBar,
 } from 'react-native';
+import { Video } from 'expo-av';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@context/ThemeContext';
 import { ThemeToggle } from '@components/ThemeToggle';
-import { COLORS, BRAND } from '@utils/colors';
+import { BRAND } from '@utils/colors';
 
-const { width, height } = Dimensions.get('window');
-
-// Responsive scaling
-const guidelineBaseWidth = 375;
-const guidelineBaseHeight = 812;
-const scale = (size: number) => (width / guidelineBaseWidth) * size;
-const verticalScale = (size: number) => (height / guidelineBaseHeight) * size;
-const moderateScale = (size: number, factor = 0.5) =>
-  size + (scale(size) - size) * factor;
-
-const benefits = [
-  {
-    icon: 'lightning-bolt' as const,
-    name: 'Instant Booking',
-    desc: 'Book a ride in seconds',
-  },
-  {
-    icon: 'cash-multiple' as const,
-    name: 'Fair Pricing',
-    desc: 'No surge, transparent rates',
-  },
-  {
-    icon: 'shield-check' as const,
-    name: 'Safety Assured',
-    desc: 'Verified drivers & GPS tracking',
-  },
-  {
-    icon: 'account-multiple-plus' as const,
-    name: 'Community',
-    desc: 'Support local keke drivers',
-  },
-];
+const { width } = Dimensions.get('window');
+const scale = (size: number) => (width / 375) * size;
 
 export default function AuthChoiceScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();  const { theme } = useTheme();
-  // === ENTRANCE ANIMATIONS ===
-  const [fadeAnim] = useState(new Animated.Value(0));
-  const [slideAnim] = useState(new Animated.Value(40));
-  const [scaleAnim] = useState(new Animated.Value(0.95));
-  const [benefitAnims] = useState(
-    benefits.map(() => ({
-      opacity: new Animated.Value(0),
-      translateX: new Animated.Value(-16),
-    }))
-  );
-
-  // === LIVE AMBIENT ANIMATIONS ===
-  // Floating orbs
-  const orb1Y = useRef(new Animated.Value(0)).current;
-  const orb1X = useRef(new Animated.Value(0)).current;
-  const orb1Opacity = useRef(new Animated.Value(0.03)).current;
-  const orb2Y = useRef(new Animated.Value(0)).current;
-  const orb2X = useRef(new Animated.Value(0)).current;
-  const orb2Opacity = useRef(new Animated.Value(0.02)).current;
-
-  // Logo breathing
+  const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
+  const [userName, setUserName] = useState<string>('');
+  
+  const fadeAnim = useState(new Animated.Value(0))[0];
+  const slideAnim = useState(new Animated.Value(20))[0];
+  const logoFloat = useRef(new Animated.Value(0)).current;
   const logoPulse = useRef(new Animated.Value(1)).current;
-  const logoGlowOpacity = useRef(new Animated.Value(0.05)).current;
-  const logoRotate = useRef(new Animated.Value(0)).current;
+  const orb1Y = useRef(new Animated.Value(0)).current;
+  const orb2Y = useRef(new Animated.Value(0)).current;
+  const orb1Scale = useRef(new Animated.Value(1)).current;
+  const orb2Scale = useRef(new Animated.Value(1)).current;
+  const buttonPulse = useRef(new Animated.Value(1)).current;
+  const shimmerX = useRef(new Animated.Value(-1)).current;
+  const videoRef = useRef<Video>(null);
 
-  // Button shimmer
-  const buttonShimmer = useRef(new Animated.Value(-1)).current;
-
-  // Benefit icon pulses (staggered)
-  const benefitIconPulse = useRef(benefits.map(() => new Animated.Value(1))).current;
-
-  // Secondary button border glow
-  const borderGlow = useRef(new Animated.Value(0)).current;
-
-  // Subtitle dash width animation
-  const dashWidth = useRef(new Animated.Value(0.6)).current;
-
+  // Load user name and animations
   useEffect(() => {
-    // === ENTRANCE ===
+    // Fade and slide animations
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 700,
+        duration: 800,
         useNativeDriver: true,
       }),
       Animated.spring(slideAnim, {
         toValue: 0,
         tension: 50,
-        friction: 9,
-        useNativeDriver: true,
-      }),
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        tension: 60,
         friction: 8,
         useNativeDriver: true,
       }),
     ]).start();
 
-    // Stagger benefit items
-    benefitAnims.forEach((anim, index) => {
-      Animated.parallel([
-        Animated.timing(anim.opacity, {
-          toValue: 1,
-          duration: 400,
-          delay: 500 + index * 100,
+    // Load user name
+    const loadUserName = async () => {
+      try {
+        const stored = await AsyncStorage.getItem('userProfile');
+        if (stored) {
+          const profile = JSON.parse(stored);
+          setUserName(profile.firstName || profile.name || '');
+        }
+      } catch (error) {
+        console.log('Error loading user profile:', error);
+      }
+    };
+    loadUserName();
+  }, []);
+
+  // All animations
+  useEffect(() => {
+    // Logo floating animation
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(logoFloat, {
+          toValue: -8,
+          duration: 3000,
           useNativeDriver: true,
         }),
-        Animated.timing(anim.translateX, {
+        Animated.timing(logoFloat, {
           toValue: 0,
-          duration: 400,
-          delay: 500 + index * 100,
+          duration: 3000,
           useNativeDriver: true,
         }),
-      ]).start();
-    });
-
-    // === LIVE AMBIENT ===
-
-    // Floating orb 1
-    Animated.loop(
-      Animated.sequence([
-        Animated.parallel([
-          Animated.timing(orb1Y, {
-            toValue: -verticalScale(28),
-            duration: 6000,
-            easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
-          Animated.timing(orb1X, {
-            toValue: scale(14),
-            duration: 6000,
-            easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
-          Animated.timing(orb1Opacity, {
-            toValue: 0.06,
-            duration: 6000,
-            useNativeDriver: true,
-          }),
-        ]),
-        Animated.parallel([
-          Animated.timing(orb1Y, {
-            toValue: verticalScale(20),
-            duration: 7000,
-            easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
-          Animated.timing(orb1X, {
-            toValue: -scale(10),
-            duration: 7000,
-            easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
-          Animated.timing(orb1Opacity, {
-            toValue: 0.03,
-            duration: 7000,
-            useNativeDriver: true,
-          }),
-        ]),
       ])
     ).start();
 
-    // Floating orb 2
+    // Logo pulse animation
     Animated.loop(
       Animated.sequence([
-        Animated.parallel([
-          Animated.timing(orb2Y, {
-            toValue: verticalScale(22),
-            duration: 8000,
-            easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
-          Animated.timing(orb2X, {
-            toValue: -scale(16),
-            duration: 8000,
-            easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
-          Animated.timing(orb2Opacity, {
-            toValue: 0.05,
-            duration: 8000,
-            useNativeDriver: true,
-          }),
-        ]),
-        Animated.parallel([
-          Animated.timing(orb2Y, {
-            toValue: -verticalScale(16),
-            duration: 7000,
-            easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
-          Animated.timing(orb2X, {
-            toValue: scale(12),
-            duration: 7000,
-            easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
-          Animated.timing(orb2Opacity, {
-            toValue: 0.02,
-            duration: 7000,
-            useNativeDriver: true,
-          }),
-        ]),
-      ])
-    ).start();
-
-    // Logo breathing pulse
-    Animated.loop(
-      Animated.sequence([
-        Animated.parallel([
-          Animated.timing(logoPulse, {
-            toValue: 1.05,
-            duration: 2800,
-            easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
-          Animated.timing(logoGlowOpacity, {
-            toValue: 0.12,
-            duration: 2800,
-            useNativeDriver: true,
-          }),
-        ]),
-        Animated.parallel([
-          Animated.timing(logoPulse, {
-            toValue: 1,
-            duration: 2800,
-            easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
-          Animated.timing(logoGlowOpacity, {
-            toValue: 0.05,
-            duration: 2800,
-            useNativeDriver: true,
-          }),
-        ]),
-      ])
-    ).start();
-
-    // Logo decorative ring rotation
-    Animated.loop(
-      Animated.timing(logoRotate, {
-        toValue: 1,
-        duration: 25000,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      })
-    ).start();
-
-    // Button shimmer sweep
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(buttonShimmer, {
+        Animated.timing(logoPulse, {
+          toValue: 1.03,
+          duration: 2500,
+          useNativeDriver: true,
+        }),
+        Animated.timing(logoPulse, {
           toValue: 1,
           duration: 2500,
-          easing: Easing.inOut(Easing.cubic),
           useNativeDriver: true,
         }),
-        Animated.delay(3000),
-        Animated.timing(buttonShimmer, {
+      ])
+    ).start();
+
+    // Orb 1 animation
+    Animated.loop(
+      Animated.parallel([
+        Animated.sequence([
+          Animated.timing(orb1Y, {
+            toValue: -16,
+            duration: 5000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(orb1Y, {
+            toValue: 0,
+            duration: 5000,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.sequence([
+          Animated.timing(orb1Scale, {
+            toValue: 1.15,
+            duration: 5000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(orb1Scale, {
+            toValue: 1,
+            duration: 5000,
+            useNativeDriver: true,
+          }),
+        ]),
+      ])
+    ).start();
+
+    // Orb 2 animation
+    Animated.loop(
+      Animated.parallel([
+        Animated.sequence([
+          Animated.timing(orb2Y, {
+            toValue: 18,
+            duration: 6000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(orb2Y, {
+            toValue: 0,
+            duration: 6000,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.sequence([
+          Animated.timing(orb2Scale, {
+            toValue: 0.9,
+            duration: 6000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(orb2Scale, {
+            toValue: 1,
+            duration: 6000,
+            useNativeDriver: true,
+          }),
+        ]),
+      ])
+    ).start();
+
+    // Button pulse animation
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(buttonPulse, {
+          toValue: 1.02,
+          duration: 2000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(buttonPulse, {
+          toValue: 1,
+          duration: 2000,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    // Shimmer animation
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmerX, {
+          toValue: 1,
+          duration: 2200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(shimmerX, {
           toValue: -1,
           duration: 0,
           useNativeDriver: true,
         }),
       ])
     ).start();
-
-    // Staggered benefit icon pulses
-    benefitIconPulse.forEach((anim, index) => {
-      const delay = index * 600;
-      setTimeout(() => {
-        Animated.loop(
-          Animated.sequence([
-            Animated.timing(anim, {
-              toValue: 1.12,
-              duration: 1800,
-              easing: Easing.inOut(Easing.sin),
-              useNativeDriver: true,
-            }),
-            Animated.timing(anim, {
-              toValue: 1,
-              duration: 1800,
-              easing: Easing.inOut(Easing.sin),
-              useNativeDriver: true,
-            }),
-          ])
-        ).start();
-      }, delay);
-    });
-
-    // Secondary button border glow
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(borderGlow, {
-          toValue: 1,
-          duration: 2500,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(borderGlow, {
-          toValue: 0,
-          duration: 2500,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-
-    // Subtitle dash breathing
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(dashWidth, {
-          toValue: 1,
-          duration: 2000,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(dashWidth, {
-          toValue: 0.6,
-          duration: 2000,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
   }, []);
 
-  const handleSignup = () => {
-    router.push('/auth/signup-new');
-  };
+  const handleSignup = () => router.push('/auth/signup-new');
+  const handleLogin = () => router.push('/auth/login-new');
 
-  const handleLogin = () => {
-    router.push('/auth/login-new');
-  };
-
-  const logoSpin = logoRotate.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
-  });
+  const isLight = theme.mode === 'light';
 
   return (
-    <LinearGradient
-      colors={theme.mode === 'light'
-        ? ['#E2DDDD', '#6B6767', '#3A3838']
-        : ['#121212', '#1E1E1E', '#121212']}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 0.3, y: 1 }}
-      style={[styles.container, { paddingTop: insets.top }]}
-    >
-      {/* Theme Toggle */}
-      <ThemeToggle top={insets.top + 16} right={16} />
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
+      <ThemeToggle top={insets.top + 16} right={20} />
 
-      {/* Animated floating orbs */}
-      <Animated.View
-        style={[
-          styles.decorCircle1,
-          {
-            opacity: orb1Opacity,
-            transform: [{ translateY: orb1Y }, { translateX: orb1X }],
-          },
-        ]}
-      />
-      <Animated.View
-        style={[
-          styles.decorCircle2,
-          {
-            opacity: orb2Opacity,
-            transform: [{ translateY: orb2Y }, { translateX: orb2X }],
-          },
-        ]}
+      {/* Video Background */}
+      <Video
+        ref={videoRef}
+        source={require('@assets/welcome-bg.mp4')}
+        shouldPlay
+        isLooping
+        isMuted
+        resizeMode="cover"
+        style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}
+        onError={(error) => {
+          console.log('🔴 Video error:', error);
+        }}
+        onLoad={() => {
+          console.log('🟢 Video loaded successfully');
+        }}
       />
 
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        bounces={false}
-      >
-        {/* Header */}
-        <Animated.View
-          style={[
-            styles.header,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }],
-            },
-          ]}
-        >
-          <View style={styles.logoContainer}>
-            {/* Animated glow */}
-            <Animated.View
-              style={[
-                styles.logoGlow,
-                { opacity: logoGlowOpacity },
-              ]}
-            />
-            {/* Rotating decorative ring */}
-            <Animated.View
-              style={[
-                styles.logoRing,
-                { transform: [{ rotate: logoSpin }] },
-              ]}
-            >
-              <View style={styles.logoRingDot} />
-            </Animated.View>
-            <Animated.View style={{ transform: [{ scale: logoPulse }] }}>
-              <Image
-                source={require('@assets/charter keke.png')}
-                style={styles.logoImage}
-                resizeMode="contain"
-              />
-            </Animated.View>
-          </View>
-          <Text style={[styles.welcome, { color: theme.colors.textPrimary }]}>Welcome to{'\n'}Charter Keke</Text>
-          <View style={styles.subtitleRow}>
-            <Animated.View
-              style={[
-                styles.subtitleDash,
-                { transform: [{ scaleX: dashWidth }], backgroundColor: theme.colors.border },
-              ]}
-            />
-            <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
-              Your trusted keke ride-sharing platform
-            </Text>
-            <Animated.View
-              style={[
-                styles.subtitleDash,
-                { transform: [{ scaleX: dashWidth }], backgroundColor: theme.colors.border },
-              ]}
-            />
-          </View>
+      {/* Dark Overlay - more dimmed for better readability */}
+      <View style={[styles.videoOverlay]} />
+
+      <View style={[styles.content, { paddingTop: insets.top + 60 }]}>
+        
+        {/* Brand Area */}
+        <Animated.View style={[styles.brandArea, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+          <Image
+            source={require('@assets/charter keke.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+          <Text style={[styles.title, { color: theme.colors.textPrimary }]}>
+            {userName ? `Welcome,\n${userName}!` : "Let's Get\nStarted"}
+          </Text>
+          <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
+            {userName 
+              ? 'Ready for your next ride?' 
+              : 'Join the community of riders and drivers moving effortlessly through the city.'}
+          </Text>
         </Animated.View>
 
-        {/* Auth Options */}
-        <Animated.View
-          style={[
-            styles.optionsContainer,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }, { scale: scaleAnim }],
-            },
-          ]}
-        >
-          {/* Signup Option with shimmer */}
+        {/* Action Area */}
+        <Animated.View style={[styles.actionArea, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+          
+          {/* Sign Up Button (Primary) */}
           <TouchableOpacity
-            onPress={handleSignup}
-            activeOpacity={0.85}
             style={styles.primaryButton}
+            activeOpacity={0.9}
+            onPress={handleSignup}
           >
             <LinearGradient
-              colors={theme.mode === 'light'
-                ? ['#000000', '#333333']
-                : ['#FFFFFF', '#CCCCCC']}
+              colors={[BRAND.primary, '#E68200']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
-              style={styles.gradientButton}
+              style={styles.primaryGradient}
             >
-              {/* Shimmer overlay */}
-              <Animated.View
-                style={[
-                  styles.buttonShimmerOverlay,
-                  {
-                    transform: [
-                      {
-                        translateX: buttonShimmer.interpolate({
-                          inputRange: [-1, 1],
-                          outputRange: [-width, width],
-                        }),
-                      },
-                    ],
-                  },
-                ]}
-              />
-              <View style={styles.buttonLeft}>
-                <View style={styles.buttonIconCircle}>
-                  <MaterialCommunityIcons
-                    name="account-plus"
-                    size={moderateScale(20)}
-                    color={theme.mode === 'light' ? '#FFFFFF' : '#000000'}
-                  />
-                </View>
-                <View>
-                  <Text style={[styles.primaryButtonText, { color: theme.mode === 'light' ? '#FFFFFF' : '#000000' }]}>Get Started</Text>
-                  <Text style={[styles.primaryButtonSubtext, { color: theme.mode === 'light' ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.7)' }]}>
-                    Create a new account
-                  </Text>
-                </View>
+              <View>
+                <Text style={styles.primaryBtnTitle}>Create Account</Text>
+                <Text style={styles.primaryBtnSubtitle}>New to Charter Keke?</Text>
               </View>
-              <MaterialCommunityIcons
-                name="arrow-right"
-                size={moderateScale(20)}
-                color={theme.mode === 'light' ? '#FFFFFF' : '#000000'}
-              />
+              <View style={styles.iconCircle}>
+                <MaterialCommunityIcons name="arrow-right" size={20} color={BRAND.primary} />
+              </View>
             </LinearGradient>
           </TouchableOpacity>
 
-          {/* Login Option with border glow */}
-          <Animated.View
-            style={{
-              opacity: borderGlow.interpolate({
-                inputRange: [0, 1],
-                outputRange: [1, 1],
-              }),
-            }}
+          {/* Login Button (Secondary) */}
+          <TouchableOpacity
+            style={[styles.secondaryButton, { 
+              borderColor: isLight ? '#E5E5E5' : '#333',
+              backgroundColor: isLight ? '#FAFAFA' : '#121212'
+            }]}
+            activeOpacity={0.7}
+            onPress={handleLogin}
           >
-            <TouchableOpacity
-              onPress={handleLogin}
-              activeOpacity={0.85}
-              style={styles.secondaryButton}
-            >
-              <Animated.View
-                style={[
-                  styles.secondaryBorderGlow,
-                  {
-                    opacity: borderGlow.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0, 0.08],
-                    }),
-                  },
-                ]}
-              />
-              <View style={styles.secondaryInner}>
-                <View style={styles.buttonLeft}>
-                  <View style={styles.secondaryIconCircle}>
-                    <MaterialCommunityIcons
-                      name="login"
-                      size={moderateScale(20)}
-                      color={theme.colors.textPrimary}
-                    />
-                  </View>
-                  <View>
-                    <Text style={[styles.secondaryButtonText, { color: theme.colors.textPrimary }]}>Sign In</Text>
-                    <Text style={[styles.secondaryButtonSubtext, { color: theme.colors.textSecondary }]}>
-                      Already have an account
-                    </Text>
-                  </View>
-                </View>
-                <MaterialCommunityIcons
-                  name="arrow-right"
-                  size={moderateScale(20)}
-                  color={theme.colors.textTertiary}
-                />
-              </View>
-            </TouchableOpacity>
-          </Animated.View>
-        </Animated.View>
+            <View>
+              <Text style={[styles.secondaryBtnTitle, { color: theme.colors.textPrimary }]}>Login</Text>
+              <Text style={[styles.secondaryBtnSubtitle, { color: theme.colors.textSecondary }]}>Welcome back!</Text>
+            </View>
+            <MaterialCommunityIcons name="login" size={24} color={theme.colors.textPrimary} />
+          </TouchableOpacity>
 
-        {/* Benefits with animated icons */}
-        <Animated.View
-          style={[
-            styles.benefitsContainer,
-            { opacity: fadeAnim },
-          ]}
-        >
-          <View style={styles.benefitsTitleRow}>
-            <View style={styles.benefitsTitleLine} />
-            <Text style={[styles.benefitsTitle, { color: theme.colors.textPrimary }]}>Why Choose Charter Keke?</Text>
-            <View style={[styles.benefitsTitleLine, { backgroundColor: theme.colors.border }]} />
+          <View style={styles.termsContainer}>
+            <Text style={[styles.termsText, { color: theme.colors.textTertiary }]}>
+              By continuing, you agree to our Terms of Service and Privacy Policy.
+            </Text>
           </View>
 
-          <View style={styles.benefitsGrid}>
-            {benefits.map((benefit, index) => (
-              <Animated.View
-                key={benefit.name}
-                style={[
-                  styles.benefitItem,
-                  {
-                    opacity: benefitAnims[index].opacity,
-                    transform: [{ translateX: benefitAnims[index].translateX }],
-                  },
-                ]}
-              >
-                <Animated.View
-                  style={[
-                    styles.benefitIconBg,
-                    { transform: [{ scale: benefitIconPulse[index] }] },
-                  ]}
-                >
-                  <MaterialCommunityIcons
-                    name={benefit.icon}
-                    size={moderateScale(18)}
-                    color={theme.colors.textPrimary}
-                  />
-                </Animated.View>
-                <View style={styles.benefitText}>
-                  <Text style={[styles.benefitName, { color: theme.colors.textPrimary }]}>{benefit.name}</Text>
-                  <Text style={[styles.benefitDesc, { color: theme.colors.textSecondary }]}>{benefit.desc}</Text>
-                </View>
-              </Animated.View>
-            ))}
-          </View>
         </Animated.View>
-      </ScrollView>
-    </LinearGradient>
+      </View>
+    </View>
   );
 }
 
@@ -617,263 +307,153 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  decorCircle1: {
-    position: 'absolute',
-    top: -height * 0.1,
-    right: -width * 0.15,
-    width: width * 0.6,
-    height: width * 0.6,
-    borderRadius: width * 0.3,
-    backgroundColor: 'rgba(193, 232, 255, 0.04)',
+  bgGraphicContainer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: -1,
+    overflow: 'hidden',
   },
-  decorCircle2: {
+  video: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  videoOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+  },
+  gradientSpot: {
     position: 'absolute',
-    bottom: -height * 0.05,
-    left: -width * 0.2,
+    top: -width * 0.5,
+    right: -width * 0.2,
+    width: width,
+    height: width,
+    borderRadius: width,
+  },
+  orb: {
+    position: 'absolute',
+    borderRadius: 999,
+  },
+  orbOne: {
+    width: width * 0.7,
+    height: width * 0.7,
+    top: -width * 0.2,
+    left: -width * 0.25,
+  },
+  orbTwo: {
     width: width * 0.5,
     height: width * 0.5,
-    borderRadius: width * 0.25,
-    backgroundColor: 'rgba(193, 232, 255, 0.03)',
+    bottom: width * 0.1,
+    right: -width * 0.2,
   },
-  scrollContent: {
+  content: {
+    flex: 1,
     paddingHorizontal: scale(24),
-    paddingTop: verticalScale(20),
-    paddingBottom: verticalScale(40),
+    justifyContent: 'space-between',
+    paddingBottom: scale(40),
   },
-  header: {
-    alignItems: 'center',
-    marginBottom: verticalScale(36),
-  },
-  logoContainer: {
-    width: scale(96),
-    height: scale(96),
+  brandArea: {
+    flex: 1,
     justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: verticalScale(20),
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    borderRadius: scale(48),
-    borderWidth: 1.5,
-    borderColor: 'rgba(193, 232, 255, 0.12)',
   },
-  logoGlow: {
-    position: 'absolute',
+  badgeRow: {
+    flexDirection: 'row',
+    marginBottom: scale(14),
+  },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scale(6),
+    paddingHorizontal: scale(12),
+    paddingVertical: scale(6),
+    borderRadius: scale(999),
+  },
+  badgeText: {
+    fontSize: scale(12),
+    fontWeight: '600',
+  },
+  logo: {
     width: scale(120),
     height: scale(120),
-    borderRadius: scale(60),
-    backgroundColor: 'rgba(193, 232, 255, 0.08)',
+    marginBottom: scale(24),
   },
-  logoRing: {
-    position: 'absolute',
-    width: scale(110),
-    height: scale(110),
-    borderRadius: scale(55),
-    borderWidth: 1,
-    borderColor: 'rgba(193, 232, 255, 0.06)',
-    borderStyle: 'dashed',
-    justifyContent: 'flex-start',
-    alignItems: 'center',
-  },
-  logoRingDot: {
-    width: scale(5),
-    height: scale(5),
-    borderRadius: scale(2.5),
-    backgroundColor: 'rgba(193, 232, 255, 0.3)',
-    marginTop: -scale(2.5),
-  },
-  logoImage: {
-    width: scale(72),
-    height: scale(72),
-  },
-  welcome: {
-    fontSize: moderateScale(28),
-    fontWeight: '900',
-    color: '#ffffff',
-    marginBottom: verticalScale(12),
-    textAlign: 'center',
-    lineHeight: moderateScale(34),
-    letterSpacing: 0.2,
-  },
-  subtitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: scale(10),
-  },
-  subtitleDash: {
-    width: scale(20),
-    height: 1.5,
-    backgroundColor: 'rgba(193, 232, 255, 0.25)',
-    borderRadius: 1,
+  title: {
+    fontSize: scale(42),
+    fontWeight: '800',
+    lineHeight: scale(48),
+    marginBottom: scale(16),
   },
   subtitle: {
-    fontSize: moderateScale(12),
-    color: 'rgba(193, 232, 255, 0.8)',
-    textAlign: 'center',
-    fontWeight: '500',
-    letterSpacing: 0.3,
+    fontSize: scale(16),
+    lineHeight: scale(24),
+    maxWidth: '90%',
   },
-  optionsContainer: {
-    marginBottom: verticalScale(32),
-    gap: verticalScale(14),
+  actionArea: {
+    gap: scale(16),
   },
   primaryButton: {
-    overflow: 'hidden',
     borderRadius: scale(16),
-    ...Platform.select({
-      ios: {
-        shadowColor: 'rgba(193, 232, 255, 0.35)',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.4,
-        shadowRadius: 14,
-      },
-      android: {
-        elevation: 8,
-      },
-    }),
+    overflow: 'hidden',
+    elevation: 4,
+    shadowColor: BRAND.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
   },
-  gradientButton: {
-    paddingVertical: verticalScale(18),
-    paddingHorizontal: scale(20),
+  primaryGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    overflow: 'hidden',
+    paddingVertical: scale(20),
+    paddingHorizontal: scale(24),
   },
-  buttonShimmerOverlay: {
+  shimmer: {
     position: 'absolute',
     top: 0,
     bottom: 0,
-    width: scale(60),
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    transform: [{ skewX: '-20deg' }],
+    width: 90,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    transform: [{ skewX: '-12deg' }],
   },
-  buttonLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: scale(14),
+  primaryBtnTitle: {
+    color: '#000000',
+    fontSize: scale(18),
+    fontWeight: '700',
   },
-  buttonIconCircle: {
-    width: scale(42),
-    height: scale(42),
-    borderRadius: scale(21),
-    backgroundColor: 'rgba(5, 38, 89, 0.1)',
+  primaryBtnSubtitle: {
+    color: 'rgba(0,0,0,0.6)',
+    fontSize: scale(13),
+    marginTop: 2,
+  },
+  iconCircle: {
+    width: scale(40),
+    height: scale(40),
+    borderRadius: scale(20),
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  primaryButtonText: {
-    fontSize: moderateScale(16),
-    fontWeight: '800',
-    color: BRAND.primary,
-    marginBottom: verticalScale(1),
-    letterSpacing: 0.2,
-  },
-  primaryButtonSubtext: {
-    fontSize: moderateScale(11),
-    color: BRAND.primary,
-    opacity: 0.6,
-    fontWeight: '500',
   },
   secondaryButton: {
-    overflow: 'hidden',
-    borderRadius: scale(16),
-    borderWidth: 1.5,
-    borderColor: 'rgba(193, 232, 255, 0.15)',
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-  },
-  secondaryBorderGlow: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(193, 232, 255, 1)',
-    borderRadius: scale(16),
-  },
-  secondaryInner: {
-    paddingVertical: verticalScale(18),
-    paddingHorizontal: scale(20),
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-  },
-  secondaryIconCircle: {
-    width: scale(42),
-    height: scale(42),
-    borderRadius: scale(21),
-    backgroundColor: 'rgba(193, 232, 255, 0.08)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    paddingVertical: scale(20),
+    paddingHorizontal: scale(24),
+    borderRadius: scale(16),
     borderWidth: 1,
-    borderColor: 'rgba(193, 232, 255, 0.1)',
   },
-  secondaryButtonText: {
-    fontSize: moderateScale(16),
-    fontWeight: '800',
-    color: '#ffffff',
-    marginBottom: verticalScale(1),
-    letterSpacing: 0.2,
-  },
-  secondaryButtonSubtext: {
-    fontSize: moderateScale(11),
-    color: 'rgba(193, 232, 255, 0.65)',
-    fontWeight: '500',
-  },
-  benefitsContainer: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: scale(18),
-    borderWidth: 1,
-    borderColor: 'rgba(193, 232, 255, 0.08)',
-    paddingVertical: verticalScale(22),
-    paddingHorizontal: scale(20),
-  },
-  benefitsTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: verticalScale(20),
-    gap: scale(10),
-  },
-  benefitsTitleLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: 'rgba(193, 232, 255, 0.1)',
-  },
-  benefitsTitle: {
-    fontSize: moderateScale(13),
+  secondaryBtnTitle: {
+    fontSize: scale(18),
     fontWeight: '700',
-    color: 'rgba(255, 255, 255, 0.9)',
-    letterSpacing: 0.3,
   },
-  benefitsGrid: {
-    gap: verticalScale(16),
+  secondaryBtnSubtitle: {
+    fontSize: scale(13),
+    marginTop: 2,
   },
-  benefitItem: {
-    flexDirection: 'row',
+  termsContainer: {
+    marginTop: scale(16),
     alignItems: 'center',
-    gap: scale(14),
   },
-  benefitIconBg: {
-    width: scale(38),
-    height: scale(38),
-    borderRadius: scale(10),
-    backgroundColor: 'rgba(193, 232, 255, 0.08)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(193, 232, 255, 0.06)',
-  },
-  benefitText: {
-    flex: 1,
-  },
-  benefitName: {
-    fontSize: moderateScale(13),
-    fontWeight: '700',
-    color: '#C1E8FF',
-    marginBottom: verticalScale(2),
-    letterSpacing: 0.1,
-  },
-  benefitDesc: {
-    fontSize: moderateScale(11),
-    color: 'rgba(193, 232, 255, 0.55)',
-    fontWeight: '400',
+  termsText: {
+    textAlign: 'center',
+    fontSize: scale(11),
+    lineHeight: scale(16),
   },
 });

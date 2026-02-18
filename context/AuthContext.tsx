@@ -2,6 +2,8 @@ import React, { createContext, useContext, useEffect, useState, ReactNode } from
 import { authService } from '@services/auth';
 import { syncService } from '@services/sync';
 import { cacheService } from '@services/cache';
+import { subscribeToPushNotifications, clearPushSubscription } from '@services/notificationService';
+import { initializeWebSocket, disconnectWebSocket } from '@services/websocketService';
 import { Rider, Driver, UserRole } from '@types/index';
 
 interface AuthContextType {
@@ -64,6 +66,25 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const role = (loggedInUser as any)?.role;
       setUserRole(role);
       console.log('📍 [AUTH-CONTEXT] Login - caching user role:', role);
+      
+      // Subscribe to push notifications on login
+      try {
+        await subscribeToPushNotifications(loggedInUser.id || '');
+        console.log('🔔 [AUTH-CONTEXT] Push notification subscription successful');
+      } catch (pushError) {
+        console.error('❌ [AUTH-CONTEXT] Failed to subscribe to push notifications:', pushError);
+        // Don't fail login if notifications fail
+      }
+
+      // Initialize WebSocket connection for real-time updates
+      try {
+        await initializeWebSocket(loggedInUser.id || '');
+        console.log('🌐 [AUTH-CONTEXT] WebSocket initialized');
+      } catch (wsError) {
+        console.error('❌ [AUTH-CONTEXT] Failed to initialize WebSocket:', wsError);
+        // Don't fail login if WebSocket fails
+      }
+      
       syncService.startAutoSync();
       return loggedInUser;
     } catch (err) {
@@ -95,6 +116,25 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       setError(null);
       syncService.stopAutoSync();
+      
+      // Disconnect WebSocket
+      try {
+        disconnectWebSocket();
+        console.log('🌐 [AUTH-CONTEXT] WebSocket disconnected');
+      } catch (wsError) {
+        console.error('❌ [AUTH-CONTEXT] Failed to disconnect WebSocket:', wsError);
+        // Don't fail logout if WebSocket fails
+      }
+      
+      // Clear push notifications subscription on logout
+      try {
+        await clearPushSubscription();
+        console.log('🔔 [AUTH-CONTEXT] Push notification subscription cleared');
+      } catch (pushError) {
+        console.error('❌ [AUTH-CONTEXT] Failed to clear push notifications:', pushError);
+        // Don't fail logout if notifications fail
+      }
+      
       await authService.logout();
       setUser(null);
       setUserRole(null);

@@ -7,9 +7,10 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  ActivityIndicator,
   Dimensions,
   Alert,
+  Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,6 +18,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '@context/ThemeContext';
 import { useAuth } from '@context/AuthContext';
 import { apiService } from '@services/api';
+import { cacheService } from '@services/cache';
+import { ListScreenSkeleton } from '@/components/ListScreenSkeleton';
 import Button from '@components/ui/Button';
 import { COLORS } from '@utils/colors';
 
@@ -31,48 +34,183 @@ export default function BankAccountsScreen() {
   const [editing, setEditing] = useState(false);
   const [formData, setFormData] = useState({
     bankName: '',
+    bankCode: '',
     accountNumber: '',
     accountName: '',
   });
+  const [hasCached, setHasCached] = useState(false);
+  const [banks, setBanks] = useState<{ code: string; name: string }[]>([]);
+  const [loadingBanks, setLoadingBanks] = useState(false);
+  const [bankPickerVisible, setBankPickerVisible] = useState(false);
+  const [bankSearch, setBankSearch] = useState('');
+  const [verifyingAccount, setVerifyingAccount] = useState(false);
+  const [accountVerified, setAccountVerified] = useState(false);
 
   const colors = mode === 'dark' ? COLORS.dark : COLORS.light;
 
   useEffect(() => {
-    fetchBankDetails();
+    loadBankDetails();
+    loadBanks();
   }, []);
 
-  const fetchBankDetails = async () => {
+  useEffect(() => {
+    if (!formData.bankCode && formData.bankName && banks.length) {
+      const match = banks.find(
+        (bank) => bank.name.toLowerCase() === formData.bankName.toLowerCase()
+      );
+      if (match) {
+        setFormData((prev) => ({ ...prev, bankCode: match.code }));
+      }
+    }
+  }, [banks, formData.bankCode, formData.bankName]);
+
+  const loadBankDetails = async () => {
+    const cached = await cacheService.get<any>('driver_bank_accounts');
+    if (cached) {
+      setFormData(cached);
+      setAccountVerified(!!cached.accountName);
+      setHasCached(true);
+      setLoading(false);
+    }
+
+    await fetchBankDetails(!cached);
+  };
+
+  const fetchBankDetails = async (showLoader: boolean = true) => {
     try {
-      setLoading(true);
+      if (showLoader) setLoading(true);
       const data = await apiService.getDriverDetails();
       const driverData = data.combined || data.driver || data.user || data;
       
-      setFormData({
+      const nextForm = {
         bankName: driverData?.bank_name || '',
+        bankCode: driverData?.bank_code || '',
         accountNumber: driverData?.bank_account_number || '',
         accountName: driverData?.account_name || '',
-      });
+      };
+      setFormData(nextForm);
+      setAccountVerified(!!nextForm.accountName);
+      await cacheService.set('driver_bank_accounts', nextForm);
     } catch (error) {
       console.error('❌ [BANK-ACCOUNTS] Error fetching details:', error);
       Alert.alert('Error', 'Failed to load bank account details');
     } finally {
-      setLoading(false);
+      if (showLoader) setLoading(false);
     }
   };
 
+  const resetVerification = () => {
+    setAccountVerified(false);
+    setFormData((prev) => ({ ...prev, accountName: '' }));
+  };
+
   const handleInputChange = (field: string, value: string) => {
+    if (field === 'accountNumber') {
+      const numeric = value.replace(/\D/g, '').slice(0, 10);
+      resetVerification();
+      setFormData(prev => ({ ...prev, accountNumber: numeric }));
+      return;
+    }
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const loadBanks = async () => {
+    setLoadingBanks(true);
+    try {
+      const paystackKey = process.env.EXPO_PUBLIC_PAYSTACK_PUBLIC_KEY;
+      const response = await fetch('https://api.paystack.co/bank', {
+        headers: paystackKey ? { Authorization: `Bearer ${paystackKey}` } : {},
+      });
+      const data = await response.json();
+      if (data?.status && Array.isArray(data.data)) {
+        const activeBanks = data.data.filter((bank: any) => bank.active !== false);
+        setBanks(activeBanks.map((bank: any) => ({ code: bank.code, name: bank.name })));
+      } else {
+        setBanks([]);
+      }
+    } catch (error) {
+      console.error('❌ [BANK-ACCOUNTS] Failed to load banks:', error);
+    } finally {
+      setLoadingBanks(false);
+    }
+  };
+
+  const handleSelectBank = (bank: { code: string; name: string }) => {
+    resetVerification();
+    setFormData((prev) => ({
+      ...prev,
+      bankName: bank.name,
+      bankCode: bank.code,
+    }));
+    setBankPickerVisible(false);
+  };
+
+  const handleVerifyAccount = async () => {
+    if (!formData.bankCode) {
+      Alert.alert('Select Bank', 'Please select a bank to continue.');
+      return;
+    }
+    if (!formData.accountNumber || formData.accountNumber.length !== 10) {
+      Alert.alert('Invalid Account', 'Enter a valid 10-digit account number.');
+      return;
+    }
+    if (!user?.id) {
+      Alert.alert('Error', 'Unable to verify account. Missing driver ID.');
+      return;
+    }
+
+    try {
+      setVerifyingAccount(true);
+      const response = await apiService.post('/driver/account-verify', {
+        action: 'verify',
+        accountNumber: formData.accountNumber,
+        bankCode: formData.bankCode,
+        driverId: user.id,
+      });
+
+      if (response?.success) {
+        setFormData((prev) => ({
+          ...prev,
+          accountName: response.accountName || prev.accountName,
+        }));
+        setAccountVerified(true);
+        Alert.alert('Verified', 'Account verified successfully.');
+        return;
+      }
+
+      setAccountVerified(false);
+      Alert.alert('Verification Failed', response?.error || 'Account verification failed.');
+    } catch (error: any) {
+      setAccountVerified(false);
+      const message = error?.message || 'Account verification failed.';
+      Alert.alert('Verification Failed', message);
+    } finally {
+      setVerifyingAccount(false);
+    }
   };
 
   const handleSave = async () => {
     try {
-      if (!formData.bankName || !formData.accountNumber || !formData.accountName) {
+      if (!formData.bankName || !formData.bankCode || !formData.accountNumber) {
         Alert.alert('Missing Fields', 'Please fill in all bank details');
         return;
+      }
+      if (!formData.accountName) {
+        Alert.alert('Missing Account Name', 'Please verify or enter the account name.');
+        return;
+      }
+
+      if (!accountVerified && user?.id) {
+        await apiService.post('/driver/account-verify', {
+          action: 'saveManual',
+          accountName: formData.accountName,
+          driverId: user.id,
+        });
       }
 
       const payload = {
         bank_name: formData.bankName,
+        bank_code: formData.bankCode,
         bank_account_number: formData.accountNumber,
         account_name: formData.accountName,
       };
@@ -92,8 +230,8 @@ export default function BankAccountsScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={colors.primary} />
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+        <ListScreenSkeleton itemCount={3} />
       </SafeAreaView>
     );
   }
@@ -148,22 +286,28 @@ export default function BankAccountsScreen() {
                     <Text style={{ fontSize: scale(12), fontWeight: '600', color: colors.foreground, marginBottom: scale(8) }}>
                       Bank Name
                     </Text>
-                    <TextInput
+                    <TouchableOpacity
+                      onPress={() => setBankPickerVisible(true)}
                       style={{
                         borderWidth: 1,
                         borderColor: colors.border,
                         borderRadius: scale(8),
                         paddingHorizontal: scale(12),
                         paddingVertical: scale(12),
-                        fontSize: scale(14),
-                        color: colors.foreground,
                         backgroundColor: colors.background,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
                       }}
-                      placeholderTextColor={colors.mutedForeground}
-                      placeholder="Enter bank name"
-                      value={formData.bankName}
-                      onChangeText={(value) => handleInputChange('bankName', value)}
-                    />
+                    >
+                      <Text style={{
+                        fontSize: scale(14),
+                        color: formData.bankName ? colors.foreground : colors.mutedForeground,
+                      }}>
+                        {formData.bankName || (loadingBanks ? 'Loading banks...' : 'Select bank')}
+                      </Text>
+                      <MaterialCommunityIcons name="chevron-down" size={scale(18)} color={colors.mutedForeground} />
+                    </TouchableOpacity>
                   </View>
 
                   {/* Account Number */}
@@ -187,8 +331,49 @@ export default function BankAccountsScreen() {
                       value={formData.accountNumber}
                       onChangeText={(value) => handleInputChange('accountNumber', value)}
                       keyboardType="numeric"
+                      maxLength={10}
                     />
                   </View>
+
+                  {/* Verify Button */}
+                  <TouchableOpacity
+                    onPress={handleVerifyAccount}
+                    disabled={verifyingAccount || !formData.bankCode || formData.accountNumber.length !== 10}
+                    style={{
+                      backgroundColor: colors.primary,
+                      paddingVertical: scale(12),
+                      borderRadius: scale(8),
+                      alignItems: 'center',
+                      marginBottom: scale(16),
+                      opacity: verifyingAccount || !formData.bankCode || formData.accountNumber.length !== 10 ? 0.6 : 1,
+                    }}
+                  >
+                    {verifyingAccount ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={{ color: '#fff', fontWeight: '600', fontSize: scale(14) }}>
+                        Verify Account
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+
+                  {accountVerified && !!formData.accountName && (
+                    <View style={{
+                      backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                      borderRadius: scale(8),
+                      padding: scale(12),
+                      borderWidth: 1,
+                      borderColor: 'rgba(16, 185, 129, 0.4)',
+                      marginBottom: scale(16),
+                    }}>
+                      <Text style={{ color: colors.foreground, fontWeight: '600', marginBottom: scale(4) }}>
+                        Verified Account
+                      </Text>
+                      <Text style={{ color: colors.mutedForeground, fontSize: scale(12) }}>
+                        {formData.accountName}
+                      </Text>
+                    </View>
+                  )}
 
                   {/* Account Name */}
                   <View style={{ marginBottom: scale(16) }}>
@@ -287,6 +472,67 @@ export default function BankAccountsScreen() {
           </View>
         </ScrollView>
       </SafeAreaView>
+
+      <Modal
+        visible={bankPickerVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setBankPickerVisible(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}>
+          <View style={{
+            backgroundColor: colors.card,
+            borderTopLeftRadius: scale(16),
+            borderTopRightRadius: scale(16),
+            padding: scale(16),
+            maxHeight: '70%',
+          }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: scale(12) }}>
+              <Text style={{ fontSize: scale(16), fontWeight: '700', color: colors.foreground }}>Select Bank</Text>
+              <TouchableOpacity onPress={() => setBankPickerVisible(false)}>
+                <MaterialCommunityIcons name="close" size={scale(20)} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            </View>
+            <View style={{
+              borderWidth: 1,
+              borderColor: colors.border,
+              borderRadius: scale(8),
+              paddingHorizontal: scale(10),
+              paddingVertical: scale(8),
+              marginBottom: scale(12),
+            }}>
+              <TextInput
+                placeholder="Search bank"
+                placeholderTextColor={colors.mutedForeground}
+                value={bankSearch}
+                onChangeText={setBankSearch}
+                style={{ color: colors.foreground, fontSize: scale(13) }}
+              />
+            </View>
+            <ScrollView>
+              {(bankSearch ? banks.filter((bank) => bank.name.toLowerCase().includes(bankSearch.toLowerCase())) : banks)
+                .map((bank) => (
+                  <TouchableOpacity
+                    key={bank.code}
+                    onPress={() => handleSelectBank(bank)}
+                    style={{
+                      paddingVertical: scale(10),
+                      borderBottomWidth: 1,
+                      borderBottomColor: colors.border,
+                    }}
+                  >
+                    <Text style={{ color: colors.foreground, fontSize: scale(14) }}>{bank.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              {!loadingBanks && banks.length === 0 && (
+                <Text style={{ color: colors.mutedForeground, textAlign: 'center', marginTop: scale(20) }}>
+                  No banks available
+                </Text>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

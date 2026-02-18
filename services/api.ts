@@ -11,6 +11,12 @@ class APIService {
     onFailed: (error: AxiosError) => void;
   }> = [];
 
+  private isFormDataPayload = (data: any): boolean => {
+    if (!data) return false;
+    if (typeof FormData !== 'undefined' && data instanceof FormData) return true;
+    return typeof data?.append === 'function' && typeof data?.getParts === 'function';
+  };
+
   constructor() {
     this.api = axios.create({
       baseURL: API_CONFIG.url,
@@ -23,6 +29,10 @@ class APIService {
     // Request interceptor
     this.api.interceptors.request.use(
       async (config: InternalAxiosRequestConfig) => {
+        if (this.isFormDataPayload(config.data)) {
+          config.headers['Content-Type'] = 'multipart/form-data';
+        }
+
         const token = await SecureStore.getItemAsync('authToken');
         console.log('📤 [API] Request interceptor - authToken from store:', token ? '✓ found' : '✗ not found');
         if (token) {
@@ -182,8 +192,20 @@ class APIService {
   }
 
   async signup(payload: any): Promise<AuthResponse> {
-    const response = await this.api.post<AuthResponse>('/auth/register', payload);
-    return response.data;
+    const config = this.isFormDataPayload(payload)
+      ? { headers: { 'Content-Type': 'multipart/form-data' } }
+      : undefined;
+
+    try {
+      const response = await this.api.post<AuthResponse>('/auth/signup', payload, config);
+      return response.data;
+    } catch (error: any) {
+      if (error?.response?.status === 404) {
+        const fallbackResponse = await this.api.post<AuthResponse>('/auth/register', payload, config);
+        return fallbackResponse.data;
+      }
+      throw error;
+    }
   }
 
   async verifyOTP(phone: string, otp: string): Promise<{ verified: boolean }> {
@@ -207,16 +229,16 @@ class APIService {
     return response.data;
   }
 
-  async getRiderRides(page: number = 1, limit: number = 20): Promise<any> {
-    const response = await this.api.get('/user/ride-history', {
-      params: { page, limit },
+  async getRiderRides(limit: number = 20): Promise<any> {
+    const response = await this.api.get('/rides', {
+      params: { limit },
     });
     return response.data;
   }
 
   // Ride endpoints
   async createRide(rideData: any): Promise<any> {
-    const response = await this.api.post('/rides', rideData);
+    const response = await this.api.post('/user/book-ride', rideData);
     return response.data;
   }
 
@@ -340,15 +362,15 @@ class APIService {
 
   // Notifications
   async getNotifications(page: number = 1, limit: number = 20): Promise<any> {
-    const response = await this.api.get('/notifications', {
+    const response = await this.api.get('/user/notifications', {
       params: { page, limit },
     });
     return response.data;
   }
 
   async markNotificationAsRead(notificationId: string): Promise<any> {
-    const response = await this.api.put(`/notifications/${notificationId}`, {
-      read: true,
+    const response = await this.api.patch('/user/notifications', {
+      notificationId,
     });
     return response.data;
   }
@@ -366,6 +388,11 @@ class APIService {
 
   async put<T = any>(url: string, data?: any, config?: any): Promise<T> {
     const response = await this.api.put<T>(url, data, config);
+    return response.data;
+  }
+
+  async patch<T = any>(url: string, data?: any, config?: any): Promise<T> {
+    const response = await this.api.patch<T>(url, data, config);
     return response.data;
   }
 

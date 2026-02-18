@@ -1,41 +1,44 @@
 /**
  * Theme definitions for light and dark modes
- * Light theme: Black text on white background
- * Dark theme: White text on black background
+ * Strictly adheres to #FF9101 (Orange), Black, and White
  */
 
 export type ThemeMode = 'light' | 'dark';
 
 export interface ThemeColors {
-  // Primary colors
+  // Core
   primary: string;
-  secondary: string;
-  accent: string;
-
-  // Background
+  onPrimary: string; // Text color on primary background
   background: string;
-  surfaceLight: string;
-  surfaceDark: string;
-
+  surface: string; // Cards, modals
+  card: string; // Cards, modals
+  
   // Text
   textPrimary: string;
   textSecondary: string;
   textTertiary: string;
 
-  // Semantic
-  success: string;
-  error: string;
-  warning: string;
-  info: string;
+  // Form Elements
+  inputBackground: string;
+  inputBorder: string;
+  inputPlaceholder: string;
 
   // Borders & Dividers
   border: string;
   divider: string;
 
-  // Special
-  placeholder: string;
-  disabled: string;
+  // Status
+  success: string;
+  error: string;
+  warning: string;
+  info: string;
+  
+  // Accents
+  icon: string;
+  badge: string;
+  sheet: string; // Custom sheet color for dark mode
 }
+
 
 export interface Theme {
   mode: ThemeMode;
@@ -45,68 +48,63 @@ export interface Theme {
 export const lightTheme: Theme = {
   mode: 'light',
   colors: {
-    // Primary colors - using black for primary in light mode
-    primary: '#000000',
-    secondary: '#333333',
-    accent: '#FFFFFF',
-
-    // Background
+    primary: '#FF9101',
+    onPrimary: '#000000',
     background: '#FFFFFF',
-    surfaceLight: '#F5F5F5',
-    surfaceDark: '#EEEEEE',
+    sheet: '#DF9638', // Custom sheet color for light mode
+    surface: '#FFFFFF',
+    card: '#F18902AD',
 
-    // Text
+
     textPrimary: '#000000',
-    textSecondary: '#333333',
-    textTertiary: '#666666',
+    textSecondary: '#814D08',
+    textTertiary: '#999999',
 
-    // Semantic
-    success: '#4CAF50',
-    error: '#F44336',
-    warning: '#FF9800',
-    info: '#2196F3',
+    inputBackground: '#FAFAFA',
+    inputBorder: '#E5E5E5',
+    inputPlaceholder: '#A3A3A3',
 
-    // Borders & Dividers
-    border: '#CCCCCC',
-    divider: '#EEEEEE',
+    border: '#F0F0F0',
+    divider: '#F5F5F5',
 
-    // Special
-    placeholder: '#BDBDBD',
-    disabled: '#F0F0F0',
+    success: '#10B981',
+    error: '#EF4444',
+    warning: '#F59E0B',
+    info: '#3B82F6',
+
+    icon: '#000000',
+    badge: '#F2F2F2',
   },
 };
 
 export const darkTheme: Theme = {
   mode: 'dark',
   colors: {
-    // Primary colors - using white for primary in dark mode
-    primary: '#FFFFFF',
-    secondary: '#CCCCCC',
-    accent: '#000000',
+    primary: '#FF9101',
+    onPrimary: '#000000',
+    background: '#000000',
+    sheet: '#DF8108EC', // Custom sheet color for dark mode
+    surface: '#121212',
+    card: '#573202D2',
 
-    // Background
-    background: '#121212',
-    surfaceLight: '#1E1E1E',
-    surfaceDark: '#2A2A2A',
-
-    // Text
     textPrimary: '#FFFFFF',
-    textSecondary: '#CCCCCC',
-    textTertiary: '#999999',
+    textSecondary: '#E6A653',
+    textTertiary: '#52525B',
 
-    // Semantic
-    success: '#66BB6A',
-    error: '#EF5350',
-    warning: '#FFA726',
-    info: '#42A5F5',
+    inputBackground: '#18181B', // Zinc 900
+    inputBorder: '#27272A',     // Zinc 800
+    inputPlaceholder: '#52525B',
 
-    // Borders & Dividers
-    border: '#333333',
-    divider: '#2A2A2A',
+    border: '#27272A',
+    divider: '#1F1F1F',
 
-    // Special
-    placeholder: '#666666',
-    disabled: '#303030',
+    success: '#34D399',
+    error: '#F87171',
+    warning: '#FBBF24',
+    info: '#60A5FA',
+
+    icon: '#FFFFFF',
+    badge: '#27272A',
   },
 };
 

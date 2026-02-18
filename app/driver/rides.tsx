@@ -1,4 +1,3 @@
-// 'use client';
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -6,394 +5,262 @@ import {
   Text,
   ScrollView,
   TouchableOpacity,
-  ActivityIndicator,
   FlatList,
   Dimensions,
   Alert,
+  StyleSheet,
+  StatusBar,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useTheme } from '@context/ThemeContext';
-import { apiService } from '@services/api';
-import Button from '@components/ui/Button';
-import Card from '@components/ui/Card';
-import RiderBottomNavigation from '@components/RiderBottomNavigation';
-import { COLORS } from '@utils/colors';
-import { formatCurrency, formatDistance, formatDuration } from '@utils/formatting';
+import { useTheme } from '@/context/ThemeContext';
+import { apiService } from '@/services/api';
+import { cacheService } from '@/services/cache';
+import { formatCurrency } from '@/utils/formatting';
+import { BRAND, COLORS } from '@/utils/colors';
+import { ListScreenSkeleton } from '@/components/ListScreenSkeleton';
 
 const { width } = Dimensions.get('window');
-const scale = (size: number) => (width / 375) * size;
 
 interface RideItem {
   id: string;
-  rider?: {
-    name?: string;
-    first_name?: string;
-    last_name?: string;
-    rating?: number;
-  };
-  users?: {
-    name?: string;
-    first_name?: string;
-    last_name?: string;
-    rating?: number;
-  };
-  pickup_location?: string;
-  destination_location?: string;
+  users?: { first_name?: string; rating?: number; };
   pickup_zone?: string;
   destination_zone?: string;
-  estimated_fare?: number;
-  fare?: number;
-  distance?: number;
-  estimated_time?: number;
+  driver_earnings?: number;
+  fare_amount?: number;
+  distance_km?: number;
+  duration_minutes?: number;
   status?: string;
   created_at?: string;
-  started_at?: string;
 }
 
 export default function RidesListScreen() {
   const router = useRouter();
-  const { mode } = useTheme();
+  const { theme } = useTheme();
   const [rides, setRides] = useState<RideItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'active' | 'available' | 'history'>('active');
+  const [activeTab, setActiveTab] = useState<'active' | 'available' | 'history'>('available');
+  const [hasCached, setHasCached] = useState(false);
 
-  const colors = mode === 'dark' ? COLORS.dark : COLORS.light;
+  const isLight = theme.mode === 'light';
 
   useFocusEffect(
     React.useCallback(() => {
-      fetchRides();
+      loadRides();
     }, [activeTab])
   );
 
-  const fetchRides = async () => {
+  const loadRides = async () => {
+    const cacheKey = `driver_rides_${activeTab}`;
+    const cached = await cacheService.get<RideItem[]>(cacheKey);
+    if (cached) {
+      setRides(cached);
+      setHasCached(true);
+      setLoading(false);
+    }
+
+    await fetchRides(!cached, cacheKey);
+  };
+
+  const fetchRides = async (showLoader: boolean = true, cacheKey?: string) => {
     try {
-      setLoading(true);
-      console.log(`📋 [RIDES-LIST] Fetching ${activeTab} rides...`);
-      
+      if (showLoader) setLoading(true);
       let data;
       if (activeTab === 'active') {
         const response = await apiService.getActiveRides();
-        data = response?.rides || response || [];
+        data = response?.rides || [];
       } else if (activeTab === 'available') {
         const response = await apiService.get('/driver/available-rides?radiusKm=10').catch(() => ({ rides: [] }));
-        data = (response as any)?.rides || response || [];
+        data = response?.rides || [];
       } else {
-        const response = await apiService.getTransactions(1);
-        data = response?.rides || response || [];
+        const response = await apiService.getTransactions(1); // Assuming this returns history
+        data = response?.rides || [];
       }
-      
-      console.log('✅ [RIDES-LIST] Fetched rides:', data);
-      setRides(Array.isArray(data) ? data : []);
+      const nextRides = Array.isArray(data) ? data : [];
+      setRides(nextRides);
+      if (cacheKey) {
+        await cacheService.set(cacheKey, nextRides);
+      }
     } catch (error) {
-      console.error('❌ [RIDES-LIST] Failed to fetch rides:', error);
       setRides([]);
     } finally {
-      setLoading(false);
+      if (showLoader) setLoading(false);
     }
   };
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await fetchRides();
+    await fetchRides(!hasCached, `driver_rides_${activeTab}`);
     setRefreshing(false);
-  };
-
-  const handleRideTap = (ride: RideItem) => {
-    console.log('🔹 [RIDES-LIST] Navigating to ride details:', ride.id);
-    router.push({
-      pathname: '/driver/ride-details',
-      params: {
-        rideId: ride.id,
-        rideData: JSON.stringify(ride), // Pass full ride object
-      },
-    });
-  };
-
-  const getRiderName = (ride: RideItem) => {
-    return ride.users?.first_name || ride.rider?.first_name || ride.users?.name || 'Unknown';
-  };
-
-  const getRiderRating = (ride: RideItem) => {
-    return ride.users?.rating || ride.rider?.rating || 4.5;
-  };
-
-  const getRideDistance = (ride: RideItem) => {
-    const distance = (ride as any)?.distance_km || ride.distance;
-    return distance ? `${distance}km` : 'N/A';
-  };
-
-  const getRideFare = (ride: RideItem) => {
-    const fare = (ride as any)?.driver_earnings || (ride as any)?.fare_amount || ride.fare || ride.estimated_fare || 0;
-    return formatCurrency(fare);
-  };
-
-  const getRideTime = (ride: RideItem) => {
-    const date = (ride as any)?.pickup_time || ride.created_at;
-    return date ? new Date(date).toLocaleDateString() : 'N/A';
   };
 
   const handleAcceptRide = async (ride: RideItem) => {
     try {
-      console.log('✅ [RIDES-LIST] Accepting ride:', ride.id);
-      const response = await apiService.put(`/driver/rides/${ride.id}`, { status: 'accepted' });
-      if (response) {
-        Alert.alert('Success', 'Ride accepted! You will be contacted soon.');
-        fetchRides();
-      }
-    } catch (error) {
-      console.error('❌ [RIDES-LIST] Accept error:', error);
-      Alert.alert('Error', 'Failed to accept ride');
-    }
+      await apiService.put(`/driver/rides/${ride.id}`, { status: 'accepted' });
+      Alert.alert('Success', 'Ride accepted!');
+      fetchRides();
+    } catch (error) { Alert.alert('Error', 'Failed to accept ride'); }
   };
 
-  const handleHideRide = (ride: RideItem) => {
-    console.log('👁️ [RIDES-LIST] Hiding ride:', ride.id);
-    // Remove from list locally
-    setRides(rides.filter(r => r.id !== ride.id));
-  };
+  const renderRideCard = ({ item }: { item: RideItem }) => {
+    const fare = item.driver_earnings || item.fare_amount || 0;
+    const isAvailable = activeTab === 'available';
 
-  const renderRideCard = ({ item: ride }: { item: RideItem }) => (
-    <View
-      style={{
-        marginBottom: scale(12),
-        marginHorizontal: scale(3),
-      }}
-    >
+    return (
       <TouchableOpacity 
-        onPress={() => handleRideTap(ride)}
-        disabled={activeTab === 'available'}
+        activeOpacity={0.9}
+        onPress={() => router.push({ pathname: '/driver/ride-details', params: { rideId: item.id, rideData: JSON.stringify(item) } } as any)}
+        style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
       >
-        <Card style={{
-          paddingHorizontal: scale(12),
-          paddingVertical: scale(12),
-          borderRadius: scale(12),
-          backgroundColor: colors.card,
-          borderLeftWidth: 4,
-          borderLeftColor: ride.status === 'completed' ? '#10b981' : '#3b82f6',
-        }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: scale(8) }}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ 
-                color: colors.foreground, 
-                fontSize: scale(14), 
-                fontWeight: '600',
-                marginBottom: scale(2),
-              }}>
-                {getRiderName(ride)}
-              </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <MaterialCommunityIcons name="star" size={14} color="#fbbf24" />
-                <Text style={{ color: colors.mutedForeground, fontSize: scale(12), marginLeft: scale(4) }}>
-                  {getRiderRating(ride).toFixed(1)}
-                </Text>
-              </View>
-            </View>
-            <View style={{ alignItems: 'flex-end' }}>
-              <Text style={{ color: colors.primary, fontSize: scale(14), fontWeight: '700' }}>
-                {getRideFare(ride)}
-              </Text>
-              <Text style={{ 
-                color: ride.status === 'completed' ? '#10b981' : '#3b82f6',
-                fontSize: scale(11),
-                fontWeight: '500',
-                marginTop: scale(2),
-                textTransform: 'capitalize',
-              }}>
-                {ride.status || 'Pending'}
-              </Text>
-            </View>
-          </View>
-
-          <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: scale(8), marginTop: scale(8) }}>
-            <View style={{ marginBottom: scale(6) }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <MaterialCommunityIcons name="map-marker" size={14} color={colors.mutedForeground} />
-                <Text style={{ color: colors.mutedForeground, fontSize: scale(12), marginLeft: scale(6), flex: 1 }}>
-                  {ride.pickup_zone || ride.pickup_location || 'Pickup'}
-                </Text>
-              </View>
+        <View style={styles.cardHeader}>
+          <View style={styles.riderInfo}>
+            <View style={[styles.avatar, { backgroundColor: theme.colors.inputBackground }]}>
+               <Text style={{fontSize: 16}}>👤</Text>
             </View>
             <View>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <MaterialCommunityIcons name="map-marker" size={14} color={colors.mutedForeground} style={{ opacity: 0.5 }} />
-                <Text style={{ color: colors.mutedForeground, fontSize: scale(12), marginLeft: scale(6), flex: 1, opacity: 0.7 }}>
-                  {ride.destination_zone || ride.destination_location || 'Destination'}
-                </Text>
-              </View>
+               <Text style={[styles.riderName, { color: theme.colors.textPrimary }]}>{item.users?.first_name || 'Rider'}</Text>
+               <View style={styles.ratingRow}>
+                 <MaterialCommunityIcons name="star" size={12} color="#F59E0B" />
+                 <Text style={[styles.ratingText, { color: theme.colors.textSecondary }]}>{item.users?.rating?.toFixed(1) || '5.0'}</Text>
+               </View>
             </View>
           </View>
-
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: scale(8), paddingTop: scale(8), borderTopWidth: 1, borderTopColor: colors.border }}>
-            <View style={{ alignItems: 'center' }}>
-              <Text style={{ color: colors.mutedForeground, fontSize: scale(11) }}>Distance</Text>
-              <Text style={{ color: colors.foreground, fontSize: scale(12), fontWeight: '600', marginTop: scale(2) }}>
-                {getRideDistance(ride)}
-              </Text>
-            </View>
-            <View style={{ alignItems: 'center' }}>
-              <Text style={{ color: colors.mutedForeground, fontSize: scale(11) }}>Duration</Text>
-              <Text style={{ color: colors.foreground, fontSize: scale(12), fontWeight: '600', marginTop: scale(2) }}>
-                {ride.estimated_time ? `${ride.estimated_time}m` : 'N/A'}
-              </Text>
-            </View>
-            <View style={{ alignItems: 'center' }}>
-              <Text style={{ color: colors.mutedForeground, fontSize: scale(11) }}>Date</Text>
-              <Text style={{ color: colors.foreground, fontSize: scale(12), fontWeight: '600', marginTop: scale(2) }}>
-                {getRideTime(ride)}
-              </Text>
-            </View>
+          <View style={styles.fareContainer}>
+             <Text style={[styles.fareText, { color: BRAND.primary }]}>{formatCurrency(fare)}</Text>
+             {!isAvailable && (
+               <View style={[styles.statusBadge, { backgroundColor: item.status === 'completed' ? '#10B98120' : '#3B82F620' }]}>
+                  <Text style={[styles.statusText, { color: item.status === 'completed' ? '#10B981' : '#3B82F6' }]}>{item.status}</Text>
+               </View>
+             )}
           </View>
-        </Card>
-      </TouchableOpacity>
-      
-      {/* Action Buttons for Available Rides */}
-      {activeTab === 'available' && (
-        <View style={{ flexDirection: 'row', gap: scale(8), marginTop: scale(8), paddingHorizontal: scale(3) }}>
-          <TouchableOpacity
-            onPress={() => handleAcceptRide(ride)}
-            style={{
-              flex: 1,
-              paddingVertical: scale(10),
-              paddingHorizontal: scale(12),
-              backgroundColor: '#10b981',
-              borderRadius: scale(8),
-              flexDirection: 'row',
-              justifyContent: 'center',
-              alignItems: 'center',
-              gap: scale(6),
-            }}
-          >
-            <MaterialCommunityIcons name="check-circle" size={scale(16)} color="#fff" />
-            <Text style={{ color: '#fff', fontSize: scale(12), fontWeight: '600' }}>Accept</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => handleHideRide(ride)}
-            style={{
-              flex: 1,
-              paddingVertical: scale(10),
-              paddingHorizontal: scale(12),
-              backgroundColor: colors.card,
-              borderRadius: scale(8),
-              borderWidth: 1,
-              borderColor: colors.border,
-              flexDirection: 'row',
-              justifyContent: 'center',
-              alignItems: 'center',
-              gap: scale(6),
-            }}
-          >
-            <MaterialCommunityIcons name="eye-off" size={scale(16)} color={colors.mutedForeground} />
-            <Text style={{ color: colors.mutedForeground, fontSize: scale(12), fontWeight: '600' }}>Hide</Text>
-          </TouchableOpacity>
         </View>
-      )}
-    </View>
-  );
 
-  const emptyState = (
-    <View style={{ justifyContent: 'center', alignItems: 'center', paddingVertical: scale(60) }}>
-      <MaterialCommunityIcons name="inbox" size={48} color={colors.mutedForeground} />
-      <Text style={{ color: colors.mutedForeground, fontSize: scale(14), marginTop: scale(12), textAlign: 'center' }}>
-        {activeTab === 'active' ? 'No active rides' : 'No ride history'}
-      </Text>
-    </View>
-  );
+        <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
+
+        <View style={styles.routeContainer}>
+            <View style={styles.timeline}>
+               <View style={[styles.dot, { backgroundColor: BRAND.primary }]} />
+               <View style={[styles.line, { backgroundColor: theme.colors.border }]} />
+               <View style={[styles.square, { borderColor: theme.colors.textPrimary }]} />
+            </View>
+            <View style={styles.addresses}>
+               <Text numberOfLines={1} style={[styles.addressText, { color: theme.colors.textPrimary }]}>{item.pickup_zone}</Text>
+               <View style={{ height: 16 }} />
+               <Text numberOfLines={1} style={[styles.addressText, { color: theme.colors.textPrimary }]}>{item.destination_zone}</Text>
+            </View>
+        </View>
+
+        <View style={[styles.metaRow, { backgroundColor: theme.colors.inputBackground }]}>
+           <View style={styles.metaItem}>
+              <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Distance</Text>
+              <Text style={[styles.metaValue, { color: theme.colors.textPrimary }]}>{item.distance_km?.toFixed(1) || '-'} km</Text>
+           </View>
+           <View style={styles.metaItem}>
+              <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Est. Time</Text>
+              <Text style={[styles.metaValue, { color: theme.colors.textPrimary }]}>{item.duration_minutes || '-'} min</Text>
+           </View>
+        </View>
+
+        {isAvailable && (
+          <View style={styles.actionRow}>
+            <TouchableOpacity onPress={() => {}} style={[styles.actionBtn, { borderColor: theme.colors.border }]}>
+               <Text style={[styles.actionText, { color: theme.colors.textSecondary }]}>Decline</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => handleAcceptRide(item)} style={[styles.actionBtn, { backgroundColor: BRAND.primary, borderColor: BRAND.primary }]}>
+               <Text style={[styles.actionText, { color: '#000', fontWeight: '700' }]}>Accept Ride</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  };
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
       <SafeAreaView style={{ flex: 1 }}>
-        <View style={{ paddingHorizontal: scale(16), paddingBottom: scale(8) }}>
-          <Text style={{ color: colors.foreground, fontSize: scale(24), fontWeight: '700', marginBottom: scale(16) }}>
-            Your Rides
-          </Text>
+        <View style={styles.header}>
+          <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>Rides</Text>
+        </View>
 
-          {/* Tab buttons */}
-          <View style={{ flexDirection: 'row', gap: scale(8) }}>
+        <View style={styles.tabsContainer}>
+          {['available', 'active', 'history'].map(tab => (
             <TouchableOpacity
-              onPress={() => setActiveTab('active')}
-              style={{
-                flex: 1,
-                paddingVertical: scale(8),
-                paddingHorizontal: scale(12),
-                backgroundColor: activeTab === 'active' ? colors.primary : colors.card,
-                borderRadius: scale(8),
-              }}
+              key={tab}
+              onPress={() => setActiveTab(tab as any)}
+              style={[
+                styles.tab,
+                activeTab === tab ? { backgroundColor: BRAND.primary } : { backgroundColor: theme.colors.card, borderWidth: 1, borderColor: theme.colors.border }
+              ]}
             >
-              <Text style={{
-                color: activeTab === 'active' ? '#fff' : colors.mutedForeground,
-                fontSize: scale(13),
-                fontWeight: '600',
-                textAlign: 'center',
-              }}>
-                Active
+              <Text style={[styles.tabText, { color: activeTab === tab ? '#000' : theme.colors.textSecondary }]}>
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setActiveTab('available')}
-              style={{
-                flex: 1,
-                paddingVertical: scale(8),
-                paddingHorizontal: scale(12),
-                backgroundColor: activeTab === 'available' ? colors.primary : colors.card,
-                borderRadius: scale(8),
-              }}
-            >
-              <Text style={{
-                color: activeTab === 'available' ? '#fff' : colors.mutedForeground,
-                fontSize: scale(13),
-                fontWeight: '600',
-                textAlign: 'center',
-              }}>
-                Available
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setActiveTab('history')}
-              style={{
-                flex: 1,
-                paddingVertical: scale(8),
-                paddingHorizontal: scale(12),
-                backgroundColor: activeTab === 'history' ? colors.primary : colors.card,
-                borderRadius: scale(8),
-              }}
-            >
-              <Text style={{
-                color: activeTab === 'history' ? '#fff' : colors.mutedForeground,
-                fontSize: scale(13),
-                fontWeight: '600',
-                textAlign: 'center',
-              }}>
-                History
-              </Text>
-            </TouchableOpacity>
-          </View>
+          ))}
         </View>
 
         {loading ? (
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-            <ActivityIndicator size="large" color={colors.primary} />
-          </View>
+          <View style={styles.center}><ListScreenSkeleton itemCount={4} /></View>
         ) : (
           <FlatList
             data={rides}
             renderItem={renderRideCard}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={{
-              paddingHorizontal: scale(12),
-              paddingVertical: scale(12),
-              paddingBottom: scale(100),
-              flexGrow: 1,
-            }}
-            ListEmptyComponent={emptyState}
+            contentContainerStyle={styles.listContent}
             refreshing={refreshing}
             onRefresh={handleRefresh}
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                 <MaterialCommunityIcons name="clipboard-text-outline" size={48} color={theme.colors.textTertiary} />
+                 <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>No rides found</Text>
+              </View>
+            }
           />
         )}
       </SafeAreaView>
-      <RiderBottomNavigation />
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  header: { padding: 20 },
+  headerTitle: { fontSize: 28, fontWeight: '800' },
+  tabsContainer: { flexDirection: 'row', paddingHorizontal: 20, gap: 10, marginBottom: 16 },
+  tab: { flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  tabText: { fontWeight: '600', fontSize: 13 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  listContent: { paddingHorizontal: 20, paddingBottom: 100, gap: 16 },
+  card: { borderRadius: 16, borderWidth: 1, padding: 16 },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  riderInfo: { flexDirection: 'row', gap: 12 },
+  avatar: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
+  riderName: { fontWeight: '700', fontSize: 14 },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  ratingText: { fontSize: 12 },
+  fareContainer: { alignItems: 'flex-end' },
+  fareText: { fontSize: 16, fontWeight: '700' },
+  statusBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginTop: 4 },
+  statusText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
+  divider: { height: 1, marginVertical: 12 },
+  routeContainer: { flexDirection: 'row', marginBottom: 12 },
+  timeline: { alignItems: 'center', marginRight: 12, paddingTop: 4 },
+  dot: { width: 8, height: 8, borderRadius: 4 },
+  line: { width: 1, flex: 1, marginVertical: 4 },
+  square: { width: 8, height: 8, borderWidth: 1 },
+  addresses: { flex: 1, justifyContent: 'space-between' },
+  addressText: { fontSize: 14, fontWeight: '500' },
+  metaRow: { flexDirection: 'row', borderRadius: 8, padding: 8, justifyContent: 'space-between' },
+  metaItem: { alignItems: 'center', flex: 1 },
+  metaLabel: { fontSize: 10 },
+  metaValue: { fontSize: 13, fontWeight: '600' },
+  actionRow: { flexDirection: 'row', gap: 12, marginTop: 16 },
+  actionBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 1, alignItems: 'center' },
+  actionText: { fontSize: 14, fontWeight: '600' },
+  emptyState: { alignItems: 'center', padding: 40 },
+  emptyText: { marginTop: 12 },
+});

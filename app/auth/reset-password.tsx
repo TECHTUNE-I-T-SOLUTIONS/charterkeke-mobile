@@ -14,6 +14,7 @@ import {
   Animated,
   Alert,
   ScrollView,
+  StatusBar,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -95,6 +96,7 @@ export default function ResetPasswordScreen() {
   }, []);
 
   // Animation refs
+  const slideAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
 
@@ -225,7 +227,7 @@ export default function ResetPasswordScreen() {
           <View
             style={[
               styles.requirementDot,
-              { backgroundColor: req.met ? '#10B981' : theme.colors.surfaceLight },
+              { backgroundColor: req.met ? '#10B981' : theme.colors.surface },
             ]}
           />
           <Text style={[styles.requirementText, req.met && styles.requirementMet]}>
@@ -255,10 +257,10 @@ export default function ResetPasswordScreen() {
                     styles.stepCircle,
                     {
                       backgroundColor: isCompleted
-                        ? '#10B981'
+                        ? '#444444'
                         : isActive
-                        ? theme.colors.surfaceLight
-                        : 'rgba(255,255,255,0.05)',
+                        ? theme.colors.surface
+                        : 'rgba(179, 179, 179, 0.51)',
                       borderWidth: isActive ? 2 : 0,
                       borderColor: isActive ? theme.colors.textPrimary : 'transparent',
                     },
@@ -270,7 +272,7 @@ export default function ResetPasswordScreen() {
                     <Text
                       style={[
                         styles.stepNumber,
-                        { opacity: isFuture ? 0.35 : 1, color: theme.colors.textPrimary },
+                        { opacity: isFuture ? 0.35 : 1, color: isFuture ? 'rgb(0, 0, 0)' : '#000000' },
                       ]}
                     >
                       {index + 1}
@@ -284,7 +286,7 @@ export default function ResetPasswordScreen() {
                     styles.stepLine,
                     {
                       backgroundColor: isCompleted
-                        ? '#10B981'
+                        ? '#5E5E5E'
                         : theme.colors.border,
                     },
                   ]}
@@ -300,14 +302,8 @@ export default function ResetPasswordScreen() {
   const currentConfig = STEP_CONFIG[currentStep];
 
   return (
-    <LinearGradient
-      colors={theme.mode === 'light'
-        ? ['rgba(240, 240, 240, 0.97)', 'rgba(131, 131, 131, 0.97)', 'rgba(77, 77, 77, 0.95)']
-        : ['rgba(20, 20, 20, 0.97)', 'rgba(30, 30, 30, 0.97)', 'rgba(18, 18, 18, 0.95)']}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 0.3, y: 1 }}
-      style={styles.container}
-    >
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <StatusBar barStyle={theme.mode === 'light' ? 'dark-content' : 'light-content'} />
       {/* Theme Toggle */}
       <ThemeToggle top={insets.top + 16} right={16} />
 
@@ -337,7 +333,7 @@ export default function ResetPasswordScreen() {
                   />
                 </View>
               </TouchableOpacity>
-              <Text style={styles.headerTitle}>Reset Password</Text>
+              <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>Reset Password</Text>
               <View style={{ width: scale(34) }} />
             </View>
 
@@ -384,14 +380,14 @@ export default function ResetPasswordScreen() {
               {/* Step 1: Email */}
               {currentStep === 'email' && (
                 <View>
-                  <Text style={styles.stepTitle}>{currentConfig.title}</Text>
-                  <Text style={styles.stepDescription}>
+                  <Text style={[styles.stepTitle, { color: theme.colors.textPrimary }]}>{currentConfig.title}</Text>
+                  <Text style={[styles.stepDescription, { color: theme.colors.textSecondary }]}>
                     {currentConfig.description}
                   </Text>
 
                   <View style={styles.form}>
                     <View>
-                      <Text style={styles.label}>Email Address</Text>
+                      <Text style={[styles.label, { color: theme.colors.textSecondary }]}>Email Address</Text>
                       <View style={[styles.inputContainer, errors.email ? styles.inputContainerError : null]}>
                         <MaterialCommunityIcons
                           name="email-outline"
@@ -421,23 +417,21 @@ export default function ResetPasswordScreen() {
                       activeOpacity={0.85}
                     >
                       <LinearGradient
-                        colors={theme.mode === 'light'
-                          ? ['#000000', '#333333']
-                          : ['#FFFFFF', '#CCCCCC']}
+                        colors={[BRAND.primary, '#E68200']}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 0 }}
                         style={styles.buttonGradient}
                       >
                         {isLoading ? (
-                          <ActivityIndicator size="small" color={theme.mode === 'light' ? '#FFFFFF' : '#000000'} />
+                          <ActivityIndicator size="small" color="#000" />
                         ) : (
                           <>
-                            <Text style={[styles.buttonText, { color: theme.mode === 'light' ? '#FFFFFF' : '#000000' }]}>Send OTP</Text>
+                            <Text style={styles.buttonText}>Send OTP</Text>
                             <View style={styles.btnArrowBg}>
                               <MaterialCommunityIcons
                                 name="send"
                                 size={moderateScale(14)}
-                                color={theme.mode === 'light' ? '#FFFFFF' : '#000000'}
+                                color="#000"
                               />
                             </View>
                           </>
@@ -451,15 +445,15 @@ export default function ResetPasswordScreen() {
               {/* Step 2: OTP Verification */}
               {currentStep === 'otp' && (
                 <View>
-                  <Text style={styles.stepTitle}>{currentConfig.title}</Text>
-                  <Text style={styles.stepDescription}>
+                  <Text style={[styles.stepTitle, { color: theme.colors.textPrimary }]}>{currentConfig.title}</Text>
+                  <Text style={[styles.stepDescription, { color: theme.colors.textSecondary }]}>
                     Enter the 6-digit code sent to{' '}
                     <Text style={styles.emailHighlight}>{email}</Text>
                   </Text>
 
                   <View style={styles.form}>
                     <View>
-                      <Text style={styles.label}>One-Time Password</Text>
+                      <Text style={[styles.label, { color: theme.colors.textSecondary }]}>One-Time Password</Text>
                       <View style={[styles.inputContainer, errors.otp ? styles.inputContainerError : null]}>
                         <MaterialCommunityIcons
                           name="shield-key-outline"
@@ -517,23 +511,21 @@ export default function ResetPasswordScreen() {
                       activeOpacity={0.85}
                     >
                       <LinearGradient
-                        colors={theme.mode === 'light'
-                          ? ['#000000', '#333333']
-                          : ['#FFFFFF', '#CCCCCC']}
+                        colors={[BRAND.primary, '#E68200']}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 0 }}
                         style={styles.buttonGradient}
                       >
                         {isLoading ? (
-                          <ActivityIndicator size="small" color={theme.mode === 'light' ? '#FFFFFF' : '#000000'} />
+                          <ActivityIndicator size="small" color="#000" />
                         ) : (
                           <>
-                            <Text style={[styles.buttonText, { color: theme.mode === 'light' ? '#FFFFFF' : '#000000' }]}>Verify OTP</Text>
+                            <Text style={styles.buttonText}>Verify OTP</Text>
                             <View style={styles.btnArrowBg}>
                               <MaterialCommunityIcons
                                 name="check"
                                 size={moderateScale(14)}
-                                color={theme.mode === 'light' ? '#FFFFFF' : '#000000'}
+                                color="#000"
                               />
                             </View>
                           </>
@@ -547,14 +539,14 @@ export default function ResetPasswordScreen() {
               {/* Step 3: New Password */}
               {currentStep === 'password' && (
                 <View>
-                  <Text style={styles.stepTitle}>{currentConfig.title}</Text>
-                  <Text style={styles.stepDescription}>
+                  <Text style={[styles.stepTitle, { color: theme.colors.textPrimary }]}>{currentConfig.title}</Text>
+                  <Text style={[styles.stepDescription, { color: theme.colors.textSecondary }]}>
                     {currentConfig.description}
                   </Text>
 
                   <View style={styles.form}>
                     <View>
-                      <Text style={styles.label}>New Password</Text>
+                      <Text style={[styles.label, { color: theme.colors.textSecondary }]}>New Password</Text>
                       <View style={[styles.inputContainer, errors.password ? styles.inputContainerError : null]}>
                         <MaterialCommunityIcons
                           name="lock-outline"
@@ -590,7 +582,7 @@ export default function ResetPasswordScreen() {
                     <PasswordRequirements />
 
                     <View>
-                      <Text style={styles.label}>Confirm Password</Text>
+                      <Text style={[styles.label, { color: theme.colors.textSecondary }]}>Confirm Password</Text>
                       <View
                         style={[
                           styles.inputContainer,
@@ -635,23 +627,21 @@ export default function ResetPasswordScreen() {
                       activeOpacity={0.85}
                     >
                       <LinearGradient
-                        colors={theme.mode === 'light'
-                          ? ['#000000', '#333333']
-                          : ['#FFFFFF', '#CCCCCC']}
+                        colors={[BRAND.primary, '#E68200']}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 0 }}
                         style={styles.buttonGradient}
                       >
                         {isLoading ? (
-                          <ActivityIndicator size="small" color={theme.mode === 'light' ? '#FFFFFF' : '#000000'} />
+                          <ActivityIndicator size="small" color="#000" />
                         ) : (
                           <>
-                            <Text style={[styles.buttonText, { color: theme.mode === 'light' ? '#FFFFFF' : '#000000' }]}>Reset Password</Text>
+                            <Text style={styles.buttonText}>Reset Password</Text>
                             <View style={styles.btnArrowBg}>
                               <MaterialCommunityIcons
                                 name="check-all"
                                 size={moderateScale(14)}
-                                color={theme.mode === 'light' ? '#FFFFFF' : '#000000'}
+                                color="#000"
                               />
                             </View>
                           </>
@@ -665,15 +655,15 @@ export default function ResetPasswordScreen() {
 
             {/* Back to Login */}
             <View style={styles.footer}>
-              <Text style={styles.footerText}>Remember your password? </Text>
+              <Text style={[styles.footerText, { color: theme.colors.textSecondary }]}>Remember your password? </Text>
               <TouchableOpacity onPress={() => router.push('/auth/login-new')}>
-                <Text style={styles.footerLink}>Sign In</Text>
+                <Text style={[styles.footerLink, { color: BRAND.primary }]}>Sign In</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
-    </LinearGradient>
+    </View>
   );
 }
 
@@ -704,14 +694,14 @@ const styles = StyleSheet.create({
     width: scale(34),
     height: scale(34),
     borderRadius: scale(17),
-    backgroundColor: 'rgba(193, 232, 255, 0.08)',
+    backgroundColor: '#F5F5F5',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(193, 232, 255, 0.1)',
+    borderColor: '#E5E5E5',
   },
   headerTitle: {
-    color: '#fff',
+    color: '#000000',
     fontSize: moderateScale(16),
     fontWeight: '800',
     letterSpacing: 0.2,
@@ -733,7 +723,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   stepNumber: {
-    color: '#C1E8FF',
+    color: '#000000',
     fontWeight: '700',
     fontSize: moderateScale(13),
   },
@@ -751,24 +741,24 @@ const styles = StyleSheet.create({
     width: scale(64),
     height: scale(64),
     borderRadius: scale(32),
-    backgroundColor: 'rgba(193, 232, 255, 0.08)',
+    backgroundColor: '#FFF5E5',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: 'rgba(193, 232, 255, 0.1)',
+    borderColor: 'rgba(241, 137, 2, 0.2)',
   },
   contentContainer: {
     paddingHorizontal: scale(24),
   },
   stepTitle: {
-    color: '#fff',
+    color: '#000000',
     fontSize: moderateScale(22),
     fontWeight: '800',
     marginBottom: verticalScale(6),
     letterSpacing: 0.1,
   },
   stepDescription: {
-    color: 'rgba(193, 232, 255, 0.65)',
+    color: 'rgba(0, 0, 0, 0.6)',
     fontSize: moderateScale(12),
     marginBottom: verticalScale(24),
     lineHeight: moderateScale(18),
@@ -776,14 +766,14 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   emailHighlight: {
-    color: '#C1E8FF',
+    color: '#F18902',
     fontWeight: '700',
   },
   form: {
     gap: verticalScale(16),
   },
   label: {
-    color: 'rgba(193, 232, 255, 0.8)',
+    color: 'rgba(0, 0, 0, 0.6)',
     fontSize: moderateScale(11),
     fontWeight: '600',
     marginBottom: verticalScale(6),
@@ -793,15 +783,15 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: '#FFFFFF',
     borderRadius: scale(12),
     paddingHorizontal: scale(14),
-    borderWidth: 1.5,
-    borderColor: 'rgba(193, 232, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
   },
   inputContainerError: {
     borderColor: '#ef4444',
-    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    backgroundColor: 'rgba(239, 68, 68, 0.06)',
   },
   inputIcon: {
     marginRight: scale(10),
@@ -810,7 +800,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: verticalScale(14),
     fontSize: moderateScale(13),
-    color: '#ffffff',
+    color: '#000000',
     fontWeight: '500',
   },
   otpInput: {
@@ -825,19 +815,19 @@ const styles = StyleSheet.create({
     padding: scale(6),
   },
   errorText: {
-    color: '#fca5a5',
+    color: '#dc2626',
     fontSize: moderateScale(10),
     marginTop: verticalScale(4),
     fontWeight: '500',
     letterSpacing: 0.1,
   },
   requirementsContainer: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: '#F8F8F8',
     borderRadius: scale(12),
     padding: scale(14),
     gap: verticalScale(10),
     borderWidth: 1,
-    borderColor: 'rgba(193, 232, 255, 0.06)',
+    borderColor: '#E5E5E5',
   },
   requirement: {
     flexDirection: 'row',
@@ -850,7 +840,7 @@ const styles = StyleSheet.create({
     borderRadius: scale(3),
   },
   requirementText: {
-    color: 'rgba(193, 232, 255, 0.4)',
+    color: 'rgba(0, 0, 0, 0.6)',
     fontSize: moderateScale(11),
     fontWeight: '500',
   },
@@ -866,9 +856,14 @@ const styles = StyleSheet.create({
     gap: scale(6),
   },
   resendText: {
-    color: 'rgba(193, 232, 255, 0.5)',
+    color: 'rgba(0, 0, 0, 0.6)',
     fontSize: moderateScale(11),
     fontWeight: '500',
+  },
+  futurecount: {
+    color: 'rgb(0, 0, 0)',
+    fontWeight: '700',
+    fontSize: moderateScale(13),
   },
   resendButton: {
     flexDirection: 'row',
@@ -877,10 +872,10 @@ const styles = StyleSheet.create({
     paddingVertical: verticalScale(6),
     paddingHorizontal: scale(14),
     borderRadius: scale(20),
-    backgroundColor: 'rgba(193, 232, 255, 0.08)',
+    backgroundColor: '#FFF5E5',
   },
   resendLink: {
-    color: '#C1E8FF',
+    color: '#F18902',
     fontSize: moderateScale(11),
     fontWeight: '700',
   },
@@ -890,7 +885,7 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(4),
     ...Platform.select({
       ios: {
-        shadowColor: 'rgba(193, 232, 255, 0.3)',
+        shadowColor: 'rgba(241, 137, 2, 0.35)',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
@@ -908,7 +903,7 @@ const styles = StyleSheet.create({
     gap: scale(10),
   },
   buttonText: {
-    color: BRAND.primary,
+    color: '#000000',
     fontWeight: '800',
     fontSize: moderateScale(14),
     letterSpacing: 0.2,
@@ -917,7 +912,7 @@ const styles = StyleSheet.create({
     width: scale(26),
     height: scale(26),
     borderRadius: scale(13),
-    backgroundColor: 'rgba(5, 38, 89, 0.1)',
+    backgroundColor: 'rgba(0, 0, 0, 0.08)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -928,11 +923,11 @@ const styles = StyleSheet.create({
     gap: scale(4),
   },
   footerText: {
-    color: 'rgba(193, 232, 255, 0.5)',
+    color: 'rgba(0, 0, 0, 0.6)',
     fontSize: moderateScale(12),
   },
   footerLink: {
-    color: '#C1E8FF',
+    color: '#F18902',
     fontSize: moderateScale(12),
     fontWeight: '700',
     textDecorationLine: 'underline',
