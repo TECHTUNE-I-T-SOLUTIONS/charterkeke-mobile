@@ -81,6 +81,12 @@ jobs:
       - name: Prebuild native Android project
         run: pnpm expo prebuild --platform android --clean --non-interactive
 
+      - name: Configure Mapbox token for Gradle
+        run: |
+          echo "MAPBOX_DOWNLOADS_TOKEN=${{ secrets.MAPBOX_SECRET_TOKEN }}" >> android/gradle.properties
+          mkdir -p ~/.gradle
+          echo "MAPBOX_DOWNLOADS_TOKEN=${{ secrets.MAPBOX_SECRET_TOKEN }}" >> ~/.gradle/gradle.properties
+
       - name: Build Android APK (debug)
         run: |
           cd android

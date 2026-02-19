@@ -21,8 +21,7 @@
       [
         "@rnmapbox/maps",
         {
-          "RNMapboxMapsDownloadToken": "",
-          "RNMapboxMapsVersion": "11.0.0"
+          "RNMapboxMapsDownloadToken": ""
         }
       ],
       [
