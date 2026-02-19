@@ -51,7 +51,7 @@ export default function RiderHomeScreen() {
   const [profileData, setProfileData] = useState<ProfileData | null>(null);  
   const [rideStats, setRideStats] = useState({ totalRides: 0, averageRating: 0, walletBalance: 0 });
   const [recentRides, setRecentRides] = useState<any[]>([]);
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const { currentLocation } = useLocation();
   const [loading, setLoading] = useState(true);  
   const { theme, mode, toggleTheme } = useTheme();
@@ -81,11 +81,16 @@ export default function RiderHomeScreen() {
 
   useFocusEffect(
     React.useCallback(() => {
+      if (!isAuthenticated) {
+        console.log('❌ [RIDER-HOME] Not authenticated, redirecting to login');
+        return router.replace('/auth/welcome');
+      }
       if (!renderedOnce.current) {
+        console.log('🔄 [RIDER-HOME] Initializing home data for user:', user?.id);
         renderedOnce.current = true;
         loadHomeData();
       }
-    }, [])
+    }, [isAuthenticated, user?.id])
   );
 
   const loadHomeData = async () => {
@@ -104,9 +109,15 @@ export default function RiderHomeScreen() {
   const fetchProfileData = async (showLoader: boolean = true) => {
     try {
       if (showLoader) setLoading(true);
-      const profileRes = await apiService.get('/user/profile');
+      
+      console.log('📊 [RIDER-HOME] Fetching profile data...');
+      const profileRes = await apiService.get('/user/profile').catch((err) => {
+        console.warn('⚠️  [RIDER-HOME] getProfile failed:', err?.message);
+        return {};
+      });
       const nextProfile = profileRes.user || profileRes;
       setProfileData(nextProfile);
+      console.log('✅ [RIDER-HOME] Profile loaded:', { hasProfile: !!nextProfile });
 
       let nextStats = { ...rideStats };
       let nextRecent = recentRides;
@@ -120,13 +131,19 @@ export default function RiderHomeScreen() {
         nextRecent = rides.slice(0, 5);
         setRideStats(nextStats);
         setRecentRides(nextRecent);
-      } catch (err) {}
+        console.log('✅ [RIDER-HOME] Ride history loaded:', { totalRides, averageRating });
+      } catch (err) {
+        console.warn('⚠️  [RIDER-HOME] getRideHistory failed:', (err as any)?.message);
+      }
 
       try {
         const walletRes = await apiService.get('/user/wallet');
         nextStats = { ...nextStats, walletBalance: walletRes.wallet?.balance || 0 };
         setRideStats(nextStats);
-      } catch (err) {}
+        console.log('✅ [RIDER-HOME] Wallet loaded:', { balance: nextStats.walletBalance });
+      } catch (err) {
+        console.warn('⚠️  [RIDER-HOME] getWallet failed:', (err as any)?.message);
+      }
 
       await cacheService.set(STORAGE_KEYS.RIDER_HOME, {
         profileData: nextProfile,
@@ -134,6 +151,8 @@ export default function RiderHomeScreen() {
         recentRides: nextRecent,
       });
     } catch (error) {
+      console.error('❌ [RIDER-HOME] Profile fetch failed:', error);
+      // Don't crash the app - show cached data or empty state
     } finally {
       if (showLoader) setLoading(false);
     }

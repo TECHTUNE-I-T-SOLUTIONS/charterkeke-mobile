@@ -255,6 +255,17 @@ export default function WalletScreen() {
 
   const fetchSettlementStatus = async () => {
     try {
+      // Auto-verify all pending payments before checking settlement status
+      try {
+        console.log('[Wallet] Auto-verifying pending payments...');
+        const verifyResult = await apiService.verifyAllPendingPayments();
+        if (verifyResult?.updated > 0) {
+          console.log(`[Wallet] ✅ Verified and updated ${verifyResult.updated} payments`);
+        }
+      } catch (verifyError) {
+        console.log('[Wallet] Payment verification error (non-critical):', verifyError);
+      }
+
       const data = await apiService.getDriverSettlementStatus();
       setSettlementInfo(data);
       await cacheService.set(STORAGE_KEYS.DRIVER_SETTLEMENT, data);
@@ -331,18 +342,18 @@ export default function WalletScreen() {
 
   const handlePaySettlement = async () => {
     try {
-      const latest = await fetchEarningsForToday();
-      const paymentDate = latest?.date || earningsData?.date || new Date().toISOString().slice(0, 10);
-      const latestStatus = latest?.settlement_status || earningsData?.settlement_status;
-      const latestPlatformFee = Number(latest?.total_platform_fee ?? earningsData?.total_platform_fee ?? 0);
-      const dailyPlatformFee = latestStatus === 'paid' ? 0 : latestPlatformFee;
-      if (dailyPlatformFee <= 0) {
-        Alert.alert('No Remittance Due', 'No platform remittance is due for today.');
+      // Check total outstanding (including all past unpaid settlements)
+      const settlementStatus = settlementInfo || await apiService.getDriverSettlementStatus();
+      const totalOutstanding = Number(settlementStatus?.totalOutstanding || 0);
+      
+      if (totalOutstanding <= 0) {
+        Alert.alert('No Remittance Due', 'All settlement fees have been paid.');
         return;
       }
 
       setSettlementPaying(true);
-      const data = await apiService.initiateDriverSettlementPayment({ date: paymentDate });
+      // Don't pass date - let backend determine all outstanding settlements
+      const data = await apiService.initiateDriverSettlementPayment();
       const authUrl = data?.authUrl;
       const reference = data?.reference;
       
@@ -359,7 +370,7 @@ export default function WalletScreen() {
 
       // Show in-app payment modal instead of opening browser
       setPaystackAuthUrl(authUrl);
-      setPaystackAmount(dailyPlatformFee);
+      setPaystackAmount(totalOutstanding);
       setShowPaystackModal(true);
     } catch (error) {
       console.error('Settlement payment error:', error);
@@ -499,27 +510,29 @@ export default function WalletScreen() {
 
               <View style={styles.settlementAmountRow}>
                 <Text style={[styles.settlementAmount, { color: theme.colors.textPrimary }]}
-                >₦{getDailyRemittanceDue().toLocaleString('en-US')}</Text>
-                <Text style={[styles.settlementBadge, { color: getDailyRemittanceDue() > 0 ? '#FF9101' : '#10B981' }]}>
-                  {getDailyRemittanceDue() > 0 ? 'DUE NOW' : 'PAID'}
+                >₦{(Number(settlementInfo?.totalOutstanding || 0) || getDailyRemittanceDue()).toLocaleString('en-US')}</Text>
+                <Text style={[styles.settlementBadge, { color: Number(settlementInfo?.totalOutstanding || 0) > 0 ? '#FF9101' : '#10B981' }]}>
+                  {Number(settlementInfo?.totalOutstanding || 0) > 0 ? 'DUE NOW' : 'PAID'}
                 </Text>
               </View>
 
-              {Number(settlementInfo?.totalOutstanding || 0) > 0 && (
-                <Text style={[styles.settlementSub, { color: '#FF9101', marginBottom: 10 }]}>Outstanding overdue: ₦{Number(settlementInfo?.totalOutstanding || 0).toLocaleString('en-US')}</Text>
+              {Number(settlementInfo?.totalOutstanding || 0) > 0 && settlementInfo?.outstandingSettlements && settlementInfo.outstandingSettlements.length > 0 && (
+                <Text style={[styles.settlementSub, { color: '#FF9101', marginBottom: 10 }]}>
+                  {settlementInfo.outstandingSettlements.length} overdue settlement(s): ₦{Number(settlementInfo?.totalOutstanding || 0).toLocaleString('en-US')}
+                </Text>
               )}
 
               <View style={styles.settlementActions}>
                 <TouchableOpacity
                   onPress={handlePaySettlement}
-                  disabled={settlementPaying || getDailyRemittanceDue() <= 0}
+                  disabled={settlementPaying || Number(settlementInfo?.totalOutstanding || 0) <= 0}
                   style={[
                     styles.settlementBtn,
-                    { backgroundColor: getDailyRemittanceDue() > 0 ? BRAND.primary : theme.colors.border },
+                    { backgroundColor: Number(settlementInfo?.totalOutstanding || 0) > 0 ? BRAND.primary : theme.colors.border },
                     { flex: 1.5 },
                   ]}
                 >
-                  <Text style={[styles.settlementBtnText, { color: getDailyRemittanceDue() > 0 ? '#000' : theme.colors.textSecondary }]}>
+                  <Text style={[styles.settlementBtnText, { color: Number(settlementInfo?.totalOutstanding || 0) > 0 ? '#000' : theme.colors.textSecondary }]}>
                     {settlementPaying ? 'Processing...' : 'Pay Now'}
                   </Text>
                 </TouchableOpacity>

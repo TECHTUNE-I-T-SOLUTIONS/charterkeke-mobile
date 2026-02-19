@@ -101,8 +101,31 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       setError(null);
       setIsLoading(true);
-      const response = await authService.signup(payload);
-      setUser(response.user);
+      const signupResponse = await authService.signup(payload);
+      const signedUpUser = (signupResponse as any)?.user || signupResponse;
+      setUser(signedUpUser);
+      const role = (signedUpUser as any)?.role;
+      setUserRole(role);
+      console.log('📍 [AUTH-CONTEXT] Signup - caching user role:', role);
+      
+      // Subscribe to push notifications on signup
+      try {
+        await subscribeToPushNotifications(signedUpUser.id || '');
+        console.log('🔔 [AUTH-CONTEXT] Push notification subscription successful');
+      } catch (pushError) {
+        console.error('❌ [AUTH-CONTEXT] Failed to subscribe to push notifications:', pushError);
+        // Don't fail signup if notifications fail
+      }
+
+      // Initialize WebSocket connection for real-time updates
+      try {
+        await initializeWebSocket(signedUpUser.id || '');
+        console.log('🌐 [AUTH-CONTEXT] WebSocket initialized');
+      } catch (wsError) {
+        console.error('❌ [AUTH-CONTEXT] Failed to initialize WebSocket:', wsError);
+        // Don't fail signup if WebSocket fails
+      }
+      
       syncService.startAutoSync();
     } catch (err) {
       const errorMessage = (err as Error).message || 'Signup failed';

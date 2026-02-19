@@ -121,7 +121,19 @@ class APIService {
       try {
         const refreshToken = await SecureStore.getItemAsync('refreshToken');
         if (!refreshToken) {
-          throw new Error('No refresh token');
+          console.warn('⚠️  [API] No refresh token available, clearing auth and redirecting to login');
+          this.failedQueue.forEach((prom) => prom.onFailed(new Error('No refresh token') as any));
+          this.failedQueue = [];
+          await SecureStore.deleteItemAsync('authToken');
+          await SecureStore.deleteItemAsync('refreshToken');
+          delete this.api.defaults.headers.common.Authorization;
+          
+          // Return a proper error that won't crash the app
+          return Promise.reject({
+            code: 'AUTH_REQUIRED',
+            message: 'Authentication required. Please log in again.',
+            statusCode: 401,
+          });
         }
 
         const response = await axios.post<AuthResponse>(
@@ -140,10 +152,12 @@ class APIService {
 
         return this.api(originalRequest);
       } catch (err) {
+        console.error('❌ [API] Token refresh failed:', (err as any)?.message);
         this.failedQueue.forEach((prom) => prom.onFailed(err as AxiosError));
         this.failedQueue = [];
         await SecureStore.deleteItemAsync('authToken');
         await SecureStore.deleteItemAsync('refreshToken');
+        delete this.api.defaults.headers.common.Authorization;
         throw err;
       } finally {
         this.isRefreshing = false;
@@ -482,6 +496,13 @@ class APIService {
     return this.retryWithBackoff(
       () => this.api.post('/driver/settlement/verify', { reference }).then(r => r.data),
       '/driver/settlement/verify'
+    );
+  }
+
+  async verifyAllPendingPayments(): Promise<any> {
+    return this.retryWithBackoff(
+      () => this.api.post('/driver/settlement/verify-all').then(r => r.data),
+      '/driver/settlement/verify-all'
     );
   }
 
