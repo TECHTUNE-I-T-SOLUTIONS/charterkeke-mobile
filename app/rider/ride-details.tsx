@@ -15,7 +15,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/context/ThemeContext';
 import { useAlert } from '@/context/AlertContext';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
 import { apiService } from '@/services/api';
 import { BRAND } from '@/utils/colors';
 
@@ -170,24 +170,29 @@ export default function RideDetailsScreen() {
       
       {/* Map Header */}
       <View style={styles.mapContainer}>
-        <MapView
+        <MapboxMap
           style={styles.map}
-          scrollEnabled={true}
-          zoomEnabled={true}
-          pitchEnabled={true}
-          rotateEnabled={true}
-          initialRegion={{
-            latitude: pickupCoords?.latitude || 6.5244,
-            longitude: pickupCoords?.longitude || 3.3792,
-            latitudeDelta: 0.1,
-            longitudeDelta: 0.1,
-          }}
-          customMapStyle={!isLight ? mapDarkStyle : []}
+          latitude={pickupCoords?.latitude || 6.5244}
+          longitude={pickupCoords?.longitude || 3.3792}
+          zoom={12}
         >
-          {pickupCoords && <Marker coordinate={pickupCoords} pinColor={BRAND.primary} />}
-          {destCoords && <Marker coordinate={destCoords} pinColor={isLight ? 'black' : 'white'} />}
-          {pickupCoords && destCoords && <Polyline coordinates={[pickupCoords, destCoords]} strokeColor={BRAND.primary} strokeWidth={4} />}
-        </MapView>
+          {pickupCoords && (
+            <MapboxMarker
+              id="pickup"
+              coordinate={[pickupCoords.longitude, pickupCoords.latitude]}
+              title="Pickup"
+              color={BRAND.primary}
+            />
+          )}
+          {destCoords && (
+            <MapboxMarker
+              id="destination"
+              coordinate={[destCoords.longitude, destCoords.latitude]}
+              title="Destination"
+              color={isLight ? 'black' : 'white'}
+            />
+          )}
+        </MapboxMap>
         
         <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: theme.colors.surface }]}>
           <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.textPrimary} />

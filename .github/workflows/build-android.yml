@@ -1,0 +1,120 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  pull_request:
+    branches:
+      - master
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+      packages: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9.4.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 33
+          build-tools-version: 33.0.2
+
+      - name: Create .env file
+        run: |
+          cat > .env.local << EOF
+          EXPO_PUBLIC_API_URL=${{ secrets.EXPO_PUBLIC_API_URL }}
+          EXPO_PUBLIC_API_TIMEOUT=${{ secrets.EXPO_PUBLIC_API_TIMEOUT }}
+          EXPO_PUBLIC_OSM_TILE_URL=${{ secrets.EXPO_PUBLIC_OSM_TILE_URL }}
+          EXPO_PUBLIC_APP_NAME=${{ secrets.EXPO_PUBLIC_APP_NAME }}
+          EXPO_PUBLIC_APP_VERSION=${{ secrets.EXPO_PUBLIC_APP_VERSION }}
+          EXPO_PUBLIC_BUILD_VERSION=${{ secrets.EXPO_PUBLIC_BUILD_VERSION }}
+          EXPO_PUBLIC_ENVIRONMENT=${{ secrets.EXPO_PUBLIC_ENVIRONMENT }}
+          EXPO_PUBLIC_DEVELOPMENT_MODE=${{ secrets.EXPO_PUBLIC_DEVELOPMENT_MODE }}
+          EXPO_PUBLIC_ENABLE_ANALYTICS=${{ secrets.EXPO_PUBLIC_ENABLE_ANALYTICS }}
+          EXPO_PUBLIC_ENABLE_CRASH_REPORTING=${{ secrets.EXPO_PUBLIC_ENABLE_CRASH_REPORTING }}
+          EXPO_PUBLIC_ENABLE_PUSH_NOTIFICATIONS=${{ secrets.EXPO_PUBLIC_ENABLE_PUSH_NOTIFICATIONS }}
+          EXPO_PUBLIC_CACHE_EXPIRY_MINUTES=${{ secrets.EXPO_PUBLIC_CACHE_EXPIRY_MINUTES }}
+          EXPO_PUBLIC_SYNC_INTERVAL_SECONDS=${{ secrets.EXPO_PUBLIC_SYNC_INTERVAL_SECONDS }}
+          EXPO_PUBLIC_NOTIFICATION_CHANNEL=${{ secrets.EXPO_PUBLIC_NOTIFICATION_CHANNEL }}
+          EXPO_PUBLIC_PAYSTACK_PUBLIC_KEY=${{ secrets.EXPO_PUBLIC_PAYSTACK_PUBLIC_KEY }}
+          EXPO_PUBLIC_MAPBOX_PUBLIC_TOKEN=${{ secrets.EXPO_PUBLIC_MAPBOX_PUBLIC_TOKEN }}
+          MAPBOX_SECRET_TOKEN=${{ secrets.MAPBOX_SECRET_TOKEN }}
+          EXPO_PUBLIC_SUPABASE_URL=${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+          EXPO_PUBLIC_VAPID_PUBLIC_KEY=${{ secrets.EXPO_PUBLIC_VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY=${{ secrets.VAPID_PRIVATE_KEY }}
+          VAPID_SUBJECT=${{ secrets.VAPID_SUBJECT }}
+          SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          EOF
+
+      - name: Prebuild native Android project
+        run: pnpm expo prebuild --platform android --clean --non-interactive
+
+      - name: Build Android APK (debug)
+        run: |
+          cd android
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Rename APK
+        run: |
+          mkdir -p build-output
+          cp android/app/build/outputs/apk/debug/app-debug.apk build-output/charter-keke-debug-${{ github.run_number }}.apk
+
+      - name: Upload APK to GitHub Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: build-output/charter-keke-debug-*.apk
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload APK as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: charter-keke-debug-apk-${{ github.run_number }}
+          path: build-output/charter-keke-debug-*.apk
+          retention-days: 30
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '✅ Android APK built successfully! Download from artifacts (Build #${{ github.run_number }}). With Mapbox native SDK support.'
+            })

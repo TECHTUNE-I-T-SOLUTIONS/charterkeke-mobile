@@ -9,15 +9,13 @@ import {
   TouchableOpacity,
   Image,
   Dimensions,
-  Alert,
   StatusBar,
   BackHandler,
   Platform,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import MapView, { Marker } from 'react-native-maps';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/context/AuthContext';
 import { useLocation } from '@/context/LocationContext';
@@ -28,6 +26,7 @@ import { apiService } from '@/services/api';
 import { setNotificationCallbacks } from '@/services/notificationService';
 import { setNavigationRef } from '@/services/navigationService';
 import { HomeSkeleton } from '@/components/HomeSkeleton';
+import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
 import SupportFloatingWidget from '@/components/SupportFloatingWidget';
 import { BRAND, COLORS } from '@/utils/colors';
 import { cacheService } from '@/services/cache';
@@ -35,6 +34,11 @@ import { STORAGE_KEYS } from '@/utils/constants';
 
 const { width } = Dimensions.get('window');
 
+const DEBUG_DISABLE_MAP = true;
+const DEBUG_DISABLE_HOME_FETCH = false;
+const DEBUG_DISABLE_CACHE = false;// Disable map rendering in production until Google Maps API key is available
+const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+const MAP_DISABLED_NO_KEY = !GOOGLE_MAPS_API_KEY;
 interface ProfileData {
   id: string;
   first_name: string;
@@ -109,12 +113,17 @@ export default function RiderHomeScreen() {
     }, [isAuthenticated, user?.id])
   );
 
+
   const loadHomeData = async () => {
     if (!isMountedRef.current || isLoadingRef.current) return;
+    if (DEBUG_DISABLE_HOME_FETCH) {
+      if (isMountedRef.current) setLoading(false);
+      return;
+    }
     
     try {
       isLoadingRef.current = true;
-      const cached = await cacheService.get<any>(STORAGE_KEYS.RIDER_HOME);
+      const cached = DEBUG_DISABLE_CACHE ? null : await cacheService.get<any>(STORAGE_KEYS.RIDER_HOME);
       
       if (!isMountedRef.current) return;
       
@@ -190,7 +199,7 @@ export default function RiderHomeScreen() {
         console.warn('⚠️  [RIDER-HOME] getWallet failed:', (err as any)?.message || err);
       }
 
-      if (isMountedRef.current) {
+      if (isMountedRef.current && !DEBUG_DISABLE_CACHE) {
         await cacheService.set(STORAGE_KEYS.RIDER_HOME, {
           profileData: nextProfile,
           rideStats: nextStats,
@@ -229,6 +238,37 @@ export default function RiderHomeScreen() {
   };
 
   const isLight = theme.mode === 'light';
+  const MAPBOX_TOKEN = !!process.env.EXPO_PUBLIC_MAPBOX_PUBLIC_TOKEN;
+  
+  // Convert ride data to markers for Mapbox
+  const mapboxMarkers = useMemo(() => {
+    return recentRides
+      .flatMap((ride) => {
+        const markers = [];
+        if (ride.pickup_latitude && ride.pickup_longitude) {
+          markers.push({
+            id: `pickup-${ride.id}`,
+            latitude: parseFloat(String(ride.pickup_latitude)),
+            longitude: parseFloat(String(ride.pickup_longitude)),
+            title: 'Pickup',
+            description: ride.pickup_zone || 'Pickup Location',
+            color: '#2563EB',
+          });
+        }
+        if (ride.dropoff_latitude && ride.dropoff_longitude) {
+          markers.push({
+            id: `dropoff-${ride.id}`,
+            latitude: parseFloat(String(ride.dropoff_latitude)),
+            longitude: parseFloat(String(ride.dropoff_longitude)),
+            title: 'Dropoff',
+            description: ride.dropoff_zone || 'Dropoff Location',
+            color: '#10B981',
+          });
+        }
+        return markers;
+      })
+      .filter((m) => Number.isFinite(m.latitude) && Number.isFinite(m.longitude));
+  }, [recentRides]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -343,48 +383,37 @@ export default function RiderHomeScreen() {
               </View>
            </View>
            <View style={styles.mapContainer}>
-             <MapView
-               style={styles.map}
-               initialRegion={{
-                 latitude: currentLocation?.latitude || 6.5244,
-                 longitude: currentLocation?.longitude || 3.3792,
-                 latitudeDelta: 0.05,
-                 longitudeDelta: 0.05,
-               }}
-               scrollEnabled={true}
-               zoomEnabled={true}
-               pitchEnabled={true}
-               rotateEnabled={true}
-               customMapStyle={isLight ? [] : mapDarkStyle}
-             >
-                {currentLocation && <Marker coordinate={currentLocation} pinColor={BRAND.primary} title="You" />}
-                {recentRides.map((ride) => [
-                  ride.pickup_latitude && ride.pickup_longitude && (
-                    <Marker
-                      key={`pickup-${ride.id}`}
-                      coordinate={{
-                        latitude: parseFloat(ride.pickup_latitude || ride.pickup_location?.latitude || 0),
-                        longitude: parseFloat(ride.pickup_longitude || ride.pickup_location?.longitude || 0),
-                      }}
-                      title="Pickup"
-                      description={ride.pickup_zone || 'Pickup Location'}
-                      pinColor="#2563EB"
-                    />
-                  ),
-                  ride.dropoff_latitude && ride.dropoff_longitude && (
-                    <Marker
-                      key={`dropoff-${ride.id}`}
-                      coordinate={{
-                        latitude: parseFloat(ride.dropoff_latitude || ride.dropoff_location?.latitude || 0),
-                        longitude: parseFloat(ride.dropoff_longitude || ride.dropoff_location?.longitude || 0),
-                      }}
-                      title="Dropoff"
-                      description={ride.dropoff_zone || 'Dropoff Location'}
-                      pinColor="#10B981"
-                    />
-                  ),
-                ])}
-             </MapView>
+             {MAPBOX_TOKEN ? (
+               <MapboxMap
+                 latitude={currentLocation?.latitude || 6.5244}
+                 longitude={currentLocation?.longitude || 3.3792}
+               >
+                 {mapboxMarkers.map((marker) => (
+                   <MapboxMarker
+                     key={marker.id}
+                     id={marker.id}
+                     coordinate={[marker.longitude, marker.latitude]}
+                     title={marker.title}
+                     color={marker.color}
+                   />
+                 ))}
+               </MapboxMap>
+             ) : (
+               <View style={[styles.map, { backgroundColor: theme.colors.surface, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20 }]}>
+                 <MaterialCommunityIcons 
+                   name="map-marker-off" 
+                   size={40} 
+                   color={theme.colors.textTertiary} 
+                   style={{ marginBottom: 12 }}
+                 />
+                 <Text style={[styles.emptyText, { color: theme.colors.textPrimary, fontSize: 14, fontWeight: '600', textAlign: 'center' }]}>
+                   Map Configuration Required
+                 </Text>
+                 <Text style={[styles.emptyText, { color: theme.colors.textSecondary, fontSize: 12, textAlign: 'center', marginTop: 6 }]}>
+                   Mapbox token not configured.
+                 </Text>
+               </View>
+             )}
              <View style={[styles.locationPill, { backgroundColor: theme.colors.surface }]}>
                 <MaterialCommunityIcons name="navigation" size={14} color={BRAND.primary} />
                 <Text numberOfLines={1} style={[styles.locationText, { color: theme.colors.textPrimary }]}>

@@ -17,7 +17,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
 import { useTheme } from '@/context/ThemeContext';
 import { apiService } from '@/services/api';
 import { ListScreenSkeleton } from '@/components/ListScreenSkeleton';
@@ -81,15 +81,15 @@ export default function RideDetailsScreen() {
       
       {/* Header Overlay on Map */}
       <View style={styles.mapWrapper}>
-         <MapView
+         <MapboxMap
            style={styles.map}
-           initialRegion={{ latitude: 6.5244, longitude: 3.3792, latitudeDelta: 0.1, longitudeDelta: 0.1 }}
-           zoomEnabled={false}
-           scrollEnabled={false}
+           latitude={6.5244}
+           longitude={3.3792}
+           zoom={12}
          >
-            <Marker coordinate={{latitude: 6.5244, longitude: 3.3792}} pinColor={BRAND.primary} />
-            <Marker coordinate={{latitude: 6.5844, longitude: 3.4292}} pinColor="black" />
-         </MapView>
+            <MapboxMarker id="pickup" coordinate={[3.3792, 6.5244]} title="Pickup" color={BRAND.primary} />
+            <MapboxMarker id="dropoff" coordinate={[3.4292, 6.5844]} title="Dropoff" color="black" />
+         </MapboxMap>
          <SafeAreaView style={styles.headerSafe}>
             <View style={styles.headerRow}>
                <TouchableOpacity onPress={() => router.back()} style={styles.backCircle}>

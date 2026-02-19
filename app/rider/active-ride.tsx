@@ -11,7 +11,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useAuth } from '@/context/AuthContext';
 import { useLocation } from '@/context/LocationContext';
@@ -241,49 +241,22 @@ export default function ActiveRideScreen() {
             borderColor: colors.border,
           }}
         >
-          <MapView
-            provider={PROVIDER_GOOGLE}
+          <MapboxMap
             style={{ flex: 1 }}
-            showsUserLocation
-            followsUserLocation
-            initialRegion={{
-              latitude: currentLocation?.latitude || 6.5244,
-              longitude: currentLocation?.longitude || 3.3792,
-              latitudeDelta: 0.02,
-              longitudeDelta: 0.02,
-            }}
+            latitude={currentLocation?.latitude || 6.5244}
+            longitude={currentLocation?.longitude || 3.3792}
+            zoom={14}
           >
             {mapMarkers.map((marker) => (
-              <Marker
+              <MapboxMarker
                 key={marker.id}
-                coordinate={{
-                  latitude: marker.latitude,
-                  longitude: marker.longitude,
-                }}
+                id={marker.id}
+                coordinate={[marker.longitude, marker.latitude]}
                 title={marker.title}
-              >
-                <View
-                  style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: 22,
-                    backgroundColor:
-                      marker.type === 'driver' ? colors.primary : colors.secondary,
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    borderWidth: 3,
-                    borderColor: colors.card,
-                  }}
-                >
-                  <MaterialCommunityIcons
-                    name={marker.type === 'driver' ? 'car' : 'map-marker'}
-                    size={24}
-                    color={isDark ? '#000000' : '#FFFFFF'}
-                  />
-                </View>
-              </Marker>
+                color={marker.type === 'driver' ? colors.primary : colors.secondary}
+              />
             ))}
-          </MapView>
+          </MapboxMap>
         </View>
 
         {/* Driver Info Card */}

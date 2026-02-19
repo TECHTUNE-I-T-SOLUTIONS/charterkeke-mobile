@@ -16,7 +16,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 // import { LinearGradient } from 'expo-linear-gradient';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocation } from '@/context/LocationContext';
 import { useTheme } from '@/context/ThemeContext';
@@ -263,7 +263,7 @@ export default function BookingScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { currentLocation } = useLocation();
-  const mapRef = useRef<MapView>(null);
+  const mapRef = useRef<any>(null);
 
   // State
   const [pickupLocation, setPickupLocation] = useState<Location | null>(null);
@@ -457,37 +457,30 @@ export default function BookingScreen() {
       <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
 
       {/* Map */}
-      <MapView
+      <MapboxMap
         ref={mapRef}
         style={styles.map}
-        customMapStyle={isLight ? [] : mapDarkStyle}
-        initialRegion={{
-          latitude: currentLocation?.latitude || 6.5,
-          longitude: currentLocation?.longitude || 3.3,
-          latitudeDelta: 0.15,
-          longitudeDelta: 0.15,
-        }}
-        onPress={(event) => {
-          if (activeLocationPicker) {
-            const { coordinate } = event.nativeEvent;
-            // Find nearby location or use coordinates
-            const nearbyLocation = findNearestLocation(coordinate.latitude, coordinate.longitude);
-            const newLocation = nearbyLocation || {
-              lat: coordinate.latitude,
-              lng: coordinate.longitude,
-              address: sanitizeAddress(`Selected Location (Lat: ${coordinate.latitude.toFixed(4)}, Lng: ${coordinate.longitude.toFixed(4)})`)
-            };
-            if (activeLocationPicker === 'pickup') { setPickupLocation(newLocation); setActiveLocationPicker(null); }
-            else { setDropoffLocation(newLocation); setActiveLocationPicker(null); }
-          }
-        }}
+        latitude={currentLocation?.latitude || 6.5}
+        longitude={currentLocation?.longitude || 3.3}
+        zoom={12}
       >
-        {pickupLocation && <Marker coordinate={{ latitude: pickupLocation.lat, longitude: pickupLocation.lng }} pinColor={BRAND.primary} />}
-        {dropoffLocation && <Marker coordinate={{ latitude: dropoffLocation.lat, longitude: dropoffLocation.lng }} pinColor={isLight ? '#000' : '#FFF'} />}
-        {pickupLocation && dropoffLocation && (
-          <Polyline coordinates={[{ latitude: pickupLocation.lat, longitude: pickupLocation.lng }, { latitude: dropoffLocation.lat, longitude: dropoffLocation.lng }]} strokeColor={BRAND.primary} strokeWidth={4} />
-        )}  
-      </MapView>
+        {pickupLocation && (
+          <MapboxMarker
+            id="pickup"
+            coordinate={[pickupLocation.lng, pickupLocation.lat]}
+            title="Pickup"
+            color={BRAND.primary}
+          />
+        )}
+        {dropoffLocation && (
+          <MapboxMarker
+            id="dropoff"
+            coordinate={[dropoffLocation.lng, dropoffLocation.lat]}
+            title="Dropoff"
+            color={isLight ? '#000' : '#FFF'}
+          />
+        )}
+      </MapboxMap>
 
       {/* Header */}
       <View style={[styles.header, { top: insets.top + 10 }]}>

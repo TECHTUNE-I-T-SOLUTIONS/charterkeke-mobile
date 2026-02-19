@@ -20,7 +20,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import MapView, { Marker } from 'react-native-maps';
+import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/context/AuthContext';
 import { useLocation } from '@/context/LocationContext';
@@ -380,48 +380,45 @@ export default function DriverHomeScreen() {
 
           {/* Map Preview */}
           <View style={[styles.mapSection, { borderColor: theme.colors.border }]}>
-             <MapView
+             <MapboxMap
                 style={styles.map}
-                scrollEnabled={true}
-                zoomEnabled={true}
-                pitchEnabled={true}
-                rotateEnabled={true}
-                initialRegion={{
-                  latitude: currentLocation?.latitude || 6.5244,
-                  longitude: currentLocation?.longitude || 3.3792,
-                  latitudeDelta: 0.05,
-                  longitudeDelta: 0.05,
-                }}
-                customMapStyle={!isLight ? mapDarkStyle : []}
+                latitude={currentLocation?.latitude || 6.5244}
+                longitude={currentLocation?.longitude || 3.3792}
+                zoom={13}
               >
-                {currentLocation && <Marker coordinate={currentLocation} pinColor={BRAND.primary} title="You" />}
-                {recentRides.map((ride) => [
-                  ride.pickup_latitude && ride.pickup_longitude && (
-                    <Marker
-                      key={`pickup-${ride.id}`}
-                      coordinate={{
-                        latitude: parseFloat(ride.pickup_latitude || ride.pickup_location?.latitude || 0),
-                        longitude: parseFloat(ride.pickup_longitude || ride.pickup_location?.longitude || 0),
-                      }}
-                      title="Pickup"
-                      description={ride.pickup_zone || 'Pickup Location'}
-                      pinColor="#2563EB"
-                    />
-                  ),
-                  ride.dropoff_latitude && ride.dropoff_longitude && (
-                    <Marker
-                      key={`dropoff-${ride.id}`}
-                      coordinate={{
-                        latitude: parseFloat(ride.dropoff_latitude || ride.dropoff_location?.latitude || 0),
-                        longitude: parseFloat(ride.dropoff_longitude || ride.dropoff_location?.longitude || 0),
-                      }}
-                      title="Dropoff"
-                      description={ride.dropoff_zone || 'Dropoff Location'}
-                      pinColor="#10B981"
-                    />
-                  ),
-                ])}
-              </MapView>
+                {recentRides.flatMap((ride) => {
+                  const markers = [];
+                  if (ride.pickup_latitude && ride.pickup_longitude) {
+                    markers.push(
+                      <MapboxMarker
+                        key={`pickup-${ride.id}`}
+                        id={`pickup-${ride.id}`}
+                        coordinate={[
+                          parseFloat(ride.pickup_longitude || ride.pickup_location?.longitude || 0),
+                          parseFloat(ride.pickup_latitude || ride.pickup_location?.latitude || 0),
+                        ]}
+                        title="Pickup"
+                        color="#2563EB"
+                      />
+                    );
+                  }
+                  if (ride.dropoff_latitude && ride.dropoff_longitude) {
+                    markers.push(
+                      <MapboxMarker
+                        key={`dropoff-${ride.id}`}
+                        id={`dropoff-${ride.id}`}
+                        coordinate={[
+                          parseFloat(ride.dropoff_longitude || ride.dropoff_location?.longitude || 0),
+                          parseFloat(ride.dropoff_latitude || ride.dropoff_location?.latitude || 0),
+                        ]}
+                        title="Dropoff"
+                        color="#10B981"
+                      />
+                    );
+                  }
+                  return markers;
+                })}
+              </MapboxMap>
               <View style={[styles.mapOverlay, { backgroundColor: theme.colors.surface }]}>
                 <View style={styles.dot} />
                 <Text style={[styles.locationText, { color: theme.colors.textPrimary }]}>

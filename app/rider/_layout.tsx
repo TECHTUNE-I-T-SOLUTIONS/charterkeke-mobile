@@ -6,7 +6,7 @@ import RiderBottomNavigation from '@/components/RiderBottomNavigation';
 import { COLORS } from '@utils/colors';
 
 export default function RiderLayout() {
-  const { theme, mode } = useTheme();
+  const { mode } = useTheme();
   const isDark = mode === 'dark';
   const colors = isDark ? COLORS.dark : COLORS.light;
 
