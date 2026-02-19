@@ -56,15 +56,25 @@ export default function RiderHomeScreen() {
   const [loading, setLoading] = useState(true);  
   const { theme, mode, toggleTheme } = useTheme();
   const [refreshing, setRefreshing] = useState(false);
-  const renderedOnce = useRef(false);
   const [hasCached, setHasCached] = useState(false);
   const { unreadCount, resetUnreadCount, incrementUnreadCount } = useNotificationBadge();
+
+  // Refs to prevent state updates on unmounted component
+  const isMountedRef = useRef(true);
+  const isLoadingRef = useRef(false);
 
   // Set up navigation ref and notification callbacks
   useEffect(() => {
     setNavigationRef(router);
     setNotificationCallbacks(incrementUnreadCount);
   }, [router, incrementUnreadCount]);
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -85,36 +95,65 @@ export default function RiderHomeScreen() {
         console.log('❌ [RIDER-HOME] Not authenticated, redirecting to login');
         return router.replace('/auth/welcome');
       }
-      if (!renderedOnce.current) {
+      if (!user?.id) {
+        console.warn('⚠️  [RIDER-HOME] User ID not available, skipping home load');
+        if (isMountedRef.current) {
+          setLoading(false);
+        }
+        return;
+      }
+      if (!isLoadingRef.current) {
         console.log('🔄 [RIDER-HOME] Initializing home data for user:', user?.id);
-        renderedOnce.current = true;
         loadHomeData();
       }
     }, [isAuthenticated, user?.id])
   );
 
   const loadHomeData = async () => {
-    const cached = await cacheService.get<any>(STORAGE_KEYS.RIDER_HOME);
-    if (cached) {
-      setProfileData(cached.profileData || null);
-      setRideStats(cached.rideStats || { totalRides: 0, averageRating: 0, walletBalance: 0 });
-      setRecentRides(cached.recentRides || []);
-      setHasCached(true);
-      setLoading(false);
-    }
+    if (!isMountedRef.current || isLoadingRef.current) return;
+    
+    try {
+      isLoadingRef.current = true;
+      const cached = await cacheService.get<any>(STORAGE_KEYS.RIDER_HOME);
+      
+      if (!isMountedRef.current) return;
+      
+      if (cached) {
+        console.log('📦 [RIDER-HOME] Using cached home data');
+        setProfileData(cached.profileData || null);
+        setRideStats(cached.rideStats || { totalRides: 0, averageRating: 0, walletBalance: 0 });
+        setRecentRides(cached.recentRides || []);
+        setHasCached(true);
+        setLoading(false);
+      }
 
-    await fetchProfileData(!cached);
+      if (isMountedRef.current) {
+        await fetchProfileData(!cached);
+      }
+    } catch (error) {
+      console.error('❌ [RIDER-HOME] loadHomeData error:', error);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
+    } finally {
+      isLoadingRef.current = false;
+    }
   };
 
   const fetchProfileData = async (showLoader: boolean = true) => {
+    if (!isMountedRef.current) return;
+    
     try {
       if (showLoader) setLoading(true);
       
       console.log('📊 [RIDER-HOME] Fetching profile data...');
       const profileRes = await apiService.get('/user/profile').catch((err) => {
-        console.warn('⚠️  [RIDER-HOME] getProfile failed:', err?.message);
+        console.warn('⚠️  [RIDER-HOME] getProfile failed:', err?.message || err);
         return {};
       });
+      
+      if (!isMountedRef.current) return;
+      
       const nextProfile = profileRes.user || profileRes;
       setProfileData(nextProfile);
       console.log('✅ [RIDER-HOME] Profile loaded:', { hasProfile: !!nextProfile });
@@ -124,37 +163,47 @@ export default function RiderHomeScreen() {
 
       try {
         const historyRes = await apiService.get('/user/ride-history?limit=100');
-        const rides = historyRes.rides || [];
-        const totalRides = rides.length;
-        const averageRating = rides.length > 0 ? rides.reduce((sum: number, ride: any) => sum + (ride.rating || 0), 0) / rides.length : 0;
-        nextStats = { ...nextStats, totalRides, averageRating };
-        nextRecent = rides.slice(0, 5);
-        setRideStats(nextStats);
-        setRecentRides(nextRecent);
-        console.log('✅ [RIDER-HOME] Ride history loaded:', { totalRides, averageRating });
+        if (isMountedRef.current) {
+          const rides = historyRes.rides || [];
+          const totalRides = rides.length;
+          const averageRating = rides.length > 0 ? rides.reduce((sum: number, ride: any) => sum + (ride.rating || 0), 0) / rides.length : 0;
+          nextStats = { ...nextStats, totalRides, averageRating };
+          nextRecent = rides.slice(0, 5);
+          setRideStats(nextStats);
+          setRecentRides(nextRecent);
+          console.log('✅ [RIDER-HOME] Ride history loaded:', { totalRides, averageRating });
+        }
       } catch (err) {
-        console.warn('⚠️  [RIDER-HOME] getRideHistory failed:', (err as any)?.message);
+        console.warn('⚠️  [RIDER-HOME] getRideHistory failed:', (err as any)?.message || err);
       }
+
+      if (!isMountedRef.current) return;
 
       try {
         const walletRes = await apiService.get('/user/wallet');
-        nextStats = { ...nextStats, walletBalance: walletRes.wallet?.balance || 0 };
-        setRideStats(nextStats);
-        console.log('✅ [RIDER-HOME] Wallet loaded:', { balance: nextStats.walletBalance });
+        if (isMountedRef.current) {
+          nextStats = { ...nextStats, walletBalance: walletRes.wallet?.balance || 0 };
+          setRideStats(nextStats);
+          console.log('✅ [RIDER-HOME] Wallet loaded:', { balance: nextStats.walletBalance });
+        }
       } catch (err) {
-        console.warn('⚠️  [RIDER-HOME] getWallet failed:', (err as any)?.message);
+        console.warn('⚠️  [RIDER-HOME] getWallet failed:', (err as any)?.message || err);
       }
 
-      await cacheService.set(STORAGE_KEYS.RIDER_HOME, {
-        profileData: nextProfile,
-        rideStats: nextStats,
-        recentRides: nextRecent,
-      });
+      if (isMountedRef.current) {
+        await cacheService.set(STORAGE_KEYS.RIDER_HOME, {
+          profileData: nextProfile,
+          rideStats: nextStats,
+          recentRides: nextRecent,
+        });
+      }
     } catch (error) {
-      console.error('❌ [RIDER-HOME] Profile fetch failed:', error);
+      console.error('❌ [RIDER-HOME] Profile fetch error:', error);
       // Don't crash the app - show cached data or empty state
     } finally {
-      if (showLoader) setLoading(false);
+      if (isMountedRef.current && showLoader) {
+        setLoading(false);
+      }
     }
   };
 

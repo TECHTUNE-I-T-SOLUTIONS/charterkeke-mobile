@@ -64,6 +64,10 @@ export default function DriverHomeScreen() {
   const [settlementBlocked, setSettlementBlocked] = useState(false);
   const [settlementOutstanding, setSettlementOutstanding] = useState(0);
   
+  // Refs to prevent state updates on unmounted component
+  const isMountedRef = useRef(true);
+  const isLoadingRef = useRef(false);
+  
   // Animations
   const onlineAnim = useRef(new Animated.Value(0)).current;
 
@@ -72,6 +76,13 @@ export default function DriverHomeScreen() {
     setNavigationRef(router);
     setNotificationCallbacks(incrementUnreadCount);
   }, [router, incrementUnreadCount]);
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -82,11 +93,15 @@ export default function DriverHomeScreen() {
       // Ensure auth is fully initialized before loading dashboard
       if (!user?.id) {
         console.warn('⚠️  [DRIVER-HOME] User ID not available, skipping dashboard load');
-        setLoading(false);
+        if (isMountedRef.current) {
+          setLoading(false);
+        }
         return;
       }
       console.log('🔄 [DRIVER-HOME] Loading dashboard for user:', user.id);
-      loadDashboard();
+      if (!isLoadingRef.current) {
+        loadDashboard();
+      }
     }, [isAuthenticated, user?.id])
   );
 
@@ -112,58 +127,80 @@ export default function DriverHomeScreen() {
   }, [isOnline]);
 
   const loadDashboard = async () => {
-    const cached = await cacheService.get<any>('driver_home_dashboard');
-    if (cached) {
-      setDriverData(cached.driverData || null);
-      setTodayEarnings(cached.todayEarnings || 0);
-      setIsOnline(!!cached.isOnline);
-      setActiveRidesCount(cached.activeRidesCount || 0);
-      setAvailableRides(cached.availableRides || []);
-      setRecentRides(cached.recentRides || []);
-      setSettlementBlocked(!!cached.settlementBlocked);
-      setSettlementOutstanding(cached.settlementOutstanding || 0);
-      setHasCached(true);
-      setLoading(false);
-    }
+    if (!isMountedRef.current || isLoadingRef.current) return;
+    
+    try {
+      isLoadingRef.current = true;
+      const cached = await cacheService.get<any>('driver_home_dashboard');
+      
+      if (!isMountedRef.current) return;
+      
+      if (cached) {
+        console.log('📦 [DRIVER-HOME] Using cached dashboard data');
+        setDriverData(cached.driverData || null);
+        setTodayEarnings(cached.todayEarnings || 0);
+        setIsOnline(!!cached.isOnline);
+        setActiveRidesCount(cached.activeRidesCount || 0);
+        setAvailableRides(cached.availableRides || []);
+        setRecentRides(cached.recentRides || []);
+        setSettlementBlocked(!!cached.settlementBlocked);
+        setSettlementOutstanding(cached.settlementOutstanding || 0);
+        setHasCached(true);
+        setLoading(false);
+      }
 
-    await fetchDashboardData(!cached);
+      if (isMountedRef.current) {
+        await fetchDashboardData(!cached);
+      }
+    } catch (error) {
+      console.error('❌ [DRIVER-HOME] loadDashboard error:', error);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
+    } finally {
+      isLoadingRef.current = false;
+    }
   };
 
   const fetchDashboardData = async (showLoader: boolean = true) => {
+    if (!isMountedRef.current) return;
+    
     try {
       if (showLoader) setLoading(true);
       
       console.log('📊 [DRIVER-HOME] Fetching dashboard data...');
       const [details, status, rides, available, history, settlement, dailyEarnings] = await Promise.all([
         apiService.getDriverDetails().catch((err) => {
-          console.warn('⚠️  [DRIVER-HOME] getDriverDetails failed:', err?.message);
+          console.warn('⚠️  [DRIVER-HOME] getDriverDetails failed:', err?.message || err);
           return {};
         }),
         apiService.getDriverStatus().catch((err) => {
-          console.warn('⚠️  [DRIVER-HOME] getDriverStatus failed:', err?.message);
+          console.warn('⚠️  [DRIVER-HOME] getDriverStatus failed:', err?.message || err);
           return { status: 'offline' };
         }),
         apiService.getActiveRides().catch((err) => {
-          console.warn('⚠️  [DRIVER-HOME] getActiveRides failed:', err?.message);
+          console.warn('⚠️  [DRIVER-HOME] getActiveRides failed:', err?.message || err);
           return { rides: [] };
         }),
         apiService.getAvailableRides(currentLocation?.latitude, currentLocation?.longitude, 10).catch((err) => {
-          console.warn('⚠️  [DRIVER-HOME] getAvailableRides failed:', err?.message);
+          console.warn('⚠️  [DRIVER-HOME] getAvailableRides failed:', err?.message || err);
           return { rides: [] };
         }),
         apiService.get('/user/ride-history?limit=5').catch((err) => {
-          console.warn('⚠️  [DRIVER-HOME] getRideHistory failed:', err?.message);
+          console.warn('⚠️  [DRIVER-HOME] getRideHistory failed:', err?.message || err);
           return { rides: [] };
         }),
         apiService.getDriverSettlementStatus().catch((err) => {
-          console.warn('⚠️  [DRIVER-HOME] getDriverSettlementStatus failed:', err?.message);
+          console.warn('⚠️  [DRIVER-HOME] getDriverSettlementStatus failed:', err?.message || err);
           return { blocked: false, totalOutstanding: 0 };
         }),
         apiService.getDriverDailySettlement().catch((err) => {
-          console.warn('⚠️  [DRIVER-HOME] getDriverDailySettlement failed:', err?.message);
+          console.warn('⚠️  [DRIVER-HOME] getDriverDailySettlement failed:', err?.message || err);
           return { total_ride_earnings: 0 };
         }),
       ]);
+
+      if (!isMountedRef.current) return;
 
       const nextDriverData = details.driver || details;
       const nextIsOnline = status.status === 'online' || status.is_online === true;
@@ -199,10 +236,12 @@ export default function DriverHomeScreen() {
         settlementOutstanding: settlement?.totalOutstanding || 0,
       });
     } catch (error) {
-      console.error('❌ [DRIVER-HOME] Dashboard fetch failed:', error);
+      console.error('❌ [DRIVER-HOME] Dashboard fetch error:', error);
       // Don't crash the app - show cached data or empty state
     } finally {
-      if (showLoader) setLoading(false);
+      if (isMountedRef.current && showLoader) {
+        setLoading(false);
+      }
     }
   };
 
