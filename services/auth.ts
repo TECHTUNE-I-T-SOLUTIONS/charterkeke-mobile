@@ -3,7 +3,7 @@ import * as Device from 'expo-device';
 import { jwtDecode } from 'jwt-decode';
 import { apiService } from './api';
 import { cacheService } from './cache';
-import { AuthResponse, UserRole, Rider, Driver } from '@types/index';
+import { AuthResponse, UserRole, Rider, Driver } from '@/types';
 import { AUTH_CONFIG, STORAGE_KEYS } from '@utils/constants';
 
 interface TokenPayload {
@@ -380,7 +380,7 @@ class AuthService {
       throw new Error('No user logged in');
     }
 
-    this.currentUser = { ...this.currentUser, ...updates };
+    this.currentUser = { ...this.currentUser, ...updates } as Rider | Driver;
     await cacheService.saveUser(this.currentUser);
   }
 
@@ -426,10 +426,13 @@ class AuthService {
     try {
       let deviceId = await cacheService.get(STORAGE_KEYS.DEVICE_ID);
       if (!deviceId) {
-        deviceId = Device.deviceId || `device_${Date.now()}`;
+        deviceId = (Device as any).deviceId || `device_${Date.now()}`;
+        if (typeof deviceId !== 'string') {
+          deviceId = `device_${Date.now()}`;
+        }
         await cacheService.set(STORAGE_KEYS.DEVICE_ID, deviceId);
       }
-      return deviceId;
+      return typeof deviceId === 'string' ? deviceId : `device_${Date.now()}`;
     } catch (error) {
       return `device_${Date.now()}`;
     }

@@ -53,7 +53,11 @@ export default function DriverProfileScreen() {
       if (!renderedOnce.current) {
         renderedOnce.current = true;
         loadProfile();
+        return;
       }
+
+      // Always refresh on focus to keep ride count in sync with home screen
+      fetchProfile(false);
     }, [])
   );
 
@@ -84,8 +88,18 @@ export default function DriverProfileScreen() {
           (user as any)?.profile_picture_url ||
           (user as any)?.avatar ||
           (user as any)?.photo_url,
-        total_rides_completed: data?.total_rides_completed || data?.rides_completed,
-        average_rating: data?.average_rating || data?.rating,
+        total_rides_completed:
+          Number(
+            data?.total_rides_completed ??
+            data?.totalRidesCompleted ??
+            data?.rides_completed ??
+            data?.total_rides ??
+            data?.totalRides ??
+            (user as any)?.total_rides_completed ??
+            (user as any)?.totalRides ??
+            0
+          ) || 0,
+        average_rating: Number(data?.average_rating ?? data?.rating ?? (user as any)?.averageRating ?? 0),
       };
 
       setProfileData(nextProfile);

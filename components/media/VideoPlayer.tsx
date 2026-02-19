@@ -7,8 +7,10 @@ import {
   StyleSheet,
   Alert,
 } from 'react-native';
-import { Video, ResizeMode } from 'expo-video';
+import { Video } from 'expo-av';
 import { COLORS } from '@/utils/colors';
+
+type ResizeMode = 'cover' | 'contain' | 'stretch';
 
 interface VideoPlayerProps {
   source: string | number | { uri: string };
@@ -77,15 +79,15 @@ export default function VideoPlayer({
       <View style={styles.videoContainer}>
         <Video
           ref={videoRef}
-          source={source}
+          source={source as any}
           onLoadStart={handleLoadStart}
           onLoad={handleLoadComplete}
-          onStatusUpdate={handleStatusUpdate}
+          onPlaybackStatusUpdate={handleStatusUpdate}
           onError={handleError}
           shouldPlay={isPlaying}
           isLooping={loop}
           useNativeControls={false}
-          resizeMode={ResizeMode.CONTAIN}
+          resizeMode={'contain' as any}
           style={styles.video}
         />
 

@@ -1,6 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import * as TaskManager from 'expo-task-manager';
-import { Platform } from 'react-native';
+import { Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiService } from '@services/api';
 import { navigate } from '@services/navigationService';
@@ -246,6 +246,8 @@ const handleNotificationResponse = async (response: Notifications.NotificationRe
       navigate(`/driver/available-rides?focusRide=${data.rideId}`);
     } catch (error) {
       console.error('❌ [NOTIFICATIONS] Failed to accept ride from notification action:', error);
+      const message = (error as any)?.message || 'Unable to accept ride.';
+      Alert.alert('Unable to Accept Ride', message);
     }
     return;
   }

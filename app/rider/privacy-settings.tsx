@@ -95,7 +95,7 @@ export default function PrivacySettingsScreen() {
         contentContainerStyle={{ paddingBottom: 20 }}
       >
         {/* Info Section */}
-        <View style={[styles.infoSection, { backgroundColor: colors.card || colors.surfaceLight }]}>
+        <View style={[styles.infoSection, { backgroundColor: colors.card }]}>
           <MaterialCommunityIcons name="shield-lock" size={32} color={colors.primary} />
           <Text style={[styles.infoText, { color: colors.text }]}>
             Control how your data is used and shared

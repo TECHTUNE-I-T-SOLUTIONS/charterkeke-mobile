@@ -32,12 +32,12 @@ export function EditProfileSkeleton() {
       style={[
         styles.skeletonLine,
         {
-          width,
+          width: width as any,
           height,
           marginBottom,
           backgroundColor: colors.border,
           opacity: pulseAnim,
-        },
+        } as any,
       ]}
     />
   );
@@ -49,7 +49,7 @@ export function EditProfileSkeleton() {
         style={[
           styles.card,
           {
-            backgroundColor: colors.card || colors.surfaceLight,
+            backgroundColor: colors.card,
             borderColor: colors.border,
           },
         ]}
@@ -70,7 +70,7 @@ export function EditProfileSkeleton() {
         style={[
           styles.card,
           {
-            backgroundColor: colors.card || colors.surfaceLight,
+            backgroundColor: colors.card,
             borderColor: colors.border,
           },
         ]}

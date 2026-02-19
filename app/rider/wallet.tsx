@@ -16,6 +16,8 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import { apiService } from '@/services/api';
+import { cacheService } from '@/services/cache';
+import { STORAGE_KEYS } from '@/utils/constants';
 import { ListScreenSkeleton } from '@/components/ListScreenSkeleton';
 import { BRAND, COLORS } from '@/utils/colors';
 
@@ -38,6 +40,7 @@ export default function WalletScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const renderedOnce = useRef(false);
+  const [hasCached, setHasCached] = useState(false);
 
   const isLight = theme.mode === 'light';
 
@@ -45,24 +48,43 @@ export default function WalletScreen() {
     React.useCallback(() => {
       if (!renderedOnce.current) {
         renderedOnce.current = true;
-        fetchWalletData();
+        loadWalletData();
       }
     }, [])
   );
 
-  const fetchWalletData = async () => {
+  const loadWalletData = async () => {
+    const cached = await cacheService.get<any>(STORAGE_KEYS.RIDER_WALLET);
+    if (cached) {
+      setWalletData(cached.walletData || null);
+      setTransactions(cached.transactions || []);
+      setHasCached(true);
+      setLoading(false);
+    }
+
+    await fetchWalletData(!cached);
+  };
+
+  const fetchWalletData = async (showLoader: boolean = true) => {
     try {
-      setLoading(true);
+      if (showLoader) setLoading(true);
       const data = await apiService.get('/user/wallet');
-      setWalletData(data.wallet);
-      setTransactions(data.transactions || []);
+      const nextWallet = data.wallet || null;
+      const nextTransactions = data.transactions || [];
+      setWalletData(nextWallet);
+      setTransactions(nextTransactions);
+
+      await cacheService.set(STORAGE_KEYS.RIDER_WALLET, {
+        walletData: nextWallet,
+        transactions: nextTransactions,
+      });
     } catch (error) { console.error(error); } 
-    finally { setLoading(false); }
+    finally { if (showLoader) setLoading(false); }
   };
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchWalletData();
+    await fetchWalletData(!hasCached);
     setRefreshing(false);
   };
 

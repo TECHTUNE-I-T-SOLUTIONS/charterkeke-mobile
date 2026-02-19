@@ -15,15 +15,6 @@ export default function RiderLayout() {
       <Stack
         screenOptions={{
           headerShown: false,
-          cardStyle: {
-            backgroundColor: colors.background,
-            flex: 1,
-          },
-          animationEnabled: false,
-          transitionSpec: {
-            open: { animation: 'timing', config: { duration: 0 } },
-            close: { animation: 'timing', config: { duration: 0 } },
-          },
         }}
       >
         <Stack.Screen name="home" />

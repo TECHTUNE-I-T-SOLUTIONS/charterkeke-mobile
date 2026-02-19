@@ -1,7 +1,9 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
 import * as SecureStore from 'expo-secure-store';
+import NetInfo from '@react-native-community/netinfo';
+import { Alert } from 'react-native';
 import { API_CONFIG } from '@utils/constants';
-import { APIError, AuthResponse } from '@types/index';
+import { APIError, AuthResponse } from '@/types';
 
 class APIService {
   private api: AxiosInstance;
@@ -10,6 +12,33 @@ class APIService {
     onSuccess: (token: string) => void;
     onFailed: (error: AxiosError) => void;
   }> = [];
+  private readonly RETRY_CONFIG = {
+    maxRetries: 3,
+    baseDelayMs: 500,
+    maxDelayMs: 5000,
+    retryableStatusCodes: [408, 429, 500, 502, 503, 504],
+  };
+  private lastNetworkAlertAt = 0;
+  private wasOffline = false;
+
+  private notifyNetworkStatus = (isOffline: boolean, message?: string): void => {
+    const now = Date.now();
+    const minIntervalMs = 10000;
+    const stateChanged = this.wasOffline !== isOffline;
+
+    if (!stateChanged && now - this.lastNetworkAlertAt < minIntervalMs) {
+      return;
+    }
+
+    this.wasOffline = isOffline;
+    this.lastNetworkAlertAt = now;
+
+    if (isOffline) {
+      Alert.alert('Network Offline', message || 'You are offline. Retrying automatically...');
+    } else {
+      Alert.alert('Back Online', 'Connection restored. Continuing requests.');
+    }
+  };
 
   private isFormDataPayload = (data: any): boolean => {
     if (!data) return false;
@@ -17,9 +46,17 @@ class APIService {
     return typeof data?.append === 'function' && typeof data?.getParts === 'function';
   };
 
+  private normalizeBaseUrl = (url: string): string => {
+    const trimmed = url.replace(/\/+$/, '');
+    if (trimmed.endsWith('/api')) {
+      return trimmed;
+    }
+    return `${trimmed}/api`;
+  };
+
   constructor() {
     this.api = axios.create({
-      baseURL: API_CONFIG.url,
+      baseURL: this.normalizeBaseUrl(API_CONFIG.url),
       timeout: API_CONFIG.timeout,
       headers: {
         'Content-Type': 'application/json',
@@ -29,6 +66,10 @@ class APIService {
     // Request interceptor
     this.api.interceptors.request.use(
       async (config: InternalAxiosRequestConfig) => {
+        if (config.baseURL) {
+          config.baseURL = this.normalizeBaseUrl(config.baseURL);
+        }
+
         if (this.isFormDataPayload(config.data)) {
           config.headers['Content-Type'] = 'multipart/form-data';
         }
@@ -41,7 +82,10 @@ class APIService {
         } else {
           console.warn('⚠️  [API] No authToken in SecureStore, request will be sent without auth');
         }
+        const baseUrl = config.baseURL || this.normalizeBaseUrl(API_CONFIG.url);
+        const fullUrl = `${baseUrl}${config.url || ''}`;
         console.log('📤 [API] Request URL:', config.url);
+        console.log('📤 [API] Full URL:', fullUrl);
         console.log('📤 [API] Request headers:', Object.keys(config.headers));
         return config;
       },
@@ -129,13 +173,13 @@ class APIService {
       // Log full backend error for debugging
       console.error('📡 Backend detailed error:', JSON.stringify(data, null, 2));
     } else if (error.request) {
-      console.error('📡 [API] Network error (no response):', error.request);
+      console.log('📡 [API] Network request failed (no response)');
       formattedError = {
         code: 'NETWORK_ERROR',
         message: 'Network error. Please check your connection.',
         statusCode: 0,
       };
-      console.error('📡 Network error:', error.request);
+      this.notifyNetworkStatus(true, 'Network is unstable or unavailable. Retrying...');
     } else {
       console.error('📡 [API] Client error:', error.message);
       formattedError = {
@@ -146,9 +190,83 @@ class APIService {
       console.error('📡 Client error:', error.message);
     }
 
-    console.error('❌ [API] Formatted error to throw:', JSON.stringify(formattedError, null, 2));
+    if (formattedError.code !== 'NETWORK_ERROR') {
+      console.error('❌ [API] Formatted error to throw:', JSON.stringify(formattedError, null, 2));
+    }
 
     return Promise.reject(formattedError);
+  };
+
+  private async retryWithBackoff<T>(
+    fn: () => Promise<T>,
+    endpoint: string = 'unknown'
+  ): Promise<T> {
+    let lastError: any;
+    
+    for (let attempt = 0; attempt < this.RETRY_CONFIG.maxRetries; attempt++) {
+      try {
+        const netState = await NetInfo.fetch();
+        const isOffline = !netState.isConnected || netState.isInternetReachable === false;
+
+        if (isOffline) {
+          this.notifyNetworkStatus(true, 'You are offline. Waiting for network and retrying...');
+          if (attempt < this.RETRY_CONFIG.maxRetries - 1) {
+            const delayMs = Math.min(
+              this.RETRY_CONFIG.baseDelayMs * Math.pow(2, attempt),
+              this.RETRY_CONFIG.maxDelayMs
+            );
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+            continue;
+          }
+
+          throw {
+            code: 'NETWORK_OFFLINE',
+            message: 'You are offline. Please reconnect and try again.',
+            statusCode: 0,
+          };
+        }
+
+        if (this.wasOffline) {
+          this.notifyNetworkStatus(false);
+        }
+
+        console.log(`🔄 [RETRY] Attempt ${attempt + 1}/${this.RETRY_CONFIG.maxRetries} for ${endpoint}`);
+        return await fn();
+      } catch (error: any) {
+        lastError = error;
+        
+        // Don't retry for 4xx errors (except 408) or auth errors
+        const statusCode = error?.statusCode || error?.response?.status;
+        const message = String(error?.message || error?.details || "").toLowerCase();
+        const transient400 =
+          statusCode === 400 &&
+          (message.includes('fetch failed') ||
+            message.includes('network') ||
+            message.includes('ecconn') ||
+            message.includes('timeout'));
+        const shouldRetry = 
+          (this.RETRY_CONFIG.retryableStatusCodes.includes(statusCode)) ||
+          transient400 ||
+          (error?.code === 'NETWORK_ERROR' && attempt < this.RETRY_CONFIG.maxRetries - 1);
+        
+        if (!shouldRetry) {
+          console.log(`⏹️  [RETRY] Not retryable for ${endpoint} (status: ${statusCode})`);
+          throw error;
+        }
+        
+        if (attempt < this.RETRY_CONFIG.maxRetries - 1) {
+          const delayMs = Math.min(
+            this.RETRY_CONFIG.baseDelayMs * Math.pow(2, attempt),
+            this.RETRY_CONFIG.maxDelayMs
+          );
+          console.log(`⏳ [RETRY] Waiting ${delayMs}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+      }
+    }
+    
+    console.error(`❌ [RETRY] All ${this.RETRY_CONFIG.maxRetries} attempts failed for ${endpoint}`);
+    throw lastError;
   };
 
   // Auth endpoints
@@ -238,7 +356,9 @@ class APIService {
 
   // Ride endpoints
   async createRide(rideData: any): Promise<any> {
+    console.log('📤 [API] Create ride payload:', rideData);
     const response = await this.api.post('/user/book-ride', rideData);
+    console.log('📥 [API] Create ride response:', response.data);
     return response.data;
   }
 
@@ -277,8 +397,10 @@ class APIService {
   }
 
   async getDriverStatus(): Promise<any> {
-    const response = await this.api.get('/driver/status');
-    return response.data;
+    return this.retryWithBackoff(
+      () => this.api.get('/driver/status').then(r => r.data),
+      '/driver/status'
+    );
   }
 
   async setDriverStatus(status: 'online' | 'offline'): Promise<any> {
@@ -292,13 +414,17 @@ class APIService {
       params.latitude = latitude;
       params.longitude = longitude;
     }
-    const response = await this.api.get('/driver/available-rides', { params });
-    return response.data;
+    return this.retryWithBackoff(
+      () => this.api.get('/driver/available-rides', { params }).then(r => r.data),
+      '/driver/available-rides'
+    );
   }
 
   async getActiveRides(): Promise<any> {
-    const response = await this.api.get('/driver/active-rides');
-    return response.data;
+    return this.retryWithBackoff(
+      () => this.api.get('/driver/active-rides').then(r => r.data),
+      '/driver/active-rides'
+    );
   }
 
   async acceptRide(rideId: string): Promise<any> {
@@ -329,6 +455,34 @@ class APIService {
   async getPaymentStatus(driverId: string): Promise<any> {
     const response = await this.api.get(`/driver/payment-status?driver_id=${driverId}`);
     return response.data;
+  }
+
+  async getDriverSettlementStatus(): Promise<any> {
+    return this.retryWithBackoff(
+      () => this.api.get('/driver/settlement/status').then(r => r.data),
+      '/driver/settlement/status'
+    );
+  }
+
+  async getDriverDailySettlement(date?: string): Promise<any> {
+    return this.retryWithBackoff(
+      () => this.api.get('/driver/settlement/daily', {
+        params: date ? { date } : undefined,
+      }).then(r => r.data),
+      '/driver/settlement/daily'
+    );
+  }
+
+  async initiateDriverSettlementPayment(payload?: { date?: string }): Promise<any> {
+    const response = await this.api.post('/driver/settlement/initiate', payload || {});
+    return response.data;
+  }
+
+  async verifyDriverSettlementPayment(reference: string): Promise<any> {
+    return this.retryWithBackoff(
+      () => this.api.post('/driver/settlement/verify', { reference }).then(r => r.data),
+      '/driver/settlement/verify'
+    );
   }
 
   async getWallet(): Promise<any> {

@@ -4,7 +4,7 @@ import { syncService } from '@services/sync';
 import { cacheService } from '@services/cache';
 import { subscribeToPushNotifications, clearPushSubscription } from '@services/notificationService';
 import { initializeWebSocket, disconnectWebSocket } from '@services/websocketService';
-import { Rider, Driver, UserRole } from '@types/index';
+import { Rider, Driver, UserRole } from '@/types';
 
 interface AuthContextType {
   user: Rider | Driver | null;
@@ -15,8 +15,9 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<Rider | Driver>;
   signup: (payload: any) => Promise<void>;
   logout: () => Promise<void>;
-  updateUserProfile: (updates: Partial<Rider | Driver>) => Promise<void>;
-  verifyOTP: (phone: string, otp: string) => Promise<void>;
+  updateUserProfile: (updates: Partial<Rider | Driver>) => Promise<{ success: boolean }>;
+  verifyOTP: (payload: { email?: string; phone?: string; otp: string }) => Promise<{ success: boolean }>;
+  resendOTP: (email: string) => Promise<{ success: boolean }>;
   resetPassword: (email: string) => Promise<void>;
   clearError: () => void;
   clearCache: () => Promise<void>;
@@ -157,11 +158,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const handleUpdateUserProfile = async (updates: Partial<Rider | Driver>) => {
+  const handleUpdateUserProfile = async (updates: Partial<Rider | Driver>): Promise<{ success: boolean }> => {
     try {
       setError(null);
       await authService.updateCurrentUser(updates);
       setUser(authService.getCurrentUser());
+      return { success: true };
     } catch (err) {
       const errorMessage = (err as Error).message || 'Update failed';
       setError(errorMessage);
@@ -169,12 +171,25 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const handleVerifyOTP = async (phone: string, otp: string) => {
+  const handleVerifyOTP = async (payload: { email?: string; phone?: string; otp: string }): Promise<{ success: boolean }> => {
     try {
       setError(null);
-      await authService.verifyOTP(phone, otp);
+      await authService.verifyOTP(payload.phone || payload.email || '', payload.otp);
+      return { success: true };
     } catch (err) {
       const errorMessage = (err as Error).message || 'OTP verification failed';
+      setError(errorMessage);
+      throw err;
+    }
+  };
+
+  const handleResendOTP = async (email: string): Promise<{ success: boolean }> => {
+    try {
+      setError(null);
+      await authService.requestPasswordReset(email);
+      return { success: true };
+    } catch (err) {
+      const errorMessage = (err as Error).message || 'Resend OTP failed';
       setError(errorMessage);
       throw err;
     }
@@ -206,6 +221,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     logout: handleLogout,
     updateUserProfile: handleUpdateUserProfile,
     verifyOTP: handleVerifyOTP,
+    resendOTP: handleResendOTP,
     resetPassword: handleResetPassword,
     clearError: handleClearError,
     clearCache: handleClearCache,

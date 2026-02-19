@@ -30,6 +30,8 @@ import { setNavigationRef } from '@/services/navigationService';
 import { HomeSkeleton } from '@/components/HomeSkeleton';
 import SupportFloatingWidget from '@/components/SupportFloatingWidget';
 import { BRAND, COLORS } from '@/utils/colors';
+import { cacheService } from '@/services/cache';
+import { STORAGE_KEYS } from '@/utils/constants';
 
 const { width } = Dimensions.get('window');
 
@@ -55,6 +57,7 @@ export default function RiderHomeScreen() {
   const { theme, mode, toggleTheme } = useTheme();
   const [refreshing, setRefreshing] = useState(false);
   const renderedOnce = useRef(false);
+  const [hasCached, setHasCached] = useState(false);
   const { unreadCount, resetUnreadCount, incrementUnreadCount } = useNotificationBadge();
 
   // Set up navigation ref and notification callbacks
@@ -80,40 +83,81 @@ export default function RiderHomeScreen() {
     React.useCallback(() => {
       if (!renderedOnce.current) {
         renderedOnce.current = true;
-        fetchProfileData();
+        loadHomeData();
       }
     }, [])
   );
 
-  const fetchProfileData = async () => {
+  const loadHomeData = async () => {
+    const cached = await cacheService.get<any>(STORAGE_KEYS.RIDER_HOME);
+    if (cached) {
+      setProfileData(cached.profileData || null);
+      setRideStats(cached.rideStats || { totalRides: 0, averageRating: 0, walletBalance: 0 });
+      setRecentRides(cached.recentRides || []);
+      setHasCached(true);
+      setLoading(false);
+    }
+
+    await fetchProfileData(!cached);
+  };
+
+  const fetchProfileData = async (showLoader: boolean = true) => {
     try {
-      setLoading(true);
+      if (showLoader) setLoading(true);
       const profileRes = await apiService.get('/user/profile');
-      setProfileData(profileRes.user || profileRes);
+      const nextProfile = profileRes.user || profileRes;
+      setProfileData(nextProfile);
+
+      let nextStats = { ...rideStats };
+      let nextRecent = recentRides;
 
       try {
         const historyRes = await apiService.get('/user/ride-history?limit=100');
         const rides = historyRes.rides || [];
         const totalRides = rides.length;
         const averageRating = rides.length > 0 ? rides.reduce((sum: number, ride: any) => sum + (ride.rating || 0), 0) / rides.length : 0;
-        setRideStats(prev => ({ ...prev, totalRides, averageRating }));
-        setRecentRides(rides.slice(0, 5));
+        nextStats = { ...nextStats, totalRides, averageRating };
+        nextRecent = rides.slice(0, 5);
+        setRideStats(nextStats);
+        setRecentRides(nextRecent);
       } catch (err) {}
 
       try {
         const walletRes = await apiService.get('/user/wallet');
-        setRideStats(prev => ({ ...prev, walletBalance: walletRes.wallet?.balance || 0 }));
+        nextStats = { ...nextStats, walletBalance: walletRes.wallet?.balance || 0 };
+        setRideStats(nextStats);
       } catch (err) {}
+
+      await cacheService.set(STORAGE_KEYS.RIDER_HOME, {
+        profileData: nextProfile,
+        rideStats: nextStats,
+        recentRides: nextRecent,
+      });
     } catch (error) {
     } finally {
-      setLoading(false);
+      if (showLoader) setLoading(false);
     }
   };
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchProfileData();
+    await fetchProfileData(!hasCached);
     setRefreshing(false);
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return '#10B981';
+      case 'cancelled':
+        return '#EF4444';
+      case 'pending':
+        return '#F59E0B';
+      case 'in_progress':
+        return '#3B82F6';
+      default:
+        return BRAND.primary;
+    }
   };
 
   const isLight = theme.mode === 'light';
@@ -125,59 +169,61 @@ export default function RiderHomeScreen() {
       {loading ? (
         <HomeSkeleton />
       ) : (
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={{ paddingBottom: 100 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={BRAND.primary} />}
-          showsVerticalScrollIndicator={false}
-        >
-        {/* Header */}
-        <LinearGradient
-          colors={isLight ? ['#FFFFFF', '#FFF8F0'] : ['#000000', '#1A1100']}
-          style={[styles.headerGradient, { paddingTop: insets.top + 10 }]}
-        >
-          <View style={styles.header}>
-            <View>
-              <Text style={[styles.greeting, { color: theme.colors.textSecondary }]}>
-                Welcome back,
-              </Text>
-              <Text style={[styles.name, { color: theme.colors.textPrimary }]}>
-                {profileData?.first_name || 'Rider'}! 👋
-              </Text>
-            </View>
-            <View style={styles.headerButtons}>
-              <TouchableOpacity 
-                onPress={() => {
-                  resetUnreadCount();
-                  router.push('/rider/notifications');
-                }} 
-                style={[styles.iconBtn, { backgroundColor: theme.colors.inputBackground }]}
-              >
-                <MaterialCommunityIcons name="bell-outline" size={20} color={theme.colors.textPrimary} />
-                {unreadCount > 0 && (
-                  <View style={[styles.badge, { backgroundColor: BRAND.primary }]}>
-                    <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity onPress={toggleTheme} style={[styles.iconBtn, { backgroundColor: theme.colors.inputBackground }]}>
-                <MaterialCommunityIcons name={isLight ? "weather-sunny" : "weather-night"} size={20} color={theme.colors.textPrimary} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => router.push('/rider/profile')} style={styles.profileBtn}>
-                <Image
-                  source={{
-                    uri:
-                      (user as any)?.avatar ||
-                      (user as any)?.profile_picture_url ||
-                      profileData?.profile_picture_url ||
-                      'https://via.placeholder.com/40',
+        <>
+          {/* Fixed Header */}
+          <LinearGradient
+            colors={isLight ? ['#FFFFFF', '#FFF8F0'] : ['#000000', '#1A1100']}
+            style={[styles.headerGradient, { paddingTop: insets.top + 10 }]}
+          >
+            <View style={styles.header}>
+              <View>
+                <Text style={[styles.greeting, { color: theme.colors.textSecondary }]}>
+                  Welcome back,
+                </Text>
+                <Text style={[styles.name, { color: theme.colors.textPrimary }]}>
+                  {profileData?.first_name || 'Rider'}! 👋
+                </Text>
+              </View>
+              <View style={styles.headerButtons}>
+                <TouchableOpacity
+                  onPress={() => {
+                    resetUnreadCount();
+                    router.push('/rider/notifications');
                   }}
-                  style={styles.profileImage}
-                />
-              </TouchableOpacity>
+                  style={[styles.iconBtn, { backgroundColor: theme.colors.inputBackground }]}
+                >
+                  <MaterialCommunityIcons name="bell-outline" size={20} color={theme.colors.textPrimary} />
+                  {unreadCount > 0 && (
+                    <View style={[styles.badge, { backgroundColor: BRAND.primary }]}>
+                      <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity onPress={toggleTheme} style={[styles.iconBtn, { backgroundColor: theme.colors.inputBackground }]}>
+                  <MaterialCommunityIcons name={isLight ? "weather-sunny" : "weather-night"} size={20} color={theme.colors.textPrimary} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => router.push('/rider/profile')} style={styles.profileBtn}>
+                  <Image
+                    source={{
+                      uri:
+                        (user as any)?.avatar ||
+                        (user as any)?.profile_picture_url ||
+                        profileData?.profile_picture_url ||
+                        'https://via.placeholder.com/40',
+                    }}
+                    style={styles.profileImage}
+                  />
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
-        </LinearGradient>
+          </LinearGradient>
+
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={{ paddingBottom: 100 }}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={BRAND.primary} />}
+            showsVerticalScrollIndicator={false}
+          >
 
         {/* Hero Action - Book Ride */}
         <View style={styles.paddingH}>
@@ -288,17 +334,72 @@ export default function RiderHomeScreen() {
                <Text style={[styles.seeAll, { color: BRAND.primary }]}>See All</Text>
              </TouchableOpacity>
            </View>
-           
-           <View style={[styles.emptyState, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-              <MaterialCommunityIcons name="history" size={32} color={theme.colors.textTertiary} />
-              <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>No recent rides found</Text>
-              <TouchableOpacity onPress={() => router.push('/rider/booking')}>
-                <Text style={[styles.emptyLink, { color: BRAND.primary }]}>Book your first ride</Text>
-              </TouchableOpacity>
-           </View>
+
+           {recentRides.length === 0 ? (
+             <View style={[styles.emptyState, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                <MaterialCommunityIcons name="history" size={32} color={theme.colors.textTertiary} />
+                <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>No recent rides found</Text>
+                <TouchableOpacity onPress={() => router.push('/rider/booking')}>
+                  <Text style={[styles.emptyLink, { color: BRAND.primary }]}>Book your first ride</Text>
+                </TouchableOpacity>
+             </View>
+           ) : (
+             <View style={styles.recentList}>
+               {recentRides.map((ride) => (
+                 <TouchableOpacity
+                   key={ride.id}
+                   activeOpacity={0.9}
+                   onPress={() =>
+                     router.push({
+                       pathname: '/rider/ride-details',
+                       params: { rideData: JSON.stringify(ride) },
+                     } as any)
+                   }
+                   style={[styles.recentCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
+                 >
+                   <View style={styles.recentHeader}>
+                     <View style={[styles.statusBadge, { backgroundColor: getStatusColor(ride.status) + '20' }]}>
+                       <Text style={[styles.statusText, { color: getStatusColor(ride.status) }]}>{String(ride.status || '').toUpperCase()}</Text>
+                     </View>
+                     <Text style={[styles.recentFare, { color: theme.colors.textPrimary }]}>
+                       ₦{(ride.fare_amount ?? 0).toLocaleString()}
+                     </Text>
+                   </View>
+
+                   <View style={styles.recentRoute}>
+                     <View style={styles.timeline}>
+                       <View style={[styles.dot, { backgroundColor: BRAND.primary }]} />
+                       <View style={[styles.line, { backgroundColor: theme.colors.border }]} />
+                       <View style={[styles.square, { borderColor: theme.colors.textPrimary }]} />
+                     </View>
+                     <View style={styles.addresses}>
+                       <Text numberOfLines={1} style={[styles.addressText, { color: theme.colors.textPrimary }]}>
+                         {ride.pickup_zone || 'Pickup'}
+                       </Text>
+                       <View style={{ height: 10 }} />
+                       <Text numberOfLines={1} style={[styles.addressText, { color: theme.colors.textPrimary }]}>
+                         {ride.destination_zone || 'Destination'}
+                       </Text>
+                     </View>
+                   </View>
+
+                   <View style={[styles.recentFooter, { borderTopColor: theme.colors.border }]}
+                   >
+                     <Text style={[styles.dateText, { color: theme.colors.textSecondary }]}
+                     >
+                       {ride.created_at
+                         ? `${new Date(ride.created_at).toLocaleDateString()} • ${new Date(ride.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                         : 'Recent ride'}
+                     </Text>
+                   </View>
+                 </TouchableOpacity>
+               ))}
+             </View>
+           )}
         </View>
 
-        </ScrollView>
+          </ScrollView>
+        </>
       )}
 
       <SupportFloatingWidget route="/rider/help-and-support" />
@@ -346,6 +447,21 @@ const styles = StyleSheet.create({
   emptyState: { padding: 32, alignItems: 'center', borderRadius: 16, borderWidth: 1, borderStyle: 'dashed' },
   emptyText: { fontSize: 13, marginTop: 8 },
   emptyLink: { fontSize: 13, fontWeight: '700', marginTop: 4 },
+  recentList: { gap: 12 },
+  recentCard: { borderRadius: 16, borderWidth: 1, padding: 14 },
+  recentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  recentFare: { fontSize: 14, fontWeight: '700' },
+  recentRoute: { flexDirection: 'row', marginBottom: 10 },
+  recentFooter: { borderTopWidth: 1, paddingTop: 8 },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
+  statusText: { fontSize: 10, fontWeight: '700' },
+  timeline: { alignItems: 'center', marginRight: 12, paddingTop: 4 },
+  dot: { width: 8, height: 8, borderRadius: 4 },
+  line: { width: 1, flex: 1, marginVertical: 4 },
+  square: { width: 8, height: 8, borderWidth: 1 },
+  addresses: { flex: 1 },
+  addressText: { fontSize: 13, fontWeight: '500' },
+  dateText: { fontSize: 11 },
 });
 
 const mapDarkStyle = [

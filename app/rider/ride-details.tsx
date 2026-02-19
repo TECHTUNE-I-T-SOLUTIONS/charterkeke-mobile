@@ -10,18 +10,14 @@ import {
   StyleSheet,
   StatusBar,
   Dimensions,
-  Platform,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/context/ThemeContext';
 import { useAlert } from '@/context/AlertContext';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import { apiService } from '@/services/api';
-import { BRAND, COLORS } from '@/utils/colors';
-
-const { width } = Dimensions.get('window');
+import { BRAND } from '@/utils/colors';
 
 interface RideData {
   id: string;
@@ -84,7 +80,6 @@ function formatCurrency(value?: number | null) {
 export default function RideDetailsScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { showError, showSuccess } = useAlert();
   const isLight = theme.mode === 'light';
@@ -177,8 +172,10 @@ export default function RideDetailsScreen() {
       <View style={styles.mapContainer}>
         <MapView
           style={styles.map}
-          scrollEnabled={false}
-          zoomEnabled={false}
+          scrollEnabled={true}
+          zoomEnabled={true}
+          pitchEnabled={true}
+          rotateEnabled={true}
           initialRegion={{
             latitude: pickupCoords?.latitude || 6.5244,
             longitude: pickupCoords?.longitude || 3.3792,
@@ -192,15 +189,12 @@ export default function RideDetailsScreen() {
           {pickupCoords && destCoords && <Polyline coordinates={[pickupCoords, destCoords]} strokeColor={BRAND.primary} strokeWidth={4} />}
         </MapView>
         
-        {/* Header Overlay */}
-        <View style={[styles.headerOverlay, { paddingTop: insets.top + 10 }]}>
-          <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: theme.colors.surface }]}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.textPrimary} />
-          </TouchableOpacity>
-          <View style={[styles.statusTag, { backgroundColor: theme.colors.surface }]}>
-            <View style={[styles.statusDot, { backgroundColor: rideDetails.status === 'completed' ? '#10B981' : BRAND.primary }]} />
-            <Text style={[styles.statusText, { color: theme.colors.textPrimary }]}>{rideDetails.status.toUpperCase()}</Text>
-          </View>
+        <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: theme.colors.surface }]}>
+          <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.textPrimary} />
+        </TouchableOpacity>
+        <View style={[styles.statusTag, { backgroundColor: theme.colors.surface }]}>
+          <View style={[styles.statusDot, { backgroundColor: rideDetails.status === 'completed' ? '#10B981' : BRAND.primary }]} />
+          <Text style={[styles.statusText, { color: theme.colors.textPrimary }]}>{rideDetails.status.toUpperCase()}</Text>
         </View>
       </View>
 

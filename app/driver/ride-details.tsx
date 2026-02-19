@@ -44,13 +44,27 @@ export default function RideDetailsScreen() {
   }, [rideData]);
 
   const handleUpdate = async (status: string) => {
-    setUpdating(true);
-    // Simulate API call
-    setTimeout(() => {
-        setUpdating(false);
-        if (status === 'completed') router.back();
-        else setRide({...ride, status});
-    }, 1000);
+    try {
+      setUpdating(true);
+      const response = await apiService.updateRideStatus(rideId as string, status as 'in_progress' | 'completed');
+      
+      if (response) {
+        // Update local state with the response data
+        setRide(response);
+        
+        if (status === 'completed') {
+          Alert.alert('Success', 'Ride completed!');
+          router.back();
+        } else {
+          Alert.alert('Success', 'Trip started!');
+        }
+      }
+    } catch (error: any) {
+      console.error('❌ [RIDE] Update failed:', error);
+      Alert.alert('Error', error?.message || 'Failed to update ride status');
+    } finally {
+      setUpdating(false);
+    }
   };
 
    if (!ride) {

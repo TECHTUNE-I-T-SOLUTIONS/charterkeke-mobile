@@ -54,7 +54,7 @@ export default function NotificationsScreen() {
   useEffect(() => {
     const notificationsArray = Array.isArray(notificationsData) 
       ? notificationsData 
-      : (notificationsData?.notifications || []);
+      : [];
     setLocalNotifications(notificationsArray);
   }, [notificationsData]);
 
@@ -232,7 +232,7 @@ export default function NotificationsScreen() {
           end={{ x: 1, y: 1 }}
           style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 20 }}
         >
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          {/* <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <TouchableOpacity
               onPress={() => router.back()}
               style={{
@@ -250,7 +250,7 @@ export default function NotificationsScreen() {
                 color={isDark ? '#000000' : '#FFFFFF'}
               />
             </TouchableOpacity>
-          </View>
+          </View> */}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <View>
               <Text

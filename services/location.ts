@@ -1,7 +1,7 @@
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import NetInfo from '@react-native-community/netinfo';
-import { Location as LocationType, LocationUpdate } from '@types/index';
+import { Location as LocationType, LocationUpdate } from '@/types';
 import { LOCATION_CONFIG } from '@utils/constants';
 import { apiService } from './api';
 import { cacheService } from './cache';
@@ -10,7 +10,7 @@ const LOCATION_TASK_NAME = 'BACKGROUND_LOCATION_TASK';
 
 class LocationService {
   private isTracking = false;
-  private updateInterval: NodeJS.Timer | null = null;
+  private updateInterval: ReturnType<typeof setInterval> | null = null;
   private currentLocation: LocationType | null = null;
 
   /**

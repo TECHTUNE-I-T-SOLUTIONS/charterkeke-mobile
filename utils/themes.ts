@@ -12,6 +12,7 @@ export interface ThemeColors {
   background: string;
   surface: string; // Cards, modals
   card: string; // Cards, modals
+  ride: string; // For ride-related UI elements (e.g., ride cards, status indicators)
   
   // Text
   textPrimary: string;
@@ -55,6 +56,7 @@ export const lightTheme: Theme = {
     sheet: '#DF9638', // Custom sheet color for light mode
     surface: '#FFFFFF',
     card: '#F18902AD',
+    ride: '#D8C5ADAD',
 
 
     textPrimary: '#000000',
@@ -88,6 +90,7 @@ export const darkTheme: Theme = {
     sheet: '#DF8108EC', // Custom sheet color for dark mode
     surface: '#121212',
     card: '#573202D2',
+    ride: '#070401', // Darker shade for ride-related UI elements
 
     textPrimary: '#FFFFFF',
     textSecondary: '#E6A653',

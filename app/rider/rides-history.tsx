@@ -113,7 +113,7 @@ export default function RidesHistoryScreen() {
                 key={ride.id}
                 activeOpacity={0.9}
                 onPress={() => router.push({ pathname: '/rider/ride-details', params: { rideData: JSON.stringify(ride) } } as any)}
-                style={[styles.rideCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
+                style={[styles.rideCard, { backgroundColor: theme.colors.ride, borderColor: theme.colors.border }]}
               >
                 <View style={styles.cardHeader}>
                   <View style={[styles.statusBadge, { backgroundColor: getStatusColor(ride.status) + '20' }]}>

@@ -41,9 +41,6 @@ function RootLayoutContent() {
       <Stack
         screenOptions={{
           headerShown: false,
-          cardStyle: {
-            backgroundColor: COLORS.light.background,
-          },
         }}
       >
         {/* Index - handles routing based on auth state */}

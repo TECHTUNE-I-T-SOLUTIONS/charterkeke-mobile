@@ -105,7 +105,7 @@ export default function ActiveRideScreen() {
     () => [
       isDark ? '#FFFFFF' : '#000000',
       isDark ? '#F0F0F0' : '#333333',
-    ],
+    ] as const,
     [isDark]
   );
 

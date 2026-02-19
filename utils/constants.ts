@@ -3,11 +3,21 @@
 // Find your IP: Run `ipconfig` on Windows (look for IPv4 Address like 192.168.x.x or 10.x.x.x)
 // Then update EXPO_PUBLIC_API_URL in your .env or change the URL below
 
+const normalizeApiUrl = (url: string): string => {
+  const trimmed = url.replace(/\/+$/, '');
+  if (trimmed.endsWith('/api')) {
+    return trimmed;
+  }
+
+  return `${trimmed}/api`;
+};
+
 const getApiUrl = (): string => {
   // Check for explicit environment override first (highest priority)
   if (process.env.EXPO_PUBLIC_API_URL) {
-    console.log('Using API URL from env:', process.env.EXPO_PUBLIC_API_URL);
-    return process.env.EXPO_PUBLIC_API_URL;
+    const normalized = normalizeApiUrl(process.env.EXPO_PUBLIC_API_URL);
+    console.log('Using API URL from env:', normalized);
+    return normalized;
   }
   
   // Use the hosted backend on Vercel
@@ -107,6 +117,10 @@ export const STORAGE_KEYS = {
   LANGUAGE: 'language',
   NOTIFICATION_PREFERENCES: 'notification_preferences',
   SYNC_QUEUE: 'sync_queue',
+  RIDER_HOME: 'rider_home',
+  RIDER_WALLET: 'rider_wallet',
+  RIDER_PROFILE: 'rider_profile',
+  DRIVER_SETTLEMENT: 'driver_settlement',
 };
 
 // Screen Names

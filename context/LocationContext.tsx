@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState, ReactNode } from
 import NetInfo from '@react-native-community/netinfo';
 import { locationService } from '@services/location';
 import { syncService } from '@services/sync';
-import { Location, NetworkState } from '@types/index';
+import { Location, NetworkState } from '@/types';
 
 interface LocationContextType {
   currentLocation: Location | null;
@@ -59,7 +59,7 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
         setNetworkState({
           isConnected: netInfo.isConnected || false,
           isInternetReachable: netInfo.isInternetReachable || false,
-          type: netInfo.type || 'unknown',
+          type: (netInfo.type as any) || 'unknown',
         });
       } catch (err) {
         console.error('Location initialization error:', err);
@@ -76,7 +76,7 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
       setNetworkState({
         isConnected: state.isConnected || false,
         isInternetReachable: state.isInternetReachable || false,
-        type: state.type || 'unknown',
+        type: (state.type as any) || 'unknown',
       });
 
       // Handle sync on network reconnection

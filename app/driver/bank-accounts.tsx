@@ -124,7 +124,16 @@ export default function BankAccountsScreen() {
       const data = await response.json();
       if (data?.status && Array.isArray(data.data)) {
         const activeBanks = data.data.filter((bank: any) => bank.active !== false);
-        setBanks(activeBanks.map((bank: any) => ({ code: bank.code, name: bank.name })));
+        const seen = new Set<string>();
+        const uniqueBanks = activeBanks
+          .map((bank: any) => ({ code: String(bank.code || ''), name: String(bank.name || '') }))
+          .filter((bank: { code: string; name: string }) => {
+            const key = `${bank.code}-${bank.name.toLowerCase()}`;
+            if (!bank.code || !bank.name || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+        setBanks(uniqueBanks);
       } else {
         setBanks([]);
       }
@@ -511,9 +520,9 @@ export default function BankAccountsScreen() {
             </View>
             <ScrollView>
               {(bankSearch ? banks.filter((bank) => bank.name.toLowerCase().includes(bankSearch.toLowerCase())) : banks)
-                .map((bank) => (
+                .map((bank, idx) => (
                   <TouchableOpacity
-                    key={bank.code}
+                    key={`${bank.code}-${bank.name}-${idx}`}
                     onPress={() => handleSelectBank(bank)}
                     style={{
                       paddingVertical: scale(10),

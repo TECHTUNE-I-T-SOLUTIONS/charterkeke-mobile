@@ -20,6 +20,8 @@ import { useTheme } from '@/context/ThemeContext';
 import ConfirmationDialog from '@/components/ui/ConfirmationDialog';
 import { ProfileSkeleton } from '@/components/ProfileSkeleton';
 import { apiService } from '@/services/api';
+import { cacheService } from '@/services/cache';
+import { STORAGE_KEYS } from '@/utils/constants';
 import { BRAND, COLORS } from '@/utils/colors';
 
 interface ProfileData {
@@ -41,6 +43,7 @@ export default function ProfileScreen() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [notifEnabled, setNotifEnabled] = useState(true);
   const renderedOnce = useRef(false);
+  const [hasCached, setHasCached] = useState(false);
 
   const isLight = theme.mode === 'light';
 
@@ -48,18 +51,31 @@ export default function ProfileScreen() {
     React.useCallback(() => {
       if (!renderedOnce.current) {
         renderedOnce.current = true;
-        loadProfile();
+        loadProfileWithCache();
       }
     }, [])
   );
 
-  const loadProfile = async () => {
+  const loadProfileWithCache = async () => {
+    const cached = await cacheService.get<ProfileData>(STORAGE_KEYS.RIDER_PROFILE);
+    if (cached) {
+      setProfileData(cached);
+      setHasCached(true);
+      setLoading(false);
+    }
+
+    await loadProfile(!cached);
+  };
+
+  const loadProfile = async (showLoader: boolean = true) => {
     try {
-      setLoading(true);
+      if (showLoader) setLoading(true);
       const res = await apiService.get('/user/profile');
-      setProfileData(res.user || res);
+      const nextProfile = res.user || res;
+      setProfileData(nextProfile);
+      await cacheService.set(STORAGE_KEYS.RIDER_PROFILE, nextProfile);
     } catch (error) { console.error(error); } 
-    finally { setLoading(false); }
+    finally { if (showLoader) setLoading(false); }
   };
 
   const handleLogout = async () => {
@@ -123,9 +139,9 @@ export default function ProfileScreen() {
       <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
       <SafeAreaView style={{ flex: 1 }}>
         <View style={styles.header}>
-           <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: theme.colors.inputBackground }]}>
+           {/* <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: theme.colors.inputBackground }]}>
              <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.textPrimary} />
-           </TouchableOpacity>
+           </TouchableOpacity> */}
            <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>Profile</Text>
            <View style={{ width: 40 }} />
         </View>

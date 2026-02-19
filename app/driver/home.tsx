@@ -55,11 +55,14 @@ export default function DriverHomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [isOnline, setIsOnline] = useState(false);
   const [driverData, setDriverData] = useState<DriverData | null>(null);
+  const [todayEarnings, setTodayEarnings] = useState(0);
   const [activeRidesCount, setActiveRidesCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [availableRides, setAvailableRides] = useState<any[]>([]);
   const [recentRides, setRecentRides] = useState<any[]>([]);
   const [hasCached, setHasCached] = useState(false);
+  const [settlementBlocked, setSettlementBlocked] = useState(false);
+  const [settlementOutstanding, setSettlementOutstanding] = useState(0);
   
   // Animations
   const onlineAnim = useRef(new Animated.Value(0)).current;
@@ -102,10 +105,13 @@ export default function DriverHomeScreen() {
     const cached = await cacheService.get<any>('driver_home_dashboard');
     if (cached) {
       setDriverData(cached.driverData || null);
+      setTodayEarnings(cached.todayEarnings || 0);
       setIsOnline(!!cached.isOnline);
       setActiveRidesCount(cached.activeRidesCount || 0);
       setAvailableRides(cached.availableRides || []);
       setRecentRides(cached.recentRides || []);
+      setSettlementBlocked(!!cached.settlementBlocked);
+      setSettlementOutstanding(cached.settlementOutstanding || 0);
       setHasCached(true);
       setLoading(false);
     }
@@ -116,12 +122,14 @@ export default function DriverHomeScreen() {
   const fetchDashboardData = async (showLoader: boolean = true) => {
     try {
       if (showLoader) setLoading(true);
-      const [details, status, rides, available, history] = await Promise.all([
+      const [details, status, rides, available, history, settlement, dailyEarnings] = await Promise.all([
         apiService.getDriverDetails().catch(() => ({})),
         apiService.getDriverStatus().catch(() => ({ status: 'offline' })),
         apiService.getActiveRides().catch(() => ({ rides: [] })),
         apiService.getAvailableRides(currentLocation?.latitude, currentLocation?.longitude, 10).catch(() => ({ rides: [] })),
-        apiService.get('/user/ride-history?limit=5').catch(() => ({ rides: [] }))
+        apiService.get('/user/ride-history?limit=5').catch(() => ({ rides: [] })),
+        apiService.getDriverSettlementStatus().catch(() => ({ blocked: false, totalOutstanding: 0 })),
+        apiService.getDriverDailySettlement().catch(() => ({ total_ride_earnings: 0 })),
       ]);
 
       const nextDriverData = details.driver || details;
@@ -129,19 +137,26 @@ export default function DriverHomeScreen() {
       const nextActiveRidesCount = rides.rides?.length || 0;
       const nextAvailableRides = available.rides?.slice(0, 3) || [];
       const nextRecentRides = (history.rides || history.data || []).slice(0, 5);
+      const nextTodayEarnings = Number(dailyEarnings?.settlement?.totalDriverEarnings || dailyEarnings?.totals?.netDriverEarnings || 0);
 
       setDriverData(nextDriverData);
+      setTodayEarnings(nextTodayEarnings);
       setIsOnline(nextIsOnline);
       setActiveRidesCount(nextActiveRidesCount);
       setAvailableRides(nextAvailableRides);
       setRecentRides(nextRecentRides);
+      setSettlementBlocked(!!settlement?.blocked);
+      setSettlementOutstanding(settlement?.totalOutstanding || 0);
 
       await cacheService.set('driver_home_dashboard', {
         driverData: nextDriverData,
+        todayEarnings: nextTodayEarnings,
         isOnline: nextIsOnline,
         activeRidesCount: nextActiveRidesCount,
         availableRides: nextAvailableRides,
         recentRides: nextRecentRides,
+        settlementBlocked: !!settlement?.blocked,
+        settlementOutstanding: settlement?.totalOutstanding || 0,
       });
     } catch (error) {
       console.error(error);
@@ -162,7 +177,8 @@ export default function DriverHomeScreen() {
       await apiService.setDriverStatus(value ? 'online' : 'offline');
     } catch (error) {
       setIsOnline(!value); // Revert on failure
-      Alert.alert('Error', 'Failed to update status');
+      const message = (error as any)?.message || 'Failed to update status';
+      Alert.alert('Error', message);
     }
   };
 
@@ -228,6 +244,11 @@ export default function DriverHomeScreen() {
                   <Animated.Text style={[styles.statusValue, { color: statusColor }]}>
                     {isOnline ? 'Online • Receiving Requests' : 'Offline'}
                   </Animated.Text>
+                  {settlementBlocked && (
+                    <Text style={[styles.statusNote, { color: '#EF4444' }]}>
+                      Settlement due: ₦{(settlementOutstanding || 0).toLocaleString()}
+                    </Text>
+                  )}
                </View>
                <Switch
                   value={isOnline}
@@ -242,7 +263,7 @@ export default function DriverHomeScreen() {
           <View style={styles.statsContainer}>
              <StatCard 
                label="Today's Earnings" 
-               value={formatCurrency(driverData?.total_earnings || 0)} 
+               value={formatCurrency(todayEarnings || 0)} 
                icon="wallet-outline" 
                color={BRAND.primary}
                theme={theme}
@@ -396,6 +417,7 @@ const styles = StyleSheet.create({
   statusCard: { padding: 16, borderRadius: 16, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.05, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
   statusLabel: { fontSize: 12, marginBottom: 4 },
   statusValue: { fontSize: 14, fontWeight: '700' },
+  statusNote: { fontSize: 12, marginTop: 4, fontWeight: '600' },
   statusInfo: { flex: 1 },
   statsContainer: { flexDirection: 'row', gap: 12, paddingHorizontal: 20, marginTop: 20 },
   statCard: { flex: 1, flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 16, borderWidth: 1, gap: 12 },

@@ -16,7 +16,7 @@ interface RideContextType {
   getRideDetails: (rideId: string) => Promise<Ride>;
   getAvailableRides: (latitude: number, longitude: number) => Promise<Ride[]>;
   getRideHistory: (limit?: number) => Promise<Ride[]>;
-  submitRating: (rideId: string, rating: number, review?: string) => Promise<void>;
+  submitRating: (payload: { rideId: string; rating: number; review?: string; tags?: string[] }) => Promise<{ success: boolean }>;
   setCurrentRide: (ride: Ride | null) => void;
   clearError: () => void;
 }
@@ -169,17 +169,16 @@ export const RideProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const handleSubmitRating = async (
-    rideId: string,
-    rating: number,
-    review?: string
-  ): Promise<void> => {
+    payload: { rideId: string; rating: number; review?: string; tags?: string[] }
+  ): Promise<{ success: boolean }> => {
     try {
       setError(null);
       setIsLoading(true);
-      await apiService.submitRating(rideId, rating, review);
+      await apiService.submitRating(payload.rideId, payload.rating, payload.review);
 
       // Update cached ride
-      await cacheService.updateRide(rideId, { rating, review });
+      await cacheService.updateRide(payload.rideId, { rating: payload.rating, review: payload.review });
+      return { success: true };
     } catch (err) {
       const errorMessage = (err as Error).message || 'Failed to submit rating';
       setError(errorMessage);

@@ -46,12 +46,12 @@ const SkeletonLoader = ({
     <Animated.View
       style={{
         height,
-        width,
+        width: width as any,
         backgroundColor: colors.border + '40',
         borderRadius,
         marginBottom,
         opacity,
-      }}
+      } as any}
     />
   );
 };

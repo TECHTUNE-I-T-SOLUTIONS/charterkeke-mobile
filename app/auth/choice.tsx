@@ -218,7 +218,7 @@ export default function AuthChoiceScreen() {
         shouldPlay
         isLooping
         isMuted
-        resizeMode="cover"
+        resizeMode={'cover' as any}
         style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}
         onError={(error) => {
           console.log('🔴 Video error:', error);

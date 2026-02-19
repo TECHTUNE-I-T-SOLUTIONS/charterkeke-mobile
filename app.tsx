@@ -26,7 +26,7 @@ export default function App() {
   return (
     <>
       <Slot />
-      <StatusBar barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />
+      <StatusBar animated translucent={false} />
     </>
   );
 }

@@ -118,7 +118,7 @@ export default function TermsScreen() {
           </View>
 
           {/* Contact */}
-          <View style={[styles.contactSection, { backgroundColor: colors.card || colors.surfaceLight }]}>
+          <View style={[styles.contactSection, { backgroundColor: colors.card }]}>
             <Text style={[styles.contactTitle, { color: colors.text }]}>Questions?</Text>
             <Text style={[styles.contactText, { color: colors.textSecondary }]}>
               If you have any questions about these terms, please contact us at:

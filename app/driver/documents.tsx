@@ -8,10 +8,13 @@ import {
   TouchableOpacity,
   StyleSheet,
   StatusBar,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '@/context/ThemeContext';
 import { apiService } from '@/services/api';
 import { cacheService } from '@/services/cache';
@@ -32,6 +35,7 @@ export default function DocumentsScreen() {
   const [loading, setLoading] = useState(true);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [hasCached, setHasCached] = useState(false);
+  const [uploadingType, setUploadingType] = useState<string | null>(null);
 
   const isLight = mode === 'light';
 
@@ -60,7 +64,6 @@ export default function DocumentsScreen() {
       const nextDocuments: Document[] = [
         { title: 'Driver License', type: 'license', icon: 'card-account-details', status: driverData.license_picture_url ? 'verified' : 'missing', url: driverData.license_picture_url },
         { title: 'Vehicle Registration', type: 'vehicle', icon: 'car', status: driverData.vehicle_picture_url ? 'verified' : 'missing', url: driverData.vehicle_picture_url },
-        { title: 'Insurance Policy', type: 'insurance', icon: 'shield-check', status: 'pending' }, // Mock
       ];
 
       setDocuments(nextDocuments);
@@ -78,6 +81,55 @@ export default function DocumentsScreen() {
       case 'pending': return '#F59E0B';
       case 'missing': return '#EF4444';
       default: return theme.colors.textSecondary;
+    }
+  };
+
+  const handleUploadDocument = async (type: 'vehicle' | 'license') => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission required', 'Please allow photo library access to upload your document.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.85,
+      });
+
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      const fileName = asset.fileName || asset.uri.split('/').pop() || `${type}.jpg`;
+      const fileType = asset.mimeType || 'image/jpeg';
+
+      const formData = new FormData();
+      formData.append('file', {
+        uri: asset.uri,
+        type: fileType,
+        name: fileName,
+      } as any);
+      formData.append('type', type);
+
+      setUploadingType(type);
+      const response: any = await apiService.post('/upload/picture', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      if (!response?.url) {
+        throw new Error(response?.error || 'Upload failed');
+      }
+
+      await cacheService.remove('driver_documents');
+      await cacheService.remove('driver_vehicle_details');
+      await fetchDocuments(false);
+      Alert.alert('Success', `${type === 'license' ? 'Driver License' : 'Vehicle Registration'} uploaded successfully.`);
+    } catch (error: any) {
+      console.error('[DOCUMENTS] upload error:', error);
+      Alert.alert('Upload Failed', error?.message || 'Unable to upload document. Please try again.');
+    } finally {
+      setUploadingType(null);
     }
   };
 
@@ -109,14 +161,20 @@ export default function DocumentsScreen() {
              <View style={styles.list}>
                 {documents.map((doc, i) => (
                    <TouchableOpacity
-                     key={i}
+                     key={`${doc.type}-${i}`}
                      style={[styles.docCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
-                     onPress={() =>
-                       router.push({
-                         pathname: '/driver/document-viewer',
-                         params: { url: doc.url || '', title: doc.title },
-                       } as any)
-                     }
+                     onPress={() => {
+                       if (doc.url) {
+                         router.push({
+                           pathname: '/driver/document-viewer',
+                           params: { url: doc.url || '', title: doc.title },
+                         } as any)
+                         return;
+                       }
+                       if (doc.type === 'vehicle' || doc.type === 'license') {
+                         handleUploadDocument(doc.type as 'vehicle' | 'license');
+                       }
+                     }}
                      activeOpacity={0.8}
                    >
                       <View style={[styles.iconBox, { backgroundColor: theme.colors.inputBackground }]}>
@@ -129,7 +187,23 @@ export default function DocumentsScreen() {
                             <Text style={[styles.docStatus, { color: getStatusColor(doc.status) }]}>{doc.status.toUpperCase()}</Text>
                          </View>
                       </View>
-                      <MaterialCommunityIcons name="chevron-right" size={24} color={theme.colors.textTertiary} />
+                      {doc.type === 'vehicle' || doc.type === 'license' ? (
+                        <TouchableOpacity
+                          onPress={() => handleUploadDocument(doc.type as 'vehicle' | 'license')}
+                          style={[styles.uploadBtn, { borderColor: theme.colors.border }]}
+                          disabled={uploadingType === doc.type}
+                        >
+                          {uploadingType === doc.type ? (
+                            <ActivityIndicator size="small" color={BRAND.primary} />
+                          ) : (
+                            <Text style={[styles.uploadBtnText, { color: BRAND.primary }]}>
+                              {doc.url ? 'Replace' : 'Upload'}
+                            </Text>
+                          )}
+                        </TouchableOpacity>
+                      ) : (
+                        <MaterialCommunityIcons name="chevron-right" size={24} color={theme.colors.textTertiary} />
+                      )}
                    </TouchableOpacity>
                 ))}
              </View>
@@ -154,4 +228,13 @@ const styles = StyleSheet.create({
   docInfo: { flex: 1 },
   docTitle: { fontSize: 14, fontWeight: '700' },
   docStatus: { fontSize: 11, fontWeight: '600' },
+  uploadBtn: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    minWidth: 70,
+    alignItems: 'center',
+  },
+  uploadBtnText: { fontSize: 12, fontWeight: '700' },
 });

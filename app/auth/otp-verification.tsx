@@ -84,7 +84,7 @@ export default function OTPVerificationScreen() {
 
   const handleResendOtp = async () => {
     try {
-      await resendOTP({ email });
+      await resendOTP(email);
       setTimeLeft(300);
       setCanResend(false);
       setOtp(['', '', '', '', '', '']);

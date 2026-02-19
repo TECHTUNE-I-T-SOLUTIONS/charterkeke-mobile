@@ -100,6 +100,24 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     marginLeft: 8,
   },
+  balanceCard: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  balanceLabel: {
+    height: 12,
+    width: '40%',
+    borderRadius: 4,
+  },
+  balanceAmount: {
+    height: 20,
+    width: '60%',
+    borderRadius: 4,
+  },
 });
 
 export function BalanceCardSkeleton() {

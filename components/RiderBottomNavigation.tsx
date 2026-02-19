@@ -16,7 +16,7 @@ const RIDER_NAV_ITEMS: NavItem[] = [
   { name: 'home', icon: 'home', route: '/rider/home', label: 'Home' },
   { name: 'booking', icon: 'location-on', route: '/rider/booking', label: 'Book' },
   { name: 'rides', icon: 'history', route: '/rider/rides-history', label: 'Rides' },
-  { name: 'wallet', icon: 'wallet', route: '/rider/wallet', label: 'Wallet' },
+  { name: 'notifications', icon: 'notifications', route: '/rider/notifications', label: 'Alerts' },
   { name: 'profile', icon: 'person', route: '/rider/profile', label: 'Profile' },
 ];
 

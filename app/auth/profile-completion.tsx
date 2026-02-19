@@ -52,7 +52,11 @@ export default function ProfileCompletionScreen() {
 
   const handleComplete = async () => {
     try {
-      const result = await updateUserProfile(formData);
+      const payload = {
+        ...formData,
+        vehicleType: formData.vehicleType as 'keke' | 'bike' | 'car' | undefined,
+      };
+      const result = await updateUserProfile(payload);
       if (result.success) {
         router.replace(userType === 'driver' ? '/driver/home' : '/rider/home');
       }

@@ -99,7 +99,7 @@ export default function RidesListScreen() {
 
   const handleAcceptRide = async (ride: RideItem) => {
     try {
-      await apiService.put(`/driver/rides/${ride.id}`, { status: 'accepted' });
+      await apiService.acceptRide(ride.id);
       Alert.alert('Success', 'Ride accepted!');
       fetchRides();
     } catch (error) { Alert.alert('Error', 'Failed to accept ride'); }

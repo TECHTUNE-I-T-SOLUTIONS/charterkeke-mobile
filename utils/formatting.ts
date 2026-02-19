@@ -1,4 +1,4 @@
-import { Location } from '@types/index';
+import { Location } from '@/types';
 
 /**
  * Calculate distance between two coordinates using Haversine formula

@@ -52,7 +52,7 @@ export default function AboutScreen() {
         contentContainerStyle={{ paddingBottom: 20 }}
       >
         {/* Logo Section */}
-        <View style={[styles.logoSection, { backgroundColor: colors.card || colors.surfaceLight }]}>
+        <View style={[styles.logoSection, { backgroundColor: colors.card }]}>
           <View
             style={[
               styles.logoContainer,

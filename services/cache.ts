@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { CacheableData, Ride, Transaction, Notification } from '@types/index';
+import { CacheableData, Ride, Transaction, Notification } from '@/types';
 import { STORAGE_KEYS, CACHE_CONFIG } from '@utils/constants';
 
 class CacheService {
@@ -256,7 +256,8 @@ class CacheService {
   // Debug
   async getAllKeys(): Promise<string[]> {
     try {
-      return await AsyncStorage.getAllKeys();
+      const keys = await AsyncStorage.getAllKeys();
+      return Array.isArray(keys) ? keys : [];
     } catch (error) {
       console.error('Error getting all keys:', error);
       return [];

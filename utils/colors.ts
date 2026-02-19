@@ -17,16 +17,26 @@ export const COLORS = {
     
     // UI Elements
     card: '#FFFFFF',
+    surfaceLight: '#F5F5F5', // Light surface for backgrounds
     profile: '#A05C0385', // Custom profile color for light mode
     cardForeground: '#000000',
     border: '#E5E5E5',
     input: '#F5F5F5',      // Light gray input background
     inputBorder: '#E0E0E0',
+    ring: '#FF9101',       // Focus ring color (brand orange)
     
     // Status
     muted: '#71717A',
     mutedForeground: '#52525B',
     destructive: '#EF4444',
+    error: '#EF4444',      // Alias for destructive
+    warning: '#F59E0B',    // Warning/amber
+    success: '#22C55E',    // Success/green
+    
+    // Balance/Wallet specific
+    balanceCard: '#F9F9F9',
+    balanceLabel: '#4B4B4B',
+    balanceAmount: '#1A1A1A',
     
     // Gradients
     start: '#FF9101',
@@ -47,16 +57,26 @@ export const COLORS = {
     
     // UI Elements
     card: '#121212',       // Dark Gray card
+    surfaceLight: '#1A1A1A', // Light surface for dark mode
     profile: '#3D23026B', // Custom profile color for dark mode
     cardForeground: '#FFFFFF',
     border: '#333333',
     input: '#1A1A1A',      // Dark gray input background
     inputBorder: '#333333',
+    ring: '#FF9101',       // Focus ring color (brand orange)
     
     // Status
     muted: '#A1A1AA',
     mutedForeground: '#D4D4D8',
     destructive: '#EF4444',
+    error: '#EF4444',      // Alias for destructive
+    warning: '#F59E0B',    // Warning/amber
+    success: '#22C55E',    // Success/green
+    
+    // Balance/Wallet specific
+    balanceCard: '#1A1A1A',
+    balanceLabel: '#A1A1AA',
+    balanceAmount: '#FFFFFF',
     
     // Gradients
     start: '#FF9101',

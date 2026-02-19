@@ -4,8 +4,8 @@ import { cacheService } from './cache';
 import { CACHE_CONFIG } from '@utils/constants';
 
 class SyncService {
-  private isSyncing = false;
-  private syncInterval: NodeJS.Timer | null = null;
+  private isSyncingState = false;
+  private syncInterval: ReturnType<typeof setInterval> | null = null;
 
   /**
    * Start automatic sync service
@@ -36,10 +36,10 @@ class SyncService {
    * Perform manual sync
    */
   async sync(): Promise<boolean> {
-    if (this.isSyncing) return false;
+    if (this.isSyncingState) return false;
 
     try {
-      this.isSyncing = true;
+      this.isSyncingState = true;
 
       // Check network connectivity
       const netInfo = await NetInfo.fetch();
@@ -75,7 +75,7 @@ class SyncService {
       console.error('Sync error:', error);
       return false;
     } finally {
-      this.isSyncing = false;
+      this.isSyncingState = false;
     }
   }
 
@@ -104,7 +104,7 @@ class SyncService {
    * Check if sync is in progress
    */
   isSyncing(): boolean {
-    return this.isSyncing;
+    return this.isSyncingState;
   }
 
   /**

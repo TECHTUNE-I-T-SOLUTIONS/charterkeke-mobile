@@ -33,7 +33,6 @@ export interface Driver extends BaseUser {
   vehicleMake: string;
   vehicleModel: string;
   vehicleColor: string;
-  licenseNumber: string;
   vehicleRegistration: string;
   operatingZones: string[];
   isVerified: boolean;

@@ -13,7 +13,7 @@ export const ProfileSkeleton = ({ isDark = false }: ProfileSkeletonProps) => {
   return (
     <>
       {/* Profile Card Skeleton */}
-      <View style={[styles.profileCard, { backgroundColor: colors.card || colors.surfaceLight, borderColor: colors.border }]}>
+      <View style={[styles.profileCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.profileContent}>
           {/* Profile Image Skeleton */}
           <View
