@@ -86,15 +86,33 @@ jobs:
           mkdir -p ~/.gradle
           echo "MAPBOX_DOWNLOADS_TOKEN=${{ secrets.MAPBOX_SECRET_TOKEN }}" >> ~/.gradle/gradle.properties
 
+      - name: Configure release build to use debug signing
+        run: |
+          # Add debug signing to release build type so assembleRelease works
+          sed -i '/buildTypes {/,/}/ { 
+            /release {/,/}/ { 
+              /signingConfig/!{ /release {/ a\            signingConfig signingConfigs.debug }
+            }
+          }' android/app/build.gradle
+          
+          echo "Modified build.gradle to use debug signing for release"
+          grep -A 10 "buildTypes {" android/app/build.gradle || true
+
       - name: Build Android APK (release, unsigned for testing)
         run: |
           cd android
           ./gradlew assembleRelease --stacktrace
 
+      - name: List build outputs (debug)
+        run: |
+          echo "Listing android/app/build/outputs/apk directory:"
+          find android/app/build/outputs/apk -type f -name "*.apk" || echo "No APK directory found"
+          
       - name: Prepare APK for release
         run: |
           mkdir -p build-output
-          cp android/app/build/outputs/apk/release/app-release-unsigned.apk build-output/charter-keke-release-${{ github.run_number }}.apk
+          # Find and copy the release APK (might be signed or unsigned)
+          find android/app/build/outputs/apk/release -name "*.apk" -exec cp {} build-output/charter-keke-release-${{ github.run_number }}.apk \;
 
       - name: Upload APK to GitHub Release
         uses: softprops/action-gh-release@v1
