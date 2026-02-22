@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -263,11 +263,11 @@ export default function BookingScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { currentLocation } = useLocation();
-  const mapRef = useRef<any>(null);
-
   // State
   const [pickupLocation, setPickupLocation] = useState<Location | null>(null);
   const [dropoffLocation, setDropoffLocation] = useState<Location | null>(null);
+  const [cameraCenter, setCameraCenter] = useState<[number, number] | undefined>(undefined);
+  const [cameraZoom, setCameraZoom] = useState<number>(12);
   const [pickupSearch, setPickupSearch] = useState('');
   const [dropoffSearch, setDropoffSearch] = useState('');
   const [activeLocationPicker, setActiveLocationPicker] = useState<'pickup' | 'dropoff' | null>(null);
@@ -332,18 +332,20 @@ export default function BookingScreen() {
   }, [pickupLocation, dropoffLocation]);
 
   useEffect(() => {
-    if (!mapRef.current) return;
     if (pickupLocation && dropoffLocation) {
-      mapRef.current.fitToCoordinates(
-        [{ latitude: pickupLocation.lat, longitude: pickupLocation.lng }, { latitude: dropoffLocation.lat, longitude: dropoffLocation.lng }],
-        { animated: true, edgePadding: { top: 100, right: 50, left: 50, bottom: 350 } }
-      );
+      const centerLat = (pickupLocation.lat + dropoffLocation.lat) / 2;
+      const centerLng = (pickupLocation.lng + dropoffLocation.lng) / 2;
+      setCameraCenter([centerLng, centerLat]);
+      setCameraZoom(11);
     } else if (pickupLocation) {
-      mapRef.current.animateToRegion({ latitude: pickupLocation.lat, longitude: pickupLocation.lng, latitudeDelta: 0.08, longitudeDelta: 0.08 }, 500);
+      setCameraCenter([pickupLocation.lng, pickupLocation.lat]);
+      setCameraZoom(14);
     } else if (dropoffLocation) {
-      mapRef.current.animateToRegion({ latitude: dropoffLocation.lat, longitude: dropoffLocation.lng, latitudeDelta: 0.08, longitudeDelta: 0.08 }, 500);
+      setCameraCenter([dropoffLocation.lng, dropoffLocation.lat]);
+      setCameraZoom(14);
     } else if (currentLocation) {
-      mapRef.current.animateToRegion({ latitude: currentLocation.latitude, longitude: currentLocation.longitude, latitudeDelta: 0.15, longitudeDelta: 0.15 }, 500);
+      setCameraCenter([currentLocation.longitude, currentLocation.latitude]);
+      setCameraZoom(12);
     }
   }, [pickupLocation, dropoffLocation, currentLocation]);
 
@@ -374,6 +376,39 @@ export default function BookingScreen() {
       setShowDropoffResults(false);
       setActiveLocationPicker(null);
     }
+    setCameraCenter([location.lng, location.lat]);
+    setCameraZoom(14);
+    await saveRecentLocation(location);
+    setRecentLocations(await getRecentLocations());
+  };
+
+  const handleMapLocationPick = async (coordinate: { latitude: number; longitude: number }) => {
+    if (!activeLocationPicker) return;
+
+    const nearest = findNearestLocation(coordinate.latitude, coordinate.longitude);
+    const location: Location = {
+      lat: coordinate.latitude,
+      lng: coordinate.longitude,
+      address: sanitizeAddress(
+        nearest?.address || `Pinned location (${coordinate.latitude.toFixed(5)}, ${coordinate.longitude.toFixed(5)})`
+      ),
+    };
+
+    if (activeLocationPicker === 'pickup') {
+      setPickupLocation(location);
+      setPickupSearch('');
+      setPickupSearchResults([]);
+      setShowPickupResults(false);
+    } else {
+      setDropoffLocation(location);
+      setDropoffSearch('');
+      setDropoffSearchResults([]);
+      setShowDropoffResults(false);
+    }
+
+    setActiveLocationPicker(null);
+    setCameraCenter([coordinate.longitude, coordinate.latitude]);
+    setCameraZoom(15);
     await saveRecentLocation(location);
     setRecentLocations(await getRecentLocations());
   };
@@ -458,11 +493,13 @@ export default function BookingScreen() {
 
       {/* Map */}
       <MapboxMap
-        ref={mapRef}
         style={styles.map}
         latitude={currentLocation?.latitude || 6.5}
         longitude={currentLocation?.longitude || 3.3}
         zoom={12}
+        cameraCenterCoordinate={cameraCenter}
+        cameraZoom={cameraZoom}
+        onPressCoordinate={handleMapLocationPick}
       >
         {pickupLocation && (
           <MapboxMarker
@@ -592,7 +629,11 @@ export default function BookingScreen() {
           )}
                 <View style={[styles.guideBox, { backgroundColor: theme.colors.inputBackground }]}>
                    <MaterialCommunityIcons name="gesture-tap" size={20} color={BRAND.primary} />
-                   <Text style={[styles.guideText, { color: theme.colors.textSecondary }]}>Tip: You can tap the map icon to directly set a location on the map.</Text>
+                   <Text style={[styles.guideText, { color: theme.colors.textSecondary }]}>
+                    {activeLocationPicker
+                      ? `Tap anywhere on the map to set ${activeLocationPicker === 'pickup' ? 'pickup' : 'destination'} location.`
+                      : 'Tip: You can tap the map icon to directly set a location on the map.'}
+                   </Text>
                 </View>
 
 

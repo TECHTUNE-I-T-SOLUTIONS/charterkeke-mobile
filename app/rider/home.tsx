@@ -60,6 +60,7 @@ export default function RiderHomeScreen() {
   const [loading, setLoading] = useState(true);  
   const { theme, mode, toggleTheme } = useTheme();
   const [refreshing, setRefreshing] = useState(false);
+  const [scrollEnabled, setScrollEnabled] = useState(true);
   const [hasCached, setHasCached] = useState(false);
   const { unreadCount, resetUnreadCount, incrementUnreadCount } = useNotificationBadge();
 
@@ -328,6 +329,7 @@ export default function RiderHomeScreen() {
 
           <ScrollView
             style={styles.scrollView}
+            scrollEnabled={scrollEnabled}
             contentContainerStyle={{ paddingBottom: 100 }}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={BRAND.primary} />}
             showsVerticalScrollIndicator={false}
@@ -387,6 +389,8 @@ export default function RiderHomeScreen() {
                <MapboxMap
                  latitude={currentLocation?.latitude || 6.5244}
                  longitude={currentLocation?.longitude || 3.3792}
+                 onTouchStart={() => setScrollEnabled(false)}
+                 onTouchEnd={() => setScrollEnabled(true)}
                >
                  {mapboxMarkers.map((marker) => (
                    <MapboxMarker
@@ -394,6 +398,7 @@ export default function RiderHomeScreen() {
                      id={marker.id}
                      coordinate={[marker.longitude, marker.latitude]}
                      title={marker.title}
+                     description={marker.description}
                      color={marker.color}
                    />
                  ))}

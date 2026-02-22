@@ -9,6 +9,7 @@ import { ThemeProvider } from '@context/ThemeContext';
 import { AlertProvider } from '@context/AlertContext';
 import { NotificationProvider } from '@context/NotificationContext';
 import { configureNotifications, registerBackgroundNotificationTask } from '@services/notificationService';
+import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -64,20 +65,22 @@ function RootLayoutContent() {
 // Outer component that wraps with providers
 export default function RootLayout() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
-        <AlertProvider>
-          <AuthProvider>
-            <LocationProvider>
-              <RideProvider>
-                <NotificationProvider>
-                  <RootLayoutContent />
-                </NotificationProvider>
-              </RideProvider>
-            </LocationProvider>
-          </AuthProvider>
-        </AlertProvider>
-      </ThemeProvider>
-    </QueryClientProvider>
+    <AppErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <AlertProvider>
+            <AuthProvider>
+              <LocationProvider>
+                <RideProvider>
+                  <NotificationProvider>
+                    <RootLayoutContent />
+                  </NotificationProvider>
+                </RideProvider>
+              </LocationProvider>
+            </AuthProvider>
+          </AlertProvider>
+        </ThemeProvider>
+      </QueryClientProvider>
+    </AppErrorBoundary>
   );
 }

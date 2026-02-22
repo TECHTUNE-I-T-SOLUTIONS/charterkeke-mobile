@@ -58,7 +58,9 @@ export default function DriverHomeScreen() {
   const [todayEarnings, setTodayEarnings] = useState(0);
   const [activeRidesCount, setActiveRidesCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [scrollEnabled, setScrollEnabled] = useState(true);
   const [availableRides, setAvailableRides] = useState<any[]>([]);
+  const [activeRides, setActiveRides] = useState<any[]>([]);
   const [recentRides, setRecentRides] = useState<any[]>([]);
   const [hasCached, setHasCached] = useState(false);
   const [settlementBlocked, setSettlementBlocked] = useState(false);
@@ -141,6 +143,7 @@ export default function DriverHomeScreen() {
         setTodayEarnings(cached.todayEarnings || 0);
         setIsOnline(!!cached.isOnline);
         setActiveRidesCount(cached.activeRidesCount || 0);
+        setActiveRides(cached.activeRides || []);
         setAvailableRides(cached.availableRides || []);
         setRecentRides(cached.recentRides || []);
         setSettlementBlocked(!!cached.settlementBlocked);
@@ -204,7 +207,8 @@ export default function DriverHomeScreen() {
 
       const nextDriverData = details.driver || details;
       const nextIsOnline = status.status === 'online' || status.is_online === true;
-      const nextActiveRidesCount = rides.rides?.length || 0;
+      const nextActiveRides = rides.rides || [];
+      const nextActiveRidesCount = nextActiveRides.length;
       const nextAvailableRides = available.rides?.slice(0, 3) || [];
       const nextRecentRides = (history.rides || history.data || []).slice(0, 5);
       const nextTodayEarnings = Number(dailyEarnings?.settlement?.totalDriverEarnings || dailyEarnings?.totals?.netDriverEarnings || 0);
@@ -220,6 +224,7 @@ export default function DriverHomeScreen() {
       setTodayEarnings(nextTodayEarnings);
       setIsOnline(nextIsOnline);
       setActiveRidesCount(nextActiveRidesCount);
+      setActiveRides(nextActiveRides);
       setAvailableRides(nextAvailableRides);
       setRecentRides(nextRecentRides);
       setSettlementBlocked(!!settlement?.blocked);
@@ -230,6 +235,7 @@ export default function DriverHomeScreen() {
         todayEarnings: nextTodayEarnings,
         isOnline: nextIsOnline,
         activeRidesCount: nextActiveRidesCount,
+        activeRides: nextActiveRides,
         availableRides: nextAvailableRides,
         recentRides: nextRecentRides,
         settlementBlocked: !!settlement?.blocked,
@@ -268,6 +274,11 @@ export default function DriverHomeScreen() {
     outputRange: [theme.colors.textSecondary, '#10B981']
   });
 
+  const mapRides = useMemo(() => {
+    const source = activeRides.length > 0 ? activeRides : recentRides;
+    return source.slice(0, 5);
+  }, [activeRides, recentRides]);
+
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
@@ -277,6 +288,7 @@ export default function DriverHomeScreen() {
       ) : (
         <ScrollView
           style={styles.scrollView}
+          scrollEnabled={scrollEnabled}
           contentContainerStyle={{ paddingBottom: 100 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={BRAND.primary} />}
           showsVerticalScrollIndicator={false}
@@ -385,33 +397,44 @@ export default function DriverHomeScreen() {
                 latitude={currentLocation?.latitude || 6.5244}
                 longitude={currentLocation?.longitude || 3.3792}
                 zoom={13}
+                onTouchStart={() => setScrollEnabled(false)}
+                onTouchEnd={() => setScrollEnabled(true)}
               >
-                {recentRides.flatMap((ride) => {
+                {mapRides.flatMap((ride) => {
                   const markers = [];
-                  if (ride.pickup_latitude && ride.pickup_longitude) {
+                  const pickupLng = parseFloat(String(
+                    ride.pickup_longitude ?? ride.pickup_location?.longitude ?? ride.pickup_location?.lng
+                  ));
+                  const pickupLat = parseFloat(String(
+                    ride.pickup_latitude ?? ride.pickup_location?.latitude ?? ride.pickup_location?.lat
+                  ));
+                  const dropoffLng = parseFloat(String(
+                    ride.dropoff_longitude ?? ride.dropoff_location?.longitude ?? ride.dropoff_location?.lng
+                  ));
+                  const dropoffLat = parseFloat(String(
+                    ride.dropoff_latitude ?? ride.dropoff_location?.latitude ?? ride.dropoff_location?.lat
+                  ));
+
+                  if (Number.isFinite(pickupLat) && Number.isFinite(pickupLng)) {
                     markers.push(
                       <MapboxMarker
                         key={`pickup-${ride.id}`}
                         id={`pickup-${ride.id}`}
-                        coordinate={[
-                          parseFloat(ride.pickup_longitude || ride.pickup_location?.longitude || 0),
-                          parseFloat(ride.pickup_latitude || ride.pickup_location?.latitude || 0),
-                        ]}
-                        title="Pickup"
+                        coordinate={[pickupLng, pickupLat]}
+                        title={activeRides.length > 0 ? 'Active Pickup' : 'Pickup'}
+                        description={ride.pickup_zone || 'Pickup Location'}
                         color="#2563EB"
                       />
                     );
                   }
-                  if (ride.dropoff_latitude && ride.dropoff_longitude) {
+                  if (Number.isFinite(dropoffLat) && Number.isFinite(dropoffLng)) {
                     markers.push(
                       <MapboxMarker
                         key={`dropoff-${ride.id}`}
                         id={`dropoff-${ride.id}`}
-                        coordinate={[
-                          parseFloat(ride.dropoff_longitude || ride.dropoff_location?.longitude || 0),
-                          parseFloat(ride.dropoff_latitude || ride.dropoff_location?.latitude || 0),
-                        ]}
-                        title="Dropoff"
+                        coordinate={[dropoffLng, dropoffLat]}
+                        title={activeRides.length > 0 ? 'Active Dropoff' : 'Dropoff'}
+                        description={ride.destination_zone || 'Dropoff Location'}
                         color="#10B981"
                       />
                     );
@@ -419,6 +442,15 @@ export default function DriverHomeScreen() {
                   return markers;
                 })}
               </MapboxMap>
+              {mapRides.length > 0 && (
+                <View style={[styles.mapInfo, { backgroundColor: theme.colors.surface }]}> 
+                  <Text numberOfLines={1} style={[styles.mapInfoText, { color: theme.colors.textPrimary }]}>
+                    {activeRides.length > 0
+                      ? `Showing ${activeRides.length} active ride${activeRides.length > 1 ? 's' : ''}`
+                      : `Showing ${mapRides.length} recent ride${mapRides.length > 1 ? 's' : ''}`}
+                  </Text>
+                </View>
+              )}
               <View style={[styles.mapOverlay, { backgroundColor: theme.colors.surface }]}>
                 <View style={styles.dot} />
                 <Text style={[styles.locationText, { color: theme.colors.textPrimary }]}>
@@ -503,6 +535,19 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 11 },
   mapSection: { margin: 20, height: 440, borderRadius: 20, overflow: 'hidden', borderWidth: 1, position: 'relative' },
   map: { flex: 1 },
+  mapInfo: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    right: 12,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  mapInfoText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
   mapOverlay: { position: 'absolute', bottom: 12, left: 12, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, gap: 6 },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: BRAND.primary },
   locationText: { fontSize: 12, fontWeight: '600' },
