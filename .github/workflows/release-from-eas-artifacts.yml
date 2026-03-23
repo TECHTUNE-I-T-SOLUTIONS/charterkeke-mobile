@@ -1,0 +1,160 @@
+name: Create Release from EAS Artifacts (Direct Links)
+
+on:
+  workflow_dispatch:
+    inputs:
+      apk_url:
+        description: "EAS APK Download URL (optional)"
+        required: false
+        default: ""
+      aab_url:
+        description: "EAS AAB Download URL (optional)"
+        required: false
+        default: ""
+      ios_url:
+        description: "EAS iOS IPA Download URL (optional)"
+        required: false
+        default: ""
+      build_notes:
+        description: "Additional notes for this release (optional)"
+        required: false
+        default: ""
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Validate inputs
+        run: |
+          if [ -z "${{ inputs.apk_url }}" ] && [ -z "${{ inputs.aab_url }}" ] && [ -z "${{ inputs.ios_url }}" ]; then
+            echo "Error: At least one artifact URL must be provided"
+            exit 1
+          fi
+          echo "✅ At least one artifact URL provided"
+      
+      - name: Get version from package.json
+        id: version
+        run: |
+          VERSION=$(jq -r '.version' package.json)
+          TAG="v${VERSION}"
+          RELEASE_NAME="Release v${VERSION}"
+          
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "TAG=$TAG" >> $GITHUB_OUTPUT
+          echo "RELEASE_NAME=$RELEASE_NAME" >> $GITHUB_OUTPUT
+      
+      - name: Download APK
+        if: ${{ inputs.apk_url != '' }}
+        run: |
+          echo "Downloading APK..."
+          curl -L "${{ inputs.apk_url }}" -o app-${{ steps.version.outputs.VERSION }}.apk
+          ls -lh app-${{ steps.version.outputs.VERSION }}.apk
+      
+      - name: Download AAB
+        if: ${{ inputs.aab_url != '' }}
+        run: |
+          echo "Downloading AAB..."
+          curl -L "${{ inputs.aab_url }}" -o app-${{ steps.version.outputs.VERSION }}.aab
+          ls -lh app-${{ steps.version.outputs.VERSION }}.aab
+      
+      - name: Download iOS IPA
+        if: ${{ inputs.ios_url != '' }}
+        run: |
+          echo "Downloading iOS IPA..."
+          curl -L "${{ inputs.ios_url }}" -o app-${{ steps.version.outputs.VERSION }}.ipa
+          ls -lh app-${{ steps.version.outputs.VERSION }}.ipa
+      
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        id: create_release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.version.outputs.TAG }}
+          release_name: ${{ steps.version.outputs.RELEASE_NAME }}
+          body: |
+            ## Charter Keke Mobile App Release
+            
+            **Version:** ${{ steps.version.outputs.VERSION }}
+            **Released at:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            
+            ### Download
+            See artifacts below for APK, AAB, and iOS IPA files.
+            
+            ### Installation
+            **Android (APK):**
+            ```bash
+            adb install app-${{ steps.version.outputs.VERSION }}.apk
+            ```
+            
+            **Android (Play Store - AAB):**
+            Upload to Google Play Console
+            
+            **iOS (IPA):**
+            Upload to TestFlight or App Store
+            
+            ### Release Notes
+            ${{ inputs.build_notes || 'No additional notes provided' }}
+            
+            > **Note:** Downloads available as attachments below
+          draft: false
+          prerelease: false
+      
+      - name: Upload APK to Release
+        if: ${{ inputs.apk_url != '' }}
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./app-${{ steps.version.outputs.VERSION }}.apk
+          asset_name: app-${{ steps.version.outputs.VERSION }}.apk
+          asset_content_type: application/vnd.android.package-archive
+      
+      - name: Upload AAB to Release
+        if: ${{ inputs.aab_url != '' }}
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./app-${{ steps.version.outputs.VERSION }}.aab
+          asset_name: app-${{ steps.version.outputs.VERSION }}.aab
+          asset_content_type: application/octet-stream
+      
+      - name: Upload iOS IPA to Release
+        if: ${{ inputs.ios_url != '' }}
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./app-${{ steps.version.outputs.VERSION }}.ipa
+          asset_name: app-${{ steps.version.outputs.VERSION }}.ipa
+          asset_content_type: application/octet-stream
+      
+      - name: Release Summary
+        run: |
+          echo "✅ Release Created Successfully!"
+          echo ""
+          echo "📦 Release Details:"
+          echo "   Tag: ${{ steps.version.outputs.TAG }}"
+          echo "   Version: ${{ steps.version.outputs.VERSION }}"
+          echo ""
+          if [ ! -z "${{ inputs.apk_url }}" ]; then
+            echo "📥 APK:"
+            echo "   Size: $(ls -lh app-${{ steps.version.outputs.VERSION }}.apk | awk '{print $5}')"
+          fi
+          if [ ! -z "${{ inputs.aab_url }}" ]; then
+            echo "📦 AAB:"
+            echo "   Size: $(ls -lh app-${{ steps.version.outputs.VERSION }}.aab | awk '{print $5}')"
+          fi
+          if [ ! -z "${{ inputs.ios_url }}" ]; then
+            echo "📱 iOS IPA:"
+            echo "   Size: $(ls -lh app-${{ steps.version.outputs.VERSION }}.ipa | awk '{print $5}')"
+          fi
+          echo ""
+          echo "🔗 Release URL:"
+          echo "   ${{ steps.create_release.outputs.html_url }}"

@@ -1,4 +1,8 @@
-name: Create Release from EAS Build
+name: Create Release from EAS Build - DEPRECATED
+
+# ⚠️ DEPRECATED - Use "Create Release from EAS Artifacts (Direct Links)" instead
+# This workflow is kept for reference but no longer needed.
+# The new workflow accepts artifact URLs directly, which is simpler and more reliable.
 
 on:
   workflow_dispatch:
