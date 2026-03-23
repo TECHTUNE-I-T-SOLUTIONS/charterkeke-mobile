@@ -1,0 +1,10 @@
+name: Quick Android Build (Development)
+
+jobs:
+  build_android_apk:
+    name: Build Android APK
+    type: build
+    params:
+      platform: android
+      build_type: apk
+      distribution: internal

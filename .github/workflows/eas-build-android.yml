@@ -1,0 +1,58 @@
+name: EAS Build Android
+
+on:
+  workflow_dispatch:  # Manual trigger only
+
+jobs:
+  build_android:
+    name: Build Android on EAS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build Android APK on EAS (No Credentials)
+        run: pnpm eas build --platform android --non-interactive --wait
+        continue-on-error: false
+
+      - name: Get Build Info
+        id: build_info
+        run: |
+          VERSION=$(cat package.json | grep '"version"' | head -1 | awk -F'"' '{print $4}')
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "BUILD_DATE=$(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_OUTPUT
+          echo "BUILD_TIME=$(date -u +'%s')" >> $GITHUB_OUTPUT
+
+      - name: Notify Build Complete
+        if: success()
+        run: |
+          echo "✅ Android APK built successfully on EAS"
+          echo "Version: ${{ steps.build_info.outputs.VERSION }}"
+          echo "Build Date: ${{ steps.build_info.outputs.BUILD_DATE }}"
+
+      - name: Notify Build Failed
+        if: failure()
+        run: |
+          echo "❌ Android build failed on EAS"
+          echo "Check EAS Dashboard: https://expo.dev"
+

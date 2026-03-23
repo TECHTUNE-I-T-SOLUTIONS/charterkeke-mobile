@@ -1,0 +1,27 @@
+name: Build Android Internal (No Credentials)
+
+# This workflow builds unsigned debug APKs for internal testing
+# Credentials (signing keys) are NOT required for internal builds
+# 
+# Trigger this manually with:
+#   pnpm eas workflow:run build-android-release.yml
+#
+# Or via GitHub Actions:
+#   Actions > EAS Build Android > Run workflow
+#
+# NOTE: This workflow does NOT auto-trigger on push
+# You must manually start builds via EAS CLI or GitHub Actions
+
+jobs:
+  build_android_apk:
+    name: Build Android APK (Internal Testing)
+    type: build
+    params:
+      platform: android
+      build_type: apk
+      distribution: internal
+      # internal = unsigned debug APK
+      # No signing credentials needed
+
+
+
