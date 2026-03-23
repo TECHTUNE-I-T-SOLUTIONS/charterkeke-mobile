@@ -36,11 +36,17 @@ export const SuccessDialog: React.FC<SuccessDialogProps> = ({
   onSecondaryAction,
 }) => {
   const { theme } = useTheme();
-  const scaleAnim = new Animated.Value(0);
-  const checkmarkAnim = new Animated.Value(0);
+  const scaleAnimRef = React.useRef(new Animated.Value(visible ? 1 : 0));
+  const checkmarkAnimRef = React.useRef(new Animated.Value(visible ? 1 : 0));
+  const scaleAnim = scaleAnimRef.current;
+  const checkmarkAnim = checkmarkAnimRef.current;
 
   useEffect(() => {
+    // Ensure animated values are initialized according to visible to avoid
+    // the case where the modal overlay shows but the dialog content stays hidden
     if (visible) {
+      // If the app was under heavy load the animation might not run; set a safe initial value
+      scaleAnim.setValue(0.8);
       Animated.parallel([
         Animated.spring(scaleAnim, {
           toValue: 1,
@@ -63,8 +69,10 @@ export const SuccessDialog: React.FC<SuccessDialogProps> = ({
         toValue: 0,
         duration: 200,
         useNativeDriver: true,
-      }).start();
-      checkmarkAnim.setValue(0);
+      }).start(() => {
+        // Reset checkmark for next show
+        checkmarkAnim.setValue(0);
+      });
     }
   }, [visible]);
 

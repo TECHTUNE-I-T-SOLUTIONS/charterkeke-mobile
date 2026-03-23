@@ -1,6 +1,5 @@
 import React from 'react';
 import { Stack } from 'expo-router';
-import { COLORS } from '@utils/colors';
 
 export default function AuthLayout() {
   return (
@@ -8,7 +7,7 @@ export default function AuthLayout() {
       screenOptions={{
         headerShown: false,
         contentStyle: {
-          backgroundColor: COLORS.light.background,
+          backgroundColor: '#ffffff',
         },
         animation: 'none',
       }}

@@ -27,7 +27,11 @@ import { setNotificationCallbacks } from '@/services/notificationService';
 import { setNavigationRef } from '@/services/navigationService';
 import { HomeSkeleton } from '@/components/HomeSkeleton';
 import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
+import CtaCarousel, { CtaCard } from '@/components/CtaCarousel';
+import { FullScreenAdDisplay } from '@/components/FullScreenAdDisplay';
 import SupportFloatingWidget from '@/components/SupportFloatingWidget';
+import { useAutoUpdateCheck } from '@/hooks/useAutoUpdateCheck';
+import { useIdleAdTracking } from '@/hooks/useIdleAdTracking';
 import { BRAND, COLORS } from '@/utils/colors';
 import { cacheService } from '@/services/cache';
 import { STORAGE_KEYS } from '@/utils/constants';
@@ -64,9 +68,19 @@ export default function RiderHomeScreen() {
   const [hasCached, setHasCached] = useState(false);
   const { unreadCount, resetUnreadCount, incrementUnreadCount } = useNotificationBadge();
 
+  // Ad modal tracking
+  const { shouldShowAd, dismissAd } = useIdleAdTracking({
+    enabled: true,
+    excludeRoutes: ['booking', 'payment', 'confirm-ride', 'ride-details', 'map'],
+    currentRoute: 'home',
+  });
+
   // Refs to prevent state updates on unmounted component
   const isMountedRef = useRef(true);
   const isLoadingRef = useRef(false);
+
+  // Auto-check for updates on app startup
+  useAutoUpdateCheck(true);
 
   // Set up navigation ref and notification callbacks
   useEffect(() => {
@@ -386,6 +400,7 @@ export default function RiderHomeScreen() {
            </View>
            <View style={styles.mapContainer}>
              {MAPBOX_TOKEN ? (
+               <>
                <MapboxMap
                  latitude={currentLocation?.latitude || 6.5244}
                  longitude={currentLocation?.longitude || 3.3792}
@@ -403,6 +418,9 @@ export default function RiderHomeScreen() {
                    />
                  ))}
                </MapboxMap>
+
+                 {/* CTA Carousel moved below map (rendered after mapSection) */}
+               </>
              ) : (
                <View style={[styles.map, { backgroundColor: theme.colors.surface, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20 }]}>
                  <MaterialCommunityIcons 
@@ -419,13 +437,43 @@ export default function RiderHomeScreen() {
                  </Text>
                </View>
              )}
-             <View style={[styles.locationPill, { backgroundColor: theme.colors.surface }]}>
-                <MaterialCommunityIcons name="navigation" size={14} color={BRAND.primary} />
-                <Text numberOfLines={1} style={[styles.locationText, { color: theme.colors.textPrimary }]}>
-                   {currentLocation ? 'Current Location' : 'Locating...'}
-                </Text>
-             </View>
            </View>
+           <View style={[styles.locationPill, { backgroundColor: theme.colors.surface }]}>
+              <MaterialCommunityIcons name="navigation" size={14} color={BRAND.primary} />
+              <Text numberOfLines={1} style={[styles.locationText, { color: theme.colors.textPrimary }]}>
+                 {currentLocation ? 'Current Location' : 'Locating...'}
+              </Text>
+           </View>
+        </View>
+
+        {/* CTA Carousel (rider-only cards) - placed under map and above Recent Activity */}
+        <View style={[styles.paddingH, { marginTop: 16 }]}> 
+          <CtaCarousel
+            items={[
+              {
+                id: 'quick-book',
+                title: 'Wanna get there faster?',
+                subtitle: 'Quickly book a ride to your destination with one tap.',
+                label: 'Quick Book',
+                onPress: () => router.push('/rider/booking'),
+              } as CtaCard,
+              {
+                id: 'somolu',
+                title: 'Going to Somolu?',
+                subtitle: 'Book a ride to Somolu quickly with pre-filled destination.',
+                label: 'Book Somolu',
+                onPress: () => router.push('/rider/booking?destination=Somolu'),
+              } as CtaCard,
+              {
+                id: 'refer',
+                title: 'Have you referred a friend today?',
+                subtitle: 'Share your referral code and get rewards.',
+                label: 'Share',
+                share: true,
+                onPress: () => router.push('/rider/referrals'),
+              } as CtaCard,
+            ]}
+          />
         </View>
 
         {/* Recent Activity */}
@@ -503,6 +551,16 @@ export default function RiderHomeScreen() {
           </ScrollView>
         </>
       )}
+
+      {/* Full Screen Ad Display - shown at idle intervals */}
+      <FullScreenAdDisplay
+        visible={shouldShowAd}
+        onClose={dismissAd}
+        onBookNow={() => {
+          dismissAd();
+          router.push('/rider/booking');
+        }}
+      />
 
       <SupportFloatingWidget route="/rider/help-and-support" />
     </View>

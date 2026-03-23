@@ -5,16 +5,14 @@ import {
   ScrollView,
   TouchableOpacity,
   Modal,
-  Alert,
   StyleSheet,
-  ActivityIndicator,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '@/context/ThemeContext';
 import { COLORS } from '@/utils/colors';
-import { PaymentMethodsSkeleton } from '@/components/PaymentMethodsSkeleton';
+// import { PaymentMethodsSkeleton } from '@/components/PaymentMethodsSkeleton';
 
 interface PaymentMethod {
   id: string;
@@ -31,94 +29,33 @@ export default function PaymentMethodsScreen() {
   const isDark = mode === 'dark';
   const colors = isDark ? COLORS.dark : COLORS.light;
 
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
-  const [loading, setLoading] = useState(false);
+  // const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  // const [loading, setLoading] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
-  const screenLaunchedOnce = useRef(false);
+  // const screenLaunchedOnce = useRef(false);
 
   useFocusEffect(
     React.useCallback(() => {
-      if (!screenLaunchedOnce.current) {
-        screenLaunchedOnce.current = true;
-        fetchPaymentMethods();
-      }
+      // if (!screenLaunchedOnce.current) {
+      //   screenLaunchedOnce.current = true;
+      //   fetchPaymentMethods();
+      // }
     }, [])
   );
 
-  const fetchPaymentMethods = async () => {
-    try {
-      setLoading(true);
-      console.log('📤 [PAYMENT-METHODS] Fetching payment methods...');
-      // In production, fetch from /user/payment-methods or similar endpoint
-      // For now, initializing with sample data
-      setPaymentMethods([
-        {
-          id: '1',
-          type: 'card',
-          name: 'Visa',
-          last4: '4242',
-          expiryDate: '12/26',
-          isDefault: true,
-        },
-        {
-          id: '2',
-          type: 'wallet',
-          name: 'Charter Keke Wallet',
-          last4: '',
-          isDefault: false,
-        },
-      ]);
-    } catch (error) {
-      console.error('❌ [PAYMENT-METHODS] Error fetching:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // const fetchPaymentMethods = async () => {
+  //   try {
+  //     setLoading(true);
+  //     console.log('📤 [PAYMENT-METHODS] we are not using payment methods...');
+  //     // In production, fetch from /user/payment-methods or similar endpoint
+  //     setPaymentMethods([]);
+  //   } catch (error) {
+  //     console.error('❌ [PAYMENT-METHODS] Error fetching:', error);
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
 
-  const handleSetDefault = (id: string) => {
-    const updated = paymentMethods.map(method => ({
-      ...method,
-      isDefault: method.id === id,
-    }));
-    setPaymentMethods(updated);
-    
-    // In production, call API to save default payment method
-    console.log('📤 [PAYMENT-METHODS] Setting default payment method:', id);
-  };
-
-  const handleDeleteMethod = (id: string) => {
-    Alert.alert(
-      'Delete Payment Method',
-      'Are you sure you want to delete this payment method?',
-      [
-        { text: 'Cancel' },
-        {
-          text: 'Delete',
-          onPress: () => {
-            const updated = paymentMethods.filter(method => method.id !== id);
-            setPaymentMethods(updated);
-            
-            // In production, call API to delete payment method
-            console.log('📤 [PAYMENT-METHODS] Deleting payment method:', id);
-          },
-          style: 'destructive',
-        },
-      ]
-    );
-  };
-
-  const getPaymentIcon = (type: string) => {
-    switch (type) {
-      case 'card':
-        return 'credit-card';
-      case 'wallet':
-        return 'wallet';
-      case 'bank':
-        return 'bank';
-      default:
-        return 'payment';
-    }
-  };
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -128,8 +65,8 @@ export default function PaymentMethodsScreen() {
           <MaterialCommunityIcons name="arrow-left" size={24} color={colors.primary} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Payment Methods</Text>
-        <TouchableOpacity onPress={() => setShowAddModal(true)}>
-          <MaterialCommunityIcons name="plus" size={24} color={colors.primary} />
+        <TouchableOpacity>
+          <MaterialCommunityIcons name="cash" size={24} color={colors.primary} />
         </TouchableOpacity>
       </View>
 
@@ -137,7 +74,7 @@ export default function PaymentMethodsScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 80 }}
       >
-        {loading ? (
+        {/* {loading ? (
           <PaymentMethodsSkeleton />
         ) : paymentMethods.length === 0 ? (
           <View style={styles.emptyContainer}>
@@ -234,18 +171,58 @@ export default function PaymentMethodsScreen() {
               </View>
             ))}
           </View>
-        )}
+        )} */}
 
-        {/* Add Payment Reminder */}
+        {/* Payment Notification - Direct Cash Payment to Driver */}
+        <View style={{ marginHorizontal: 16, marginTop: 24 }}>
+          <View
+            style={{
+              backgroundColor: colors.primary + '15',
+              borderColor: colors.primary,
+              borderWidth: 1.5,
+              borderRadius: 12,
+              padding: 16,
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+              <MaterialCommunityIcons name="cash" size={28} color={colors.primary} />
+              <View style={{ marginLeft: 12, flex: 1 }}>
+                <Text style={{ color: colors.text, fontSize: 14, fontWeight: '700' }}>Direct Payment to Driver</Text>
+                <Text style={{ color: colors.textSecondary, fontSize: 12 }}>Pay Cash at Destination</Text>
+              </View>
+            </View>
+
+            <Text style={{ color: colors.textSecondary, fontSize: 12, lineHeight: 18, marginBottom: 12 }}>
+              You will pay your driver directly in <Text style={{ fontWeight: '600', color: colors.text }}>cash</Text> when the ride is complete at your destination.
+            </Text>
+
+            <View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                <MaterialCommunityIcons name="check-circle" size={18} color={colors.primary} />
+                <Text style={{ color: colors.text, fontSize: 12, marginLeft: 8 }}>No platform fees</Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                <MaterialCommunityIcons name="check-circle" size={18} color={colors.primary} />
+                <Text style={{ color: colors.text, fontSize: 12, marginLeft: 8 }}>Driver gets full payment</Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <MaterialCommunityIcons name="check-circle" size={18} color={colors.primary} />
+                <Text style={{ color: colors.text, fontSize: 12, marginLeft: 8 }}>Safe & transparent</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* Security Info Card */}
         <View
           style={[
             styles.infoCard,
-            { backgroundColor: colors.primary + '10', borderColor: colors.primary }
+            { backgroundColor: colors.primary + '10', borderColor: colors.primary, marginTop: 16 }
           ]}
         >
-          <MaterialCommunityIcons name="information" size={20} color={colors.primary} />
+          <MaterialCommunityIcons name="lock" size={20} color={colors.primary} />
           <View style={styles.infoText}>
-            <Text style={[styles.infoTitle, { color: colors.text }]}>Secure Payments</Text>
+            <Text style={[styles.infoTitle, { color: colors.text }]}>Account Security</Text>
             <Text style={[styles.infoDescription, { color: colors.textSecondary }]}>
               Your payment information is encrypted and secure
             </Text>

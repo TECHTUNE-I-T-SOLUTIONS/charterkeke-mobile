@@ -1,28 +1,19 @@
 // API Configuration
-// For Expo Go on real device: Use your computer's local IP
-// Find your IP: Run `ipconfig` on Windows (look for IPv4 Address like 192.168.x.x or 10.x.x.x)
-// Then update EXPO_PUBLIC_API_URL in your .env or change the URL below
-
 const normalizeApiUrl = (url: string): string => {
   const trimmed = url.replace(/\/+$/, '');
   if (trimmed.endsWith('/api')) {
     return trimmed;
   }
-
   return `${trimmed}/api`;
 };
 
 const getApiUrl = (): string => {
-  // Check for explicit environment override first (highest priority)
   if (process.env.EXPO_PUBLIC_API_URL) {
     const normalized = normalizeApiUrl(process.env.EXPO_PUBLIC_API_URL);
     console.log('Using API URL from env:', normalized);
     return normalized;
   }
-  
-  // Use the hosted backend on Vercel
   const hostedApiUrl = 'https://charterkeke.vercel.app/api';
-  
   console.log('Using hosted API URL:', hostedApiUrl);
   return hostedApiUrl;
 };
@@ -31,7 +22,7 @@ export const API_CONFIG = {
   url: getApiUrl(),
   timeout: parseInt(process.env.EXPO_PUBLIC_API_TIMEOUT || '30000'),
   retryAttempts: 3,
-  retryDelay: 1000, // ms
+  retryDelay: 1000,
 };
 
 // Cache Configuration
@@ -42,11 +33,11 @@ export const CACHE_CONFIG = {
 
 // Location Configuration
 export const LOCATION_CONFIG = {
-  accuracy: 100, // meters
-  updateInterval: 10000, // 10 seconds while tracking
-  fastestInterval: 5000, // 5 seconds
-  timeout: 30000, // 30 seconds
-  maximumAge: 5000, // 5 seconds
+  accuracy: 100,
+  updateInterval: 10000,
+  fastestInterval: 5000,
+  timeout: 30000,
+  maximumAge: 5000,
 };
 
 // Map Configuration
@@ -60,9 +51,9 @@ export const MAP_CONFIG = {
 
 // Ride Configuration
 export const RIDE_CONFIG = {
-  baseFare: 500, // ₦500
-  perKmRate: 150, // ₦150 per km
-  averageSpeed: 30, // km/h
+  baseFare: 500,
+  perKmRate: 150,
+  averageSpeed: 30,
   searchRadiusKm: 15,
   acceptanceTimeoutSeconds: 60,
 };
@@ -88,21 +79,19 @@ export const VEHICLE_TYPES = {
 
 // Auth Configuration
 export const AUTH_CONFIG = {
-  tokenExpiryMs: 24 * 60 * 60 * 1000, // 24 hours
-  refreshThresholdMs: 5 * 60 * 1000, // 5 minutes before expiry
+  tokenExpiryMs: 24 * 60 * 60 * 1000,
+  refreshThresholdMs: 5 * 60 * 1000,
   maxLoginAttempts: 5,
-  lockoutDurationMs: 15 * 60 * 1000, // 15 minutes
+  lockoutDurationMs: 15 * 60 * 1000,
 };
 
 // Notification Configuration
 export const NOTIFICATION_CONFIG = {
   channel: process.env.EXPO_PUBLIC_NOTIFICATION_CHANNEL || 'charter-keke-notifications',
   sounds: ['default'],
-  badge: true,
-  priority: 'high' as const,
 };
 
-// Async Storage Keys
+// Storage Keys
 export const STORAGE_KEYS = {
   AUTH_TOKEN: 'auth_token',
   REFRESH_TOKEN: 'refresh_token',
@@ -121,96 +110,9 @@ export const STORAGE_KEYS = {
   RIDER_WALLET: 'rider_wallet',
   RIDER_PROFILE: 'rider_profile',
   DRIVER_SETTLEMENT: 'driver_settlement',
-};
-
-// Screen Names
-export const SCREEN_NAMES = {
-  // Auth
-  ONBOARDING: 'Onboarding',
-  LOGIN: 'Login',
-  SIGNUP: 'Signup',
-  OTP_VERIFICATION: 'OTPVerification',
-  PROFILE_COMPLETION: 'ProfileCompletion',
-
-  // Rider
-  RIDER_HOME: 'RiderHome',
-  RIDER_BOOKING: 'RiderBooking',
-  RIDER_ACTIVE_RIDE: 'RiderActiveRide',
-  RIDER_RIDES_HISTORY: 'RiderRidesHistory',
-  RIDER_PROFILE: 'RiderProfile',
-  RIDER_WALLET: 'RiderWallet',
-
-  // Driver
-  DRIVER_HOME: 'DriverHome',
-  DRIVER_AVAILABLE_RIDES: 'DriverAvailableRides',
-  DRIVER_ACTIVE_RIDE: 'DriverActiveRide',
-  DRIVER_EARNINGS: 'DriverEarnings',
-  DRIVER_PROFILE: 'DriverProfile',
-  DRIVER_WALLET: 'DriverWallet',
-
-  // Common
-  SETTINGS: 'Settings',
-  NOTIFICATIONS: 'Notifications',
-  HELP: 'Help',
-  ABOUT: 'About',
-};
-
-// Error Messages
-export const ERROR_MESSAGES = {
-  NETWORK_ERROR: 'Network error. Please check your connection.',
-  SERVER_ERROR: 'Server error. Please try again later.',
-  INVALID_CREDENTIALS: 'Invalid email or password.',
-  EMAIL_EXISTS: 'Email already registered.',
-  PHONE_EXISTS: 'Phone number already registered.',
-  INVALID_EMAIL: 'Please enter a valid email.',
-  INVALID_PHONE: 'Please enter a valid phone number.',
-  INVALID_PASSWORD: 'Password must be at least 8 characters with upper, lower, and numbers.',
-  LOCATION_PERMISSION_DENIED: 'Location permission denied.',
-  CAMERA_PERMISSION_DENIED: 'Camera permission denied.',
-  STORAGE_PERMISSION_DENIED: 'Storage permission denied.',
-  OTP_EXPIRED: 'OTP has expired. Please request a new one.',
-  OTP_INVALID: 'Invalid OTP. Please try again.',
-  RIDE_NOT_FOUND: 'Ride not found.',
-  NO_DRIVERS_AVAILABLE: 'No drivers available in your area.',
-  INSUFFICIENT_BALANCE: 'Insufficient wallet balance.',
-  PAYMENT_FAILED: 'Payment failed. Please try again.',
-};
-
-// Success Messages
-export const SUCCESS_MESSAGES = {
-  SIGNUP_SUCCESSFUL: 'Account created successfully.',
-  LOGIN_SUCCESSFUL: 'Logged in successfully.',
-  PROFILE_UPDATED: 'Profile updated successfully.',
-  RIDE_CREATED: 'Ride created successfully.',
-  RIDE_ACCEPTED: 'Ride accepted.',
-  RIDE_COMPLETED: 'Ride completed.',
-  PAYMENT_SUCCESSFUL: 'Payment successful.',
-  PROFILE_PICTURE_UPDATED: 'Profile picture updated.',
-};
-
-// Time Constants
-export const TIME_CONFIG = {
-  OTP_RESEND_DELAY: 60000, // 60 seconds
-  RIDE_ACCEPTANCE_TIMEOUT: 60000, // 60 seconds
-  LOCATION_UPDATE_INTERVAL: 10000, // 10 seconds
-  SYNC_CHECK_INTERVAL: 300000, // 5 minutes
-};
-
-// Pagination
-export const PAGINATION = {
-  PAGE_SIZE: 20,
-  INITIAL_PAGE: 1,
-};
-
-// Rating Configuration
-export const RATING_CONFIG = {
-  MIN_RATING: 1,
-  MAX_RATING: 5,
-  STAR_SIZE: 20,
-};
-
-// Debug Configuration
-export const DEBUG = {
-  ENABLE_LOGS: process.env.NODE_ENV === 'development',
-  ENABLE_NETWORK_LOGS: process.env.NODE_ENV === 'development',
+  TOKENS: 'tokens',
+  RIDES: 'rides',
+  TRANSACTIONS: 'transactions',
+  NOTIFICATIONS: 'notifications',
+  LAST_LOCATION_UPDATE: 'lastLocation',
 };

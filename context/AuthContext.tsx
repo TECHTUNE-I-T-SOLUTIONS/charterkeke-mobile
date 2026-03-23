@@ -40,6 +40,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         if (authService.isAuthenticated()) {
           setUser(authService.getCurrentUser());
+          // Ensure push subscription is active on app start
+          try {
+            const current = authService.getCurrentUser();
+            if (current && current.id) {
+              await subscribeToPushNotifications(current.id as string);
+              console.log('🔔 [AUTH-CONTEXT] Push subscription ensured on app init');
+            }
+          } catch (err) {
+            console.error('❌ [AUTH-CONTEXT] Failed to ensure push subscription on init:', err);
+          }
           // Start sync service
           syncService.startAutoSync();
         }
@@ -159,14 +169,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         // Don't fail logout if notifications fail
       }
       
+      // Call logout API - this won't throw even if it fails
       await authService.logout();
       setUser(null);
       setUserRole(null);
-      console.log('🔓 [AUTH-CONTEXT] Logout - cleared user role cache');
+      console.log('🔓 [AUTH-CONTEXT] Logout successful - user cleared');
     } catch (err) {
       const errorMessage = (err as Error).message || 'Logout failed';
+      console.error('❌ [AUTH-CONTEXT] Logout error:', errorMessage);
       setError(errorMessage);
-      throw err;
+      // Still clear local user state even if logout API fails
+      setUser(null);
+      setUserRole(null);
     }
   };
 

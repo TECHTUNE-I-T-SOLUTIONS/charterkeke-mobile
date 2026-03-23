@@ -166,11 +166,10 @@ export const sendWelcomeNotification = async () => {
       },
       trigger: {
         type: 'time' as any,
-        seconds: 2, // Show after 2 seconds so user sees the notification after app fully loads
+        seconds: 2,
       },
     });
 
-    // Mark that welcome was shown
     await markWelcomeNotificationSeen();
     
     console.log('✅ [NOTIFICATIONS] Welcome notification sent');
@@ -272,7 +271,6 @@ const handleNotificationResponse = async (response: Notifications.NotificationRe
 
     case 'ride_request':
       console.log('🚗 [NOTIFICATIONS] Ride request:', data.rideId);
-      // Navigate to available rides with focus on this ride (driver side)
       if (data.rideId) {
         navigate(`/driver/available-rides?focusRide=${data.rideId}`);
       }
@@ -280,7 +278,6 @@ const handleNotificationResponse = async (response: Notifications.NotificationRe
 
     case 'ride_accepted':
       console.log('✅ [NOTIFICATIONS] Ride accepted by driver:', data.driverId);
-      // Navigate to active ride (rider side)
       if (data.rideId) {
         navigate(`/rider/active-ride?rideId=${data.rideId}`);
       }
@@ -288,7 +285,6 @@ const handleNotificationResponse = async (response: Notifications.NotificationRe
 
     case 'ride_update':
       console.log('📍 [NOTIFICATIONS] Ride update:', data.status);
-      // Update ride status in UI - navigate based on role
       if (data.rideId) {
         if (data.userRole === 'rider') {
           navigate(`/rider/active-ride?rideId=${data.rideId}`);
@@ -300,7 +296,6 @@ const handleNotificationResponse = async (response: Notifications.NotificationRe
 
     case 'ride_completed':
       console.log('✅ [NOTIFICATIONS] Ride completed:', data.rideId);
-      // Navigate to active ride or rides history
       if (data.rideId && data.userRole === 'rider') {
         navigate(`/rider/rides-history?completedRideId=${data.rideId}`);
       } else if (data.rideId && data.userRole === 'driver') {
@@ -310,7 +305,6 @@ const handleNotificationResponse = async (response: Notifications.NotificationRe
 
     case 'support_message':
       console.log('💬 [NOTIFICATIONS] Support message received');
-      // Navigate to support chat
       navigate('/help-and-support');
       break;
 
@@ -391,113 +385,9 @@ export const registerBackgroundNotificationTask = () => {
     }
 
     console.log('📬 [NOTIFICATIONS] Background notification received');
-    // Handle background notification
     handleNotificationResponse({
       notification: data as Notifications.Notification,
       actionName: 'default',
     } as any);
   });
-
-  if (Platform.OS === 'android') {
-    // Android doesn't use startObservingNotificationResponses
-    console.log('✅ [NOTIFICATIONS] Background notification task registered for Android');
-  }
-};
-
-/**
- * ========================================
- * DEVELOPMENT HELPERS (For Testing)
- * ========================================
- * These helpers are useful for testing notifications in development
- * Call from React DevTools or browser console
- */
-
-/**
- * Force show welcome notification (for testing)
- */
-export const devForceWelcome = async () => {
-  if (!IS_DEV) {
-    console.warn('⚠️ Dev helpers only available in development mode');
-    return;
-  }
-  
-  console.log('🧪 [DEV] Forcing welcome notification...');
-  await markWelcomeNotificationSeen(false); // Reset first
-  await sendWelcomeNotification();
-};
-
-/**
- * Reset welcome notification state
- */
-export const devResetWelcome = async () => {
-  if (!IS_DEV) {
-    console.warn('⚠️ Dev helpers only available in development mode');
-    return;
-  }
-  
-  await AsyncStorage.removeItem('welcomeNotificationSeen');
-  console.log('🧪 [DEV] Welcome notification state reset. You can test it again on next login!');
-};
-
-/**
- * Send test ride request notification
- */
-export const devSendTestRideRequest = async () => {
-  if (!IS_DEV) {
-    console.warn('⚠️ Dev helpers only available in development mode');
-    return;
-  }
-  
-  console.log('🧪 [DEV] Sending test ride request notification...');
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title: '🚗 Test Ride Request',
-      body: 'Test Location A → Test Location B (₹250)',
-      data: {
-        type: 'ride_request',
-        rideId: 'test-ride-123',
-        pickup: 'Test Location A',
-        dropoff: 'Test Location B',
-        fare: '250',
-      },
-      badge: 1,
-      sound: 'default',
-    },
-    trigger: {
-      type: 'time' as any,
-      seconds: 2,
-    },
-  });
-};
-
-/**
- * Get current subscription status
- */
-export const devGetSubscriptionStatus = async () => {
-  if (!IS_DEV) {
-    console.warn('⚠️ Dev helpers only available in development mode');
-    return;
-  }
-  
-  const subscription = await getPushSubscription();
-  const welcomeSeen = await hasSeenWelcomeNotification();
-  
-  console.log('🧪 [DEV] Current Notification Status:', {
-    subscription,
-    welcomeSeen,
-    environment: process.env.EXPO_PUBLIC_ENVIRONMENT,
-    platform: Platform.OS,
-    developmentMode: IS_DEV,
-  });
-  
-  return { subscription, welcomeSeen };
-};
-
-/**
- * Log notification event (development)
- */
-export const devLogNotificationEvent = (event: string, data?: any) => {
-  if (IS_DEV) {
-    console.log(`🔔 [DEV-EVENT] ${event}`, data || '');
-  }
 };

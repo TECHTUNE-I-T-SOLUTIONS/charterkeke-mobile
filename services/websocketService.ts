@@ -5,14 +5,11 @@ import * as Notifications from 'expo-notifications';
 
 let socket: Socket | null = null;
 
-/**
- * Initialize WebSocket connection to backend
- */
 export const initializeWebSocket = async (userId: string) => {
   try {
     const backendUrl = process.env.EXPO_PUBLIC_PUSH_SERVER_URL || 'http://localhost:3000';
 
-    console.log('🌐 [WEBSOCKET] Connecting to:', backendUrl);
+    console.log('🌐 Connecting to WebSocket:', backendUrl);
 
     socket = io(backendUrl, {
       reconnection: true,
@@ -22,210 +19,123 @@ export const initializeWebSocket = async (userId: string) => {
       transports: ['websocket', 'polling'],
       extraHeaders: {
         'User-ID': userId,
-        'Platform': Platform.OS,
+        Platform: Platform.OS,
       },
     });
 
     socket.on('connect', () => {
-      console.log('✅ [WEBSOCKET] Connected to backend');
+      console.log('✅ WebSocket connected');
       socket?.emit('user_connected', { userId, platform: Platform.OS });
     });
 
     socket.on('disconnect', () => {
-      console.log('❌ [WEBSOCKET] Disconnected from backend');
+      console.log('❌ WebSocket disconnected');
     });
 
     socket.on('error', (error: any) => {
-      console.error('❌ [WEBSOCKET] Error:', error);
+      console.error('❌ WebSocket error:', error);
     });
 
-    // Listen for ride request notifications
+    // Listen for ride events
     socket.on('ride_request', async (data: any) => {
-      console.log('📬 [WEBSOCKET] Ride request received:', data);
+      console.log('📬 Ride request:', data);
       await handleRideRequest(data);
     });
 
-    // Listen for ride accepted notifications
     socket.on('ride_accepted', async (data: any) => {
-      console.log('📬 [WEBSOCKET] Ride accepted received:', data);
+      console.log('📬 Ride accepted:', data);
       await handleRideAccepted(data);
     });
 
-    // Listen for driver arrival notifications
     socket.on('driver_arrived', async (data: any) => {
-      console.log('📬 [WEBSOCKET] Driver arrived received:', data);
+      console.log('📬 Driver arrived:', data);
       await handleDriverArrived(data);
     });
 
-    // Listen for ride completed notifications
     socket.on('ride_completed', async (data: any) => {
-      console.log('📬 [WEBSOCKET] Ride completed received:', data);
+      console.log('📬 Ride completed:', data);
       await handleRideCompleted(data);
     });
 
-    // Listen for generic notifications
     socket.on('notification', async (data: any) => {
-      console.log('📬 [WEBSOCKET] Generic notification received:', data);
+      console.log('📬 Notification:', data);
       await handleGenericNotification(data);
     });
 
-    console.log('✅ [WEBSOCKET] WebSocket initialized successfully');
+    console.log('✅ WebSocket initialized');
   } catch (error) {
-    console.error('❌ [WEBSOCKET] Initialization error:', error);
+    console.error('❌ WebSocket init error:', error);
   }
 };
 
-/**
- * Disconnect WebSocket
- */
 export const disconnectWebSocket = () => {
   if (socket) {
     socket.disconnect();
     socket = null;
-    console.log('✅ [WEBSOCKET] Disconnected');
+    console.log('✅ WebSocket disconnected');
   }
 };
 
-/**
- * Get WebSocket instance
- */
 export const getWebSocket = (): Socket | null => {
   return socket;
 };
 
-/**
- * Check if connected to WebSocket
- */
 export const isWebSocketConnected = (): boolean => {
   return socket?.connected || false;
 };
 
-/**
- * Handle ride request notification
- */
+// Notification handlers
 const handleRideRequest = async (data: any) => {
-  try {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: '🚗 New Ride Request',
-        body: `${data.pickup} → ${data.dropoff}`,
-        data: {
-          type: 'ride_request',
-          rideId: data.rideId,
-          pickup: data.pickup,
-          dropoff: data.dropoff,
-          fare: data.fare?.toString() || '0',
-        },
-        badge: 1,
-        sound: 'default',
-      },
-      trigger: { type: 'time' as any, seconds: 1 },
-    });
-  } catch (error) {
-    console.error('❌ [WEBSOCKET] Error handling ride request:', error);
-  }
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'New Ride Request',
+      body: `${data.pickupLocation} to ${data.dropoffLocation}`,
+      data,
+    },
+    trigger: null,
+  });
 };
 
-/**
- * Handle ride accepted notification
- */
 const handleRideAccepted = async (data: any) => {
-  try {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: '🎉 Ride Accepted',
-        body: `${data.driverName} accepted your ride. ETA ${data.estimatedArrival} min`,
-        data: {
-          type: 'ride_accepted',
-          rideId: data.rideId,
-          driverName: data.driverName,
-        },
-        badge: 1,
-        sound: 'default',
-      },
-      trigger: { type: 'time' as any, seconds: 1 },
-    });
-  } catch (error) {
-    console.error('❌ [WEBSOCKET] Error handling ride accepted:', error);
-  }
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'Ride Accepted',
+      body: `Driver ${data.driverName} accepted your ride`,
+      data,
+    },
+    trigger: null,
+  });
 };
 
-/**
- * Handle driver arrived notification
- */
 const handleDriverArrived = async (data: any) => {
-  try {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: '🚗 Driver Arrived',
-        body: `${data.driverName} is here. Please come out!`,
-        data: {
-          type: 'driver_arrived',
-          rideId: data.rideId,
-          driverName: data.driverName,
-        },
-        badge: 1,
-        sound: 'default',
-      },
-      trigger: { type: 'time' as any, seconds: 1 },
-    });
-  } catch (error) {
-    console.error('❌ [WEBSOCKET] Error handling driver arrived:', error);
-  }
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'Driver Arrived',
+      body: `Your driver has arrived`,
+      data,
+    },
+    trigger: null,
+  });
 };
 
-/**
- * Handle ride completed notification
- */
 const handleRideCompleted = async (data: any) => {
-  try {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: '✅ Ride Completed',
-        body: `Ride completed. Total fare: ₹${data.fare}`,
-        data: {
-          type: 'ride_completed',
-          rideId: data.rideId,
-          fare: data.fare?.toString() || '0',
-        },
-        badge: 1,
-        sound: 'default',
-      },
-      trigger: { type: 'time' as any, seconds: 1 },
-    });
-  } catch (error) {
-    console.error('❌ [WEBSOCKET] Error handling ride completed:', error);
-  }
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'Ride Completed',
+      body: `Thank you for riding with us!`,
+      data,
+    },
+    trigger: null,
+  });
 };
 
-/**
- * Handle generic notification
- */
 const handleGenericNotification = async (data: any) => {
-  try {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: data.title || 'Notification',
-        body: data.body || data.message || '',
-        data: data.data || {},
-        badge: 1,
-        sound: 'default',
-      },
-      trigger: { type: 'time' as any, seconds: 1 },
-    });
-  } catch (error) {
-    console.error('❌ [WEBSOCKET] Error handling generic notification:', error);
-  }
-};
-
-/**
- * Emit event to backend (e.g., to notify we're online)
- */
-export const emitWebSocketEvent = (event: string, data: any) => {
-  if (isWebSocketConnected()) {
-    socket?.emit(event, data);
-    console.log('📤 [WEBSOCKET] Emitted event:', event);
-  } else {
-    console.warn('⚠️ [WEBSOCKET] Not connected, cannot emit event:', event);
-  }
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: data.title || 'Notification',
+      body: data.message || '',
+      data,
+    },
+    trigger: null,
+  });
 };

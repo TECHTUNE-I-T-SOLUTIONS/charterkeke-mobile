@@ -44,10 +44,11 @@ export default function WalletScreen() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [showWithdraw, setShowWithdraw] = useState(false);
   const renderedOnce = useRef(false);
   const [hasCached, setHasCached] = useState(false);
   const [settlementInfo, setSettlementInfo] = useState<any>(null);
+  const [outstandingDetails, setOutstandingDetails] = useState<any[]>([]);
+  const [expandedSettlements, setExpandedSettlements] = useState<Record<string, boolean>>({});
   const [settlementReference, setSettlementReference] = useState<string | null>(null);
   const [settlementPaying, setSettlementPaying] = useState(false);
   const [earningsData, setEarningsData] = useState<any>(null);
@@ -102,6 +103,11 @@ export default function WalletScreen() {
     if (Number.isNaN(parsed.getTime())) return '—';
     return parsed.toDateString();
   };
+
+  // Prefer settlementInfo.totalOutstanding when present (even if 0), otherwise fall back to today's computed remittance
+  const totalOutstandingDisplay = settlementInfo && typeof settlementInfo.totalOutstanding !== 'undefined'
+    ? Number(settlementInfo.totalOutstanding || 0)
+    : getDailyRemittanceDue();
 
   useFocusEffect(
     React.useCallback(() => {
@@ -258,7 +264,7 @@ export default function WalletScreen() {
       // Auto-verify all pending payments before checking settlement status
       try {
         console.log('[Wallet] Auto-verifying pending payments...');
-        const verifyResult = await apiService.verifyAllPendingPayments();
+        const verifyResult = await apiService.verifyAllPendingPayments(user?.id);
         if (verifyResult?.updated > 0) {
           console.log(`[Wallet] ✅ Verified and updated ${verifyResult.updated} payments`);
         }
@@ -269,6 +275,12 @@ export default function WalletScreen() {
       const data = await apiService.getDriverSettlementStatus();
       setSettlementInfo(data);
       await cacheService.set(STORAGE_KEYS.DRIVER_SETTLEMENT, data);
+      // fetch details (rides) for each outstanding settlement so Wallet can show per-ride breakdown
+      try {
+        await fetchOutstandingDetails(data?.outstandingSettlements || []);
+      } catch (err) {
+        console.error('fetchOutstandingDetails error:', err);
+      }
     } catch (error: any) {
       console.error('Settlement status error:', error);
       try {
@@ -287,6 +299,36 @@ export default function WalletScreen() {
       }
     }
   };
+
+  const fetchOutstandingDetails = async (list: any[]) => {
+    try {
+      if (!Array.isArray(list) || list.length === 0) {
+        setOutstandingDetails([]);
+        return [];
+      }
+
+      const details = await Promise.all(
+        list.map(async (s: any) => {
+          try {
+            const resp = await apiService.get(`/driver/settlement/rides?settlement_id=${s.id}`);
+            return { settlement: s, daily: resp };
+          } catch (err) {
+            console.error('Error fetching settlement rides for', s.id, err);
+            return { settlement: s, daily: null };
+          }
+        })
+      );
+
+      setOutstandingDetails(details);
+      return details;
+    } catch (err) {
+      console.error('fetchOutstandingDetails failed', err);
+      setOutstandingDetails([]);
+      return [];
+    }
+  };
+
+  /* removed: quick settlement check consolidated into getDriverSettlementStatus() */
 
   const fetchEarningsForToday = async (forceRefresh: boolean = false) => {
     try {
@@ -509,30 +551,29 @@ export default function WalletScreen() {
               </View>
 
               <View style={styles.settlementAmountRow}>
-                <Text style={[styles.settlementAmount, { color: theme.colors.textPrimary }]}
-                >₦{(Number(settlementInfo?.totalOutstanding || 0) || getDailyRemittanceDue()).toLocaleString('en-US')}</Text>
-                <Text style={[styles.settlementBadge, { color: Number(settlementInfo?.totalOutstanding || 0) > 0 ? '#FF9101' : '#10B981' }]}>
-                  {Number(settlementInfo?.totalOutstanding || 0) > 0 ? 'DUE NOW' : 'PAID'}
+                <Text style={[styles.settlementAmount, { color: theme.colors.textPrimary }]}>₦{totalOutstandingDisplay.toLocaleString('en-US')}</Text>
+                <Text style={[styles.settlementBadge, { color: totalOutstandingDisplay > 0 ? '#FF9101' : '#10B981' }]}>
+                  {totalOutstandingDisplay > 0 ? 'DUE NOW' : 'PAID'}
                 </Text>
               </View>
 
-              {Number(settlementInfo?.totalOutstanding || 0) > 0 && settlementInfo?.outstandingSettlements && settlementInfo.outstandingSettlements.length > 0 && (
+              {(totalOutstandingDisplay > 0) && ((settlementInfo?.outstandingSettlements?.length) > 0) && (
                 <Text style={[styles.settlementSub, { color: '#FF9101', marginBottom: 10 }]}>
-                  {settlementInfo.outstandingSettlements.length} overdue settlement(s): ₦{Number(settlementInfo?.totalOutstanding || 0).toLocaleString('en-US')}
+                  { (settlementInfo?.outstandingSettlements?.length ?? 0) } overdue settlement(s): ₦{Number(settlementInfo?.totalOutstanding ?? 0).toLocaleString('en-US')}
                 </Text>
               )}
 
               <View style={styles.settlementActions}>
                 <TouchableOpacity
                   onPress={handlePaySettlement}
-                  disabled={settlementPaying || Number(settlementInfo?.totalOutstanding || 0) <= 0}
+                  disabled={settlementPaying || totalOutstandingDisplay <= 0}
                   style={[
                     styles.settlementBtn,
-                    { backgroundColor: Number(settlementInfo?.totalOutstanding || 0) > 0 ? BRAND.primary : theme.colors.border },
+                    { backgroundColor: totalOutstandingDisplay > 0 ? BRAND.primary : theme.colors.border },
                     { flex: 1.5 },
                   ]}
                 >
-                  <Text style={[styles.settlementBtnText, { color: Number(settlementInfo?.totalOutstanding || 0) > 0 ? '#000' : theme.colors.textSecondary }]}>
+                  <Text style={[styles.settlementBtnText, { color: totalOutstandingDisplay > 0 ? '#000' : theme.colors.textSecondary }]}>
                     {settlementPaying ? 'Processing...' : 'Pay Now'}
                   </Text>
                 </TouchableOpacity>
@@ -554,6 +595,70 @@ export default function WalletScreen() {
                 )}
               </View>
             </View>
+
+              {/* Older Outstanding Remittances */}
+              {((settlementInfo?.outstandingSettlements?.length) ?? 0) > 0 && (
+                <View style={[styles.paddingH, { marginTop: 12 }]}>
+                  <View style={[styles.settlementCard, { backgroundColor: theme.colors.ride, borderColor: theme.colors.border }]}>
+                    <View style={styles.settlementHeader}>
+                      <View>
+                        <Text style={[styles.settlementTitle, { color: theme.colors.textPrimary }]}>Outstanding Remittances</Text>
+                        <Text style={[styles.settlementSub, { color: theme.colors.textSecondary }]}>Older unpaid remittances requiring payment</Text>
+                      </View>
+                      <MaterialCommunityIcons name="calendar-clock" size={22} color={BRAND.primary} />
+                    </View>
+
+                    <View style={styles.outstandingList}>
+                          {outstandingDetails.length > 0 ? (
+                            outstandingDetails.map(({ settlement, daily }: any) => (
+                              <View key={settlement.id} style={[styles.outstandingItem, { borderBottomColor: theme.colors.border }]}>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={[styles.outstandingDate, { color: theme.colors.textPrimary }]}>{formatDisplayDate(settlement.settlement_date)}</Text>
+                                  <Text style={[styles.settlementSub, { color: theme.colors.textSecondary }]}>
+                                    Due: {formatDisplayDate(settlement.payment_due_date)} • {settlement.settlement_status}
+                                  </Text>
+                                  {daily?.rides && daily.rides.length > 0 && (
+                                    <View style={{ marginTop: 8 }}>
+                                      {(() => {
+                                        const isExpanded = !!expandedSettlements[settlement.id];
+                                        const visible = isExpanded ? daily.rides : daily.rides.slice(0, 5);
+                                        return (
+                                          <>
+                                            {visible.map((r: any) => (
+                                              <View key={r.id} style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                                                <Text style={{ color: theme.colors.textSecondary, fontSize: 12 }}>{(r.pickup_zone || 'Pickup')} → {(r.destination_zone || 'Destination')}</Text>
+                                                <Text style={{ color: '#FF9101', fontSize: 12 }}>₦{Number(r.platform_fee || 0).toLocaleString('en-US')}</Text>
+                                              </View>
+                                            ))}
+                                            {daily.rides.length > 5 && (
+                                              <TouchableOpacity onPress={() => setExpandedSettlements(prev => ({ ...prev, [settlement.id]: !prev[settlement.id] }))}>
+                                                <Text style={{ color: BRAND.primary, fontSize: 12, marginTop: 6 }}>{isExpanded ? 'Show less' : `Show ${daily.rides.length - 5} more`}</Text>
+                                              </TouchableOpacity>
+                                            )}
+                                          </>
+                                        )
+                                      })()}
+                                    </View>
+                                  )}
+                                </View>
+                                <Text style={[styles.outstandingAmount, { color: '#FF9101' }]}>₦{Number(settlement.total_platform_fees || 0).toLocaleString('en-US')}</Text>
+                              </View>
+                            ))
+                          ) : (
+                            settlementInfo.outstandingSettlements.map((s: any) => (
+                              <View key={s.id} style={[styles.outstandingItem, { borderBottomColor: theme.colors.border }]}>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={[styles.outstandingDate, { color: theme.colors.textPrimary }]}>{formatDisplayDate(s.settlement_date)}</Text>
+                                  <Text style={[styles.settlementSub, { color: theme.colors.textSecondary }]}>Due: {formatDisplayDate(s.payment_due_date)} • {s.settlement_status}</Text>
+                                </View>
+                                <Text style={[styles.outstandingAmount, { color: '#FF9101' }]}>₦{Number(s.total_platform_fees || 0).toLocaleString('en-US')}</Text>
+                              </View>
+                            ))
+                          )}
+                    </View>
+                  </View>
+                </View>
+              )}
           </View>
 
           {/* Daily Accepted Rides (Remittance Basis) */}
@@ -582,16 +687,17 @@ export default function WalletScreen() {
                 </View>
               </View>
 
-              {(earningsData?.rides?.length ?? 0) > 0 ? (
+              {/* Use today's earnings data for rides list */}
+              {((earningsData?.rides?.length ?? 0)) > 0 ? (
                 <View style={styles.ridesListWrap}>
-                  {earningsData.rides.slice(0, 5).map((ride: any) => (
+                  {(earningsData?.rides || []).slice(0, 10).map((ride: any) => (
                     <View key={ride.id} style={[styles.rideItem, { borderBottomColor: theme.colors.border }]}>
                       <View style={{ flex: 1 }}>
                         <Text numberOfLines={1} style={[styles.rideRoute, { color: theme.colors.textPrimary }]}>
                           {ride.pickup_zone || 'Pickup'} → {ride.destination_zone || 'Destination'}
                         </Text>
                         <Text style={[styles.rideMeta, { color: theme.colors.textSecondary }]}>
-                          {ride.status || 'accepted'} • {formatDisplayDate(ride.created_at || ride.accepted_at || ride.ride_created_at)}
+                          {ride.status || 'completed'} • {formatDisplayDate(ride.completed_at || ride.created_at || ride.accepted_at)}
                         </Text>
                       </View>
                       <View style={{ alignItems: 'flex-end' }}>
@@ -617,14 +723,9 @@ export default function WalletScreen() {
             </View>
           </View>
 
-          {/* Quick Actions */}
+          {/* Quick Actions - Withdraw removed (not offered) */}
           <View style={[styles.actionRow, styles.paddingH]}>
-            <TouchableOpacity onPress={() => setShowWithdraw(true)} style={[styles.actionBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-               <View style={[styles.iconBox, { backgroundColor: '#FF910120' }]}>
-                 <MaterialCommunityIcons name="bank-transfer-out" size={24} color="#F0F0F0" />
-               </View>
-               <Text style={[styles.actionText, { color: theme.colors.textPrimary }]}>Withdraw</Text>
-            </TouchableOpacity>
+            <View style={{ flex: 1 }} />
             <TouchableOpacity
               onPress={() => router.push('/driver/payment-history')}
               style={[styles.actionBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
@@ -680,28 +781,7 @@ export default function WalletScreen() {
         onClose={handlePaystackClose}
       />
 
-      {/* Withdraw Modal Placeholder */}
-      <Modal visible={showWithdraw} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { backgroundColor: theme.colors.surface }]}>
-                <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>Withdraw Funds</Text>
-                <TextInput 
-                   placeholder="Enter Amount" 
-                   placeholderTextColor={theme.colors.textTertiary}
-                   style={[styles.input, { backgroundColor: theme.colors.inputBackground, color: theme.colors.textPrimary }]} 
-                   keyboardType="numeric"
-                />
-                <View style={styles.modalBtns}>
-                    <TouchableOpacity onPress={() => setShowWithdraw(false)} style={[styles.modalBtn, { borderColor: theme.colors.border, borderWidth: 1 }]}>
-                        <Text style={{ color: theme.colors.textPrimary }}>Cancel</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => setShowWithdraw(false)} style={[styles.modalBtn, { backgroundColor: theme.colors.ride }]}>
-                        <Text style={{ color: '#000', fontWeight: 'bold' }}>Confirm</Text>
-                    </TouchableOpacity>
-                </View>
-            </View>
-        </View>
-      </Modal>
+        {/* Withdraw removed - feature not offered */}
 
     </View>
   );
@@ -759,4 +839,9 @@ const styles = StyleSheet.create({
   rideMeta: { fontSize: 11, marginTop: 2 },
   rideAmount: { fontSize: 13, fontWeight: '700' },
   rideFee: { fontSize: 11, marginTop: 2 }
+  ,
+  outstandingList: { paddingTop: 8 },
+  outstandingItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1 },
+  outstandingDate: { fontSize: 13, fontWeight: '700' },
+  outstandingAmount: { fontSize: 13, fontWeight: '800' },
 });

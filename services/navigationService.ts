@@ -17,7 +17,7 @@ export const navigate = (routeName: string, params?: any) => {
       params,
     });
   } else {
-    console.warn('Navigation ref not set. Cannot navigate.');
+    console.warn('Navigation ref not set');
   }
 };
 
@@ -28,6 +28,12 @@ export const replaceNavigate = (routeName: string, params?: any) => {
       params,
     });
   } else {
-    console.warn('Navigation ref not set. Cannot replace navigate.');
+    console.warn('Navigation ref not set');
+  }
+};
+
+export const goBack = () => {
+  if (navigationRef) {
+    navigationRef.back();
   }
 };

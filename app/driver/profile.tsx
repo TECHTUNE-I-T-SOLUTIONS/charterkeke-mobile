@@ -10,6 +10,7 @@ import {
   Alert,
   StyleSheet,
   StatusBar,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,8 +21,11 @@ import { useTheme } from '@/context/ThemeContext';
 import ConfirmationDialog from '@/components/ui/ConfirmationDialog';
 import { ProfileSkeleton } from '@/components/ProfileSkeleton';
 import { apiService } from '@/services/api';
+import * as Clipboard from 'expo-clipboard';
 import { cacheService } from '@/services/cache';
 import { BRAND, COLORS } from '@/utils/colors';
+import { useUpdateChecker } from '@/hooks/useUpdateChecker';
+import { UpdateCheckerModal } from '@/components/UpdateCheckerModal';
 
 interface ProfileData {
   first_name: string;
@@ -45,6 +49,9 @@ export default function DriverProfileScreen() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const renderedOnce = useRef(false);
   const [hasCached, setHasCached] = useState(false);
+  const [referralCode, setReferralCode] = useState<string>('');
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const { isChecking, updateInfo, checkForUpdates, dismissUpdate } = useUpdateChecker();
 
   const isLight = theme.mode === 'light';
 
@@ -53,6 +60,24 @@ export default function DriverProfileScreen() {
       if (!renderedOnce.current) {
         renderedOnce.current = true;
         loadProfile();
+        // Fetch and extract driver referral code
+        const fetchReferralCode = async () => {
+          try {
+            const res = await apiService.getReferralCode();
+            console.log('[Driver Profile] getReferralCode response:', JSON.stringify(res));
+            
+            // Extract just the code string from nested structure
+            const codeStr = (res?.referralCode?.referral_code || res?.referral_code || '');
+            const finalCode = String(codeStr).trim();
+            
+            console.log('[Driver Profile] Extracted code:', finalCode, 'type:', typeof finalCode);
+            setReferralCode(finalCode);
+          } catch (err) {
+            console.error('[Driver Profile] Error fetching referral code:', err);
+            setReferralCode('');
+          }
+        };
+        fetchReferralCode();
         return;
       }
 
@@ -114,6 +139,15 @@ export default function DriverProfileScreen() {
       await logout();
       router.replace('/auth/welcome');
     } catch (e) { Alert.alert('Error', 'Logout failed'); }
+  };
+
+  const handleCheckUpdates = async () => {
+    const result = await checkForUpdates(true);
+    if (result?.hasUpdate) {
+      setShowUpdateModal(true);
+    } else if (result) {
+      Alert.alert('Up to Date', 'You have the latest version of Charter Keke!');
+    }
   };
 
   const handlePickAndUploadAvatar = async () => {
@@ -228,6 +262,7 @@ export default function DriverProfileScreen() {
              <MenuItem icon="card-account-details-outline" label="Documents" onPress={() => router.push('/driver/documents')} theme={theme} />
              <MenuItem icon="car-outline" label="Vehicle Details" onPress={() => router.push('/driver/vehicle')} theme={theme} />
              <MenuItem icon="bank-outline" label="Bank Accounts" onPress={() => router.push('/driver/bank-accounts')} theme={theme} />
+             <MenuItemWithSub icon="account-multiple-plus" label="Referrals" subLabel={referralCode} onPress={() => router.push('/driver/referrals')} theme={theme} />
 
              <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary, marginTop: 24 }]}>SETTINGS</Text>
              <View style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
@@ -244,6 +279,15 @@ export default function DriverProfileScreen() {
                   thumbColor="#FFF"
                 />
              </View>
+
+             <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary, marginTop: 24 }]}>SUPPORT</Text>
+             <MenuItem 
+              icon="cloud-download-outline" 
+              label="Check for Updates" 
+              onPress={handleCheckUpdates} 
+              theme={theme}
+              loading={isChecking}
+             />
              
              <TouchableOpacity style={[styles.logoutBtn, { borderColor: COLORS.light.destructive }]} onPress={() => setShowLogout(true)}>
                 <MaterialCommunityIcons name="logout" size={20} color={COLORS.light.destructive} />
@@ -264,17 +308,44 @@ export default function DriverProfileScreen() {
         isDark={!isLight}
         type="danger"
       />
+
+      <UpdateCheckerModal
+        visible={showUpdateModal}
+        updateInfo={updateInfo}
+        isChecking={isChecking}
+        onDismiss={dismissUpdate}
+        onDownload={async () => setShowUpdateModal(false)}
+      />
     </View>
   );
 }
 
-const MenuItem = ({ icon, label, onPress, theme }: any) => (
+const MenuItem = ({ icon, label, onPress, theme, loading }: any) => (
+  <TouchableOpacity onPress={onPress} disabled={loading} style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+    <View style={styles.menuLeft}>
+       <View style={[styles.iconBox, { backgroundColor: theme.colors.inputBackground }]}>
+          {loading ? (
+            <ActivityIndicator size="small" color={theme.colors.textPrimary} />
+          ) : (
+            <MaterialCommunityIcons name={icon} size={20} color={theme.colors.textPrimary} />
+          )}
+       </View>
+       <Text style={[styles.menuText, { color: theme.colors.textPrimary }]}>{label}</Text>
+    </View>
+    {!loading && <MaterialCommunityIcons name="chevron-right" size={20} color={theme.colors.textSecondary} />}
+  </TouchableOpacity>
+);
+
+const MenuItemWithSub = ({ icon, label, subLabel, onPress, theme }: any) => (
   <TouchableOpacity onPress={onPress} style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
     <View style={styles.menuLeft}>
        <View style={[styles.iconBox, { backgroundColor: theme.colors.inputBackground }]}>
           <MaterialCommunityIcons name={icon} size={20} color={theme.colors.textPrimary} />
        </View>
-       <Text style={[styles.menuText, { color: theme.colors.textPrimary }]}>{label}</Text>
+       <View>
+         <Text style={[styles.menuText, { color: theme.colors.textPrimary }]}>{label}</Text>
+         {subLabel ? <Text style={{ color: theme.colors.textSecondary, fontSize: 12 }}>{subLabel}</Text> : null}
+       </View>
     </View>
     <MaterialCommunityIcons name="chevron-right" size={20} color={theme.colors.textSecondary} />
   </TouchableOpacity>

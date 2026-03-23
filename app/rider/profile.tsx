@@ -10,6 +10,7 @@ import {
   Alert,
   StyleSheet,
   StatusBar,
+  ActivityIndicator,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -20,9 +21,12 @@ import { useTheme } from '@/context/ThemeContext';
 import ConfirmationDialog from '@/components/ui/ConfirmationDialog';
 import { ProfileSkeleton } from '@/components/ProfileSkeleton';
 import { apiService } from '@/services/api';
+import * as Clipboard from 'expo-clipboard';
 import { cacheService } from '@/services/cache';
 import { STORAGE_KEYS } from '@/utils/constants';
 import { BRAND, COLORS } from '@/utils/colors';
+import { useUpdateChecker } from '@/hooks/useUpdateChecker';
+import { UpdateCheckerModal } from '@/components/UpdateCheckerModal';
 
 interface ProfileData {
   first_name: string;
@@ -44,6 +48,11 @@ export default function ProfileScreen() {
   const [notifEnabled, setNotifEnabled] = useState(true);
   const renderedOnce = useRef(false);
   const [hasCached, setHasCached] = useState(false);
+  const [referralCode, setReferralCode] = useState<string>('');
+  
+  // Update checker
+  const { isChecking, updateInfo, checkForUpdates, dismissUpdate } = useUpdateChecker();
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
 
   const isLight = theme.mode === 'light';
 
@@ -52,6 +61,24 @@ export default function ProfileScreen() {
       if (!renderedOnce.current) {
         renderedOnce.current = true;
         loadProfileWithCache();
+        // Fetch referral code - extract it correctly
+        const fetchReferralCode = async () => {
+          try {
+            const res = await apiService.getReferralCode();
+            console.log('[Profile] getReferralCode response:', JSON.stringify(res));
+            
+            // Get the code string - must be a string
+            const codeStr = (res?.referralCode?.referral_code || res?.referral_code || '');
+            const finalCode = String(codeStr).trim();
+            
+            console.log('[Profile] Extracted code:', finalCode, 'type:', typeof finalCode);
+            setReferralCode(finalCode);
+          } catch (err) {
+            console.error('[Profile] Error fetching referral code:', err);
+            setReferralCode('');
+          }
+        };
+        fetchReferralCode();
       }
     }, [])
   );
@@ -84,6 +111,15 @@ export default function ProfileScreen() {
       await logout();
       router.replace('/auth/welcome');
     } catch (e) { Alert.alert('Error', 'Logout failed'); }
+  };
+
+  const handleCheckUpdates = async () => {
+    const result = await checkForUpdates(true);
+    if (result?.hasUpdate) {
+      setShowUpdateModal(true);
+    } else if (result) {
+      Alert.alert('Up to Date', 'You have the latest version of Charter Keke!');
+    }
   };
 
   const handlePickAndUploadAvatar = async () => {
@@ -193,6 +229,7 @@ export default function ProfileScreen() {
              <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary }]}>ACCOUNT</Text>
              <MenuItem icon="account-outline" label="Edit Profile" onPress={() => router.push('/rider/edit-profile')} theme={theme} />
              <MenuItem icon="credit-card-outline" label="Payment Methods" onPress={() => router.push('/rider/payment-methods')} theme={theme} />
+             <MenuItemWithSub icon="account-multiple-plus" label="Referrals" subLabel={referralCode} onPress={() => router.push('/rider/referrals')} theme={theme} />
              
              <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary, marginTop: 24 }]}>PREFERENCES</Text>
              <View style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
@@ -213,6 +250,13 @@ export default function ProfileScreen() {
 
              <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary, marginTop: 24 }]}>SUPPORT</Text>
              <MenuItem icon="help-circle-outline" label="Help & Support" onPress={() => router.push('/rider/help-and-support')} theme={theme} />
+             <MenuItem 
+              icon="cloud-download-outline" 
+              label="Check for Updates" 
+              onPress={handleCheckUpdates} 
+              theme={theme}
+              loading={isChecking}
+             />
              
              <TouchableOpacity style={[styles.logoutBtn, { borderColor: COLORS.light.destructive }]} onPress={() => setShowLogout(true)}>
                 <MaterialCommunityIcons name="logout" size={20} color={COLORS.light.destructive} />
@@ -233,21 +277,60 @@ export default function ProfileScreen() {
         isDark={!isLight}
         type="danger"
       />
+
+      <UpdateCheckerModal
+        visible={showUpdateModal}
+        updateInfo={updateInfo}
+        isChecking={isChecking}
+        onDismiss={async (version) => {
+          await dismissUpdate(version);
+          setShowUpdateModal(false);
+        }}
+        onDownload={async (url) => {
+          setShowUpdateModal(false);
+        }}
+      />
     </View>
   );
 }
 
-const MenuItem = ({ icon, label, onPress, theme }: any) => (
-  <TouchableOpacity onPress={onPress} style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+const MenuItem = ({ icon, label, onPress, theme, loading }: any) => (
+  <TouchableOpacity onPress={onPress} disabled={loading} style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
     <View style={styles.menuLeft}>
        <View style={[styles.iconBox, { backgroundColor: theme.colors.inputBackground }]}>
-          <MaterialCommunityIcons name={icon} size={20} color={theme.colors.textPrimary} />
+          {loading ? (
+            <ActivityIndicator size="small" color={theme.colors.textPrimary} />
+          ) : (
+            <MaterialCommunityIcons name={icon} size={20} color={theme.colors.textPrimary} />
+          )}
        </View>
        <Text style={[styles.menuText, { color: theme.colors.textPrimary }]}>{label}</Text>
     </View>
     <MaterialCommunityIcons name="chevron-right" size={20} color={theme.colors.textSecondary} />
   </TouchableOpacity>
 );
+
+const MenuItemWithSub = ({ icon, label, subLabel, onPress, theme }: any) => {
+  // Ensure subLabel is definitely a string, never an object
+  const safeLabel = typeof subLabel === 'string' && subLabel.length > 0 ? subLabel : '';
+  
+  return (
+    <TouchableOpacity onPress={onPress} style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+      <View style={styles.menuLeft}>
+         <View style={[styles.iconBox, { backgroundColor: theme.colors.inputBackground }]}>
+            <MaterialCommunityIcons name={icon} size={20} color={theme.colors.textPrimary} />
+         </View>
+         <View>
+           <Text style={[styles.menuText, { color: theme.colors.textPrimary }]}>{label}</Text>
+           {safeLabel ? (
+             <Text style={{ color: theme.colors.textSecondary, fontSize: 12 }}>{safeLabel}</Text>
+           ) : null}
+         </View>
+      </View>
+      <MaterialCommunityIcons name="chevron-right" size={20} color={theme.colors.textSecondary} />
+    </TouchableOpacity>
+  );
+};
 
 const styles = StyleSheet.create({
   container: { flex: 1 },

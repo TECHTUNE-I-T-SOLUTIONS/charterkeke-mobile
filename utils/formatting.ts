@@ -1,176 +1,139 @@
-import { Location } from '@/types';
+/**
+ * Distance and location formatting utilities
+ */
 
 /**
- * Calculate distance between two coordinates using Haversine formula
- * Returns distance in kilometers
+ * Format distance in meters to a readable string (km or m)
  */
-export const calculateDistance = (
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number
-): number => {
-  const R = 6371; // Earth's radius in km
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-};
-
-/**
- * Calculate estimated fare based on distance
- * Base fare + (distance * per km rate)
- */
-export const calculateEstimatedFare = (
-  distanceInKm: number,
-  baseFare: number = 500, // ₦500
-  perKmRate: number = 150 // ₦150 per km
-): number => {
-  return Math.ceil(baseFare + distanceInKm * perKmRate);
-};
-
-/**
- * Estimate ride duration in minutes
- * Average speed: 30 km/h in traffic
- */
-export const estimateDuration = (distanceInKm: number, avgSpeed: number = 30): number => {
-  return Math.ceil((distanceInKm / avgSpeed) * 60);
-};
-
-/**
- * Format distance for display
- */
-export const formatDistance = (distanceInKm: number): string => {
-  if (distanceInKm < 1) {
-    return `${Math.round(distanceInKm * 1000)}m`;
+export function formatDistance(meters: number): string {
+  if (meters < 1000) {
+    return `${Math.round(meters)}m`;
   }
-  return `${distanceInKm.toFixed(1)}km`;
-};
+  return `${(meters / 1000).toFixed(1)}km`;
+}
 
 /**
- * Format duration for display
+ * Format duration in seconds to HH:MM or MM:SS format
  */
-export const formatDuration = (durationInMinutes: number): string => {
-  if (durationInMinutes < 60) {
-    return `${Math.round(durationInMinutes)}min`;
+export function formatDuration(seconds: number): string {
+  if (seconds < 60) {
+    return `${Math.round(seconds)}s`;
   }
-  const hours = Math.floor(durationInMinutes / 60);
-  const minutes = durationInMinutes % 60;
-  return `${hours}h ${minutes}min`;
-};
+  if (seconds < 3600) {
+    const minutes = Math.floor(seconds / 60);
+    const secs = Math.round(seconds % 60);
+    return `${minutes}m ${secs}s`;
+  }
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return `${hours}h ${minutes}m`;
+}
 
 /**
- * Format currency (Nigerian Naira)
+ * Format currency (Nigeria Naira)
  */
-export const formatCurrency = (amount: number): string => {
-  return `₦${amount.toLocaleString()}`;
-};
+export function formatCurrency(amount: number, currency: string = 'NGN'): string {
+  const formatter = new Intl.NumberFormat('en-NG', {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+  return formatter.format(amount);
+}
 
 /**
- * Format date time
+ * Format date and time
  */
-export const formatDateTime = (date: Date | string): string => {
-  const dateObj = typeof date === 'string' ? new Date(date) : date;
-  return dateObj.toLocaleDateString('en-NG', {
-    weekday: 'short',
+export function formatDateTime(date: Date): string {
+  return date.toLocaleDateString('en-NG', {
+    year: 'numeric',
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
   });
-};
+}
 
 /**
- * Format time only
+ * Format time only (HH:MM AM/PM)
  */
-export const formatTime = (date: Date | string): string => {
-  const dateObj = typeof date === 'string' ? new Date(date) : date;
-  return dateObj.toLocaleTimeString('en-NG', {
+export function formatTime(date: Date): string {
+  return date.toLocaleTimeString('en-NG', {
     hour: '2-digit',
     minute: '2-digit',
+    hour12: true,
   });
-};
+}
 
 /**
  * Format date only
  */
-export const formatDate = (date: Date | string): string => {
-  const dateObj = typeof date === 'string' ? new Date(date) : date;
-  return dateObj.toLocaleDateString('en-NG', {
-    weekday: 'short',
+export function formatDate(date: Date): string {
+  return date.toLocaleDateString('en-NG', {
+    year: 'numeric',
     month: 'short',
     day: 'numeric',
   });
-};
+}
 
 /**
- * Check if coordinate is valid
+ * Format phone number
  */
-export const isValidCoordinate = (location: Location): boolean => {
-  return (
-    location &&
-    typeof location.latitude === 'number' &&
-    typeof location.longitude === 'number' &&
-    location.latitude >= -90 &&
-    location.latitude <= 90 &&
-    location.longitude >= -180 &&
-    location.longitude <= 180
-  );
-};
+export function formatPhoneNumber(phone: string): string {
+  // Remove non-digits
+  const digits = phone.replace(/\D/g, '');
+  
+  // Handle Nigerian numbers
+  if (digits.length === 10 && digits.startsWith('0')) {
+    return `+234${digits.slice(1)}`;
+  }
+  if (digits.length === 11 && digits.startsWith('0')) {
+    return `+234${digits.slice(1)}`;
+  }
+  if (digits.length === 12 && digits.startsWith('234')) {
+    return `+${digits}`;
+  }
+  
+  return phone;
+}
 
 /**
- * Get bearing between two points
+ * Truncate text with ellipsis
  */
-export const getBearing = (from: Location, to: Location): number => {
-  const dLon = ((to.longitude - from.longitude) * Math.PI) / 180;
-  const lat1 = (from.latitude * Math.PI) / 180;
-  const lat2 = (to.latitude * Math.PI) / 180;
-
-  const y = Math.sin(dLon) * Math.cos(lat2);
-  const x =
-    Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
-
-  return (Math.atan2(y, x) * 180) / Math.PI;
-};
+export function truncateText(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength)}...`;
+}
 
 /**
- * Add buffer to bounding box
+ * Capitalize first letter
  */
-export const addBufferToRegion = (region: any, bufferPercent: number = 0.1) => {
-  const latDelta = region.latitudeDelta * (1 + bufferPercent);
-  const lonDelta = region.longitudeDelta * (1 + bufferPercent);
-
-  return {
-    ...region,
-    latitudeDelta: latDelta,
-    longitudeDelta: lonDelta,
-  };
-};
+export function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+}
 
 /**
- * Get bounding box from coordinates
+ * Convert to title case
  */
-export const getBoundingBox = (coords: Location[]) => {
-  if (coords.length === 0) return null;
+export function toTitleCase(text: string): string {
+  return text
+    .toLowerCase()
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
 
-  const lats = coords.map((c) => c.latitude);
-  const lons = coords.map((c) => c.longitude);
-
-  const minLat = Math.min(...lats);
-  const maxLat = Math.max(...lats);
-  const minLon = Math.min(...lons);
-  const maxLon = Math.max(...lons);
-
-  return {
-    latitude: (minLat + maxLat) / 2,
-    longitude: (minLon + maxLon) / 2,
-    latitudeDelta: maxLat - minLat,
-    longitudeDelta: maxLon - minLon,
-  };
-};
+/**
+ * Format rating with stars
+ */
+export function formatRating(rating: number): string {
+  const fullStars = Math.floor(rating);
+  const hasHalfStar = rating % 1 >= 0.5;
+  let stars = '★'.repeat(fullStars);
+  if (hasHalfStar && fullStars < 5) {
+    stars += '☆';
+  }
+  stars += '☆'.repeat(5 - Math.ceil(rating));
+  return `${stars} ${rating.toFixed(1)}`;
+}

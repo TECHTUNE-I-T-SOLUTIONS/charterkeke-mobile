@@ -41,7 +41,6 @@ export const normalizeNigerianPhone = (phone: string): string | null => {
 };
 
 // Password validation
-// At least 8 characters, 1 uppercase, 1 lowercase, 1 number
 export const isValidPassword = (password: string): boolean => {
   const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d@$!%*?&]{8,}$/;
   return passwordRegex.test(password);
@@ -81,7 +80,6 @@ export const isValidName = (name: string): boolean => {
 
 // Validate Nigerian license number
 export const isValidLicenseNumber = (license: string): boolean => {
-  // Basic validation - adjust based on actual license format
   return license.trim().length >= 5;
 };
 
@@ -98,9 +96,4 @@ export const isValidUrl = (url: string): boolean => {
   } catch {
     return false;
   }
-};
-
-// Validate OTP
-export const isValidOTP = (otp: string): boolean => {
-  return /^\d{4,6}$/.test(otp);
 };

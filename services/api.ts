@@ -1,9 +1,6 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
 import * as SecureStore from 'expo-secure-store';
-import NetInfo from '@react-native-community/netinfo';
-import { Alert } from 'react-native';
 import { API_CONFIG } from '@utils/constants';
-import { APIError, AuthResponse } from '@/types';
 
 class APIService {
   private api: AxiosInstance;
@@ -12,51 +9,10 @@ class APIService {
     onSuccess: (token: string) => void;
     onFailed: (error: AxiosError) => void;
   }> = [];
-  private readonly RETRY_CONFIG = {
-    maxRetries: 3,
-    baseDelayMs: 500,
-    maxDelayMs: 5000,
-    retryableStatusCodes: [408, 429, 500, 502, 503, 504],
-  };
-  private lastNetworkAlertAt = 0;
-  private wasOffline = false;
-
-  private notifyNetworkStatus = (isOffline: boolean, message?: string): void => {
-    const now = Date.now();
-    const minIntervalMs = 10000;
-    const stateChanged = this.wasOffline !== isOffline;
-
-    if (!stateChanged && now - this.lastNetworkAlertAt < minIntervalMs) {
-      return;
-    }
-
-    this.wasOffline = isOffline;
-    this.lastNetworkAlertAt = now;
-
-    if (isOffline) {
-      Alert.alert('Network Offline', message || 'You are offline. Retrying automatically...');
-    } else {
-      Alert.alert('Back Online', 'Connection restored. Continuing requests.');
-    }
-  };
-
-  private isFormDataPayload = (data: any): boolean => {
-    if (!data) return false;
-    if (typeof FormData !== 'undefined' && data instanceof FormData) return true;
-    return typeof data?.append === 'function' && typeof data?.getParts === 'function';
-  };
-
-  private normalizeBaseUrl = (url: string): string => {
-    const trimmed = url.replace(/\/+$/, '');
-    if (trimmed.endsWith('/api')) {
-      return trimmed;
-    }
-    return `${trimmed}/api`;
-  };
 
   constructor() {
     this.api = axios.create({
-      baseURL: this.normalizeBaseUrl(API_CONFIG.url),
+      baseURL: API_CONFIG.url,
       timeout: API_CONFIG.timeout,
       headers: {
         'Content-Type': 'application/json',
@@ -66,27 +22,10 @@ class APIService {
     // Request interceptor
     this.api.interceptors.request.use(
       async (config: InternalAxiosRequestConfig) => {
-        if (config.baseURL) {
-          config.baseURL = this.normalizeBaseUrl(config.baseURL);
-        }
-
-        if (this.isFormDataPayload(config.data)) {
-          config.headers['Content-Type'] = 'multipart/form-data';
-        }
-
         const token = await SecureStore.getItemAsync('authToken');
-        console.log('📤 [API] Request interceptor - authToken from store:', token ? '✓ found' : '✗ not found');
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
-          console.log('📤 [API] Bearer token added to headers, length:', token.length);
-        } else {
-          console.warn('⚠️  [API] No authToken in SecureStore, request will be sent without auth');
         }
-        const baseUrl = config.baseURL || this.normalizeBaseUrl(API_CONFIG.url);
-        const fullUrl = `${baseUrl}${config.url || ''}`;
-        console.log('📤 [API] Request URL:', config.url);
-        console.log('📤 [API] Full URL:', fullUrl);
-        console.log('📤 [API] Request headers:', Object.keys(config.headers));
         return config;
       },
       (error) => Promise.reject(error)
@@ -121,29 +60,19 @@ class APIService {
       try {
         const refreshToken = await SecureStore.getItemAsync('refreshToken');
         if (!refreshToken) {
-          console.warn('⚠️  [API] No refresh token available, clearing auth and redirecting to login');
-          this.failedQueue.forEach((prom) => prom.onFailed(new Error('No refresh token') as any));
-          this.failedQueue = [];
           await SecureStore.deleteItemAsync('authToken');
           await SecureStore.deleteItemAsync('refreshToken');
-          delete this.api.defaults.headers.common.Authorization;
-          
-          // Return a proper error that won't crash the app
-          return Promise.reject({
-            code: 'AUTH_REQUIRED',
-            message: 'Authentication required. Please log in again.',
-            statusCode: 401,
-          });
+          this.isRefreshing = false;
+          return Promise.reject(error);
         }
 
-        const response = await axios.post<AuthResponse>(
+        const response = await axios.post<{ token: string }>(
           `${API_CONFIG.url}/auth/refresh`,
           { refreshToken }
         );
 
         const { token } = response.data;
         await SecureStore.setItemAsync('authToken', token);
-
         this.api.defaults.headers.common.Authorization = `Bearer ${token}`;
         originalRequest.headers.Authorization = `Bearer ${token}`;
 
@@ -152,402 +81,306 @@ class APIService {
 
         return this.api(originalRequest);
       } catch (err) {
-        console.error('❌ [API] Token refresh failed:', (err as any)?.message);
-        this.failedQueue.forEach((prom) => prom.onFailed(err as AxiosError));
+        this.failedQueue.forEach((prom) => prom.onFailed(err as any));
         this.failedQueue = [];
-        await SecureStore.deleteItemAsync('authToken');
-        await SecureStore.deleteItemAsync('refreshToken');
-        delete this.api.defaults.headers.common.Authorization;
-        throw err;
+        return Promise.reject(err);
       } finally {
         this.isRefreshing = false;
       }
     }
 
-    return this.formatError(error);
+    return Promise.reject(error);
   };
 
-  private formatError = (error: AxiosError): Promise<never> => {
-    let formattedError: APIError;
+  async get<T>(url: string, config?: any): Promise<T> {
+    const response = await this.api.get<T>(url, config);
+    return response.data;
+  }
 
-    if (error.response) {
-      const data = error.response.data as any;
-      console.log('📡 [API] Backend error response received:', {
-        status: error.response.status,
-        statusText: error.response.statusText,
-        headers: error.response.headers,
-        data: data
-      });
-      formattedError = {
-        code: data?.code || 'UNKNOWN_ERROR',
-        message: data?.message || data?.error || 'An error occurred',
-        statusCode: error.response.status,
-        details: data?.details || data?.error,
-      };
-      // Log full backend error for debugging
-      console.error('📡 Backend detailed error:', JSON.stringify(data, null, 2));
-    } else if (error.request) {
-      console.log('📡 [API] Network request failed (no response)');
-      formattedError = {
-        code: 'NETWORK_ERROR',
-        message: 'Network error. Please check your connection.',
-        statusCode: 0,
-      };
-      this.notifyNetworkStatus(true, 'Network is unstable or unavailable. Retrying...');
-    } else {
-      console.error('📡 [API] Client error:', error.message);
-      formattedError = {
-        code: 'CLIENT_ERROR',
-        message: error.message || 'An unexpected error occurred',
-        statusCode: 0,
-      };
-      console.error('📡 Client error:', error.message);
-    }
+  async post<T>(url: string, data?: any, config?: any): Promise<T> {
+    const response = await this.api.post<T>(url, data, config);
+    return response.data;
+  }
 
-    if (formattedError.code !== 'NETWORK_ERROR') {
-      console.error('❌ [API] Formatted error to throw:', JSON.stringify(formattedError, null, 2));
-    }
+  async put<T>(url: string, data?: any, config?: any): Promise<T> {
+    const response = await this.api.put<T>(url, data, config);
+    return response.data;
+  }
 
-    return Promise.reject(formattedError);
-  };
+  async patch<T>(url: string, data?: any, config?: any): Promise<T> {
+    const response = await this.api.patch<T>(url, data, config);
+    return response.data;
+  }
 
-  private async retryWithBackoff<T>(
-    fn: () => Promise<T>,
-    endpoint: string = 'unknown'
-  ): Promise<T> {
-    let lastError: any;
-    
-    for (let attempt = 0; attempt < this.RETRY_CONFIG.maxRetries; attempt++) {
-      try {
-        const netState = await NetInfo.fetch();
-        const isOffline = !netState.isConnected || netState.isInternetReachable === false;
-
-        if (isOffline) {
-          this.notifyNetworkStatus(true, 'You are offline. Waiting for network and retrying...');
-          if (attempt < this.RETRY_CONFIG.maxRetries - 1) {
-            const delayMs = Math.min(
-              this.RETRY_CONFIG.baseDelayMs * Math.pow(2, attempt),
-              this.RETRY_CONFIG.maxDelayMs
-            );
-            await new Promise(resolve => setTimeout(resolve, delayMs));
-            continue;
-          }
-
-          throw {
-            code: 'NETWORK_OFFLINE',
-            message: 'You are offline. Please reconnect and try again.',
-            statusCode: 0,
-          };
-        }
-
-        if (this.wasOffline) {
-          this.notifyNetworkStatus(false);
-        }
-
-        console.log(`🔄 [RETRY] Attempt ${attempt + 1}/${this.RETRY_CONFIG.maxRetries} for ${endpoint}`);
-        return await fn();
-      } catch (error: any) {
-        lastError = error;
-        
-        // Don't retry for 4xx errors (except 408) or auth errors
-        const statusCode = error?.statusCode || error?.response?.status;
-        const message = String(error?.message || error?.details || "").toLowerCase();
-        const transient400 =
-          statusCode === 400 &&
-          (message.includes('fetch failed') ||
-            message.includes('network') ||
-            message.includes('ecconn') ||
-            message.includes('timeout'));
-        const shouldRetry = 
-          (this.RETRY_CONFIG.retryableStatusCodes.includes(statusCode)) ||
-          transient400 ||
-          (error?.code === 'NETWORK_ERROR' && attempt < this.RETRY_CONFIG.maxRetries - 1);
-        
-        if (!shouldRetry) {
-          console.log(`⏹️  [RETRY] Not retryable for ${endpoint} (status: ${statusCode})`);
-          throw error;
-        }
-        
-        if (attempt < this.RETRY_CONFIG.maxRetries - 1) {
-          const delayMs = Math.min(
-            this.RETRY_CONFIG.baseDelayMs * Math.pow(2, attempt),
-            this.RETRY_CONFIG.maxDelayMs
-          );
-          console.log(`⏳ [RETRY] Waiting ${delayMs}ms before retry...`);
-          await new Promise(resolve => setTimeout(resolve, delayMs));
-        }
-      }
-    }
-    
-    console.error(`❌ [RETRY] All ${this.RETRY_CONFIG.maxRetries} attempts failed for ${endpoint}`);
-    throw lastError;
-  };
+  async delete<T>(url: string, config?: any): Promise<T> {
+    const response = await this.api.delete<T>(url, config);
+    return response.data;
+  }
 
   // Auth endpoints
-  async login(emailOrPhone: string, password: string): Promise<AuthResponse> {
+  async login(emailOrPhone: string, password: string): Promise<any> {
     // Support both email and phone login
+    // Detect if it's a phone number using E.164 format or Nigerian format
     const isPhone = /^\+?[0-9]\d{1,14}$/.test(emailOrPhone.replace(/\s/g, ''));
     
     const payload = isPhone 
       ? { phone: emailOrPhone, password }
       : { email: emailOrPhone, password };
     
-    console.log('📤 [API] Sending login request:', {
-      endpoint: '/auth/login',
-      payload: {
-        ...payload,
-        password: '***'
-      },
-      detectedType: isPhone ? 'phone' : 'email'
-    });
-
-    try {
-      const response = await this.api.post<AuthResponse>('/auth/login', payload);
-      console.log('✅ [API] Login response received:', {
-        hasToken: !!response.data.token,
-        hasRefreshToken: !!response.data.refreshToken,
-        hasUser: !!response.data.user,
-        status: response.status
-      });
-      console.log('🔍 [API] Response.data structure:', Object.keys(response.data));
-      console.log('🔍 [API] User object:', response.data.user ? {
-        hasRole: !!response.data.user.role,
-        role: response.data.user.role,
-        id: response.data.user.id,
-        userKeys: Object.keys(response.data.user)
-      } : 'NO USER');
-      return response.data;
-    } catch (error) {
-      console.error('❌ [API] Login request failed:', error);
-      throw error;
-    }
+    return this.post('/auth/login', payload);
   }
 
-  async signup(payload: any): Promise<AuthResponse> {
-    const config = this.isFormDataPayload(payload)
-      ? { headers: { 'Content-Type': 'multipart/form-data' } }
-      : undefined;
-
-    try {
-      const response = await this.api.post<AuthResponse>('/auth/signup', payload, config);
-      return response.data;
-    } catch (error: any) {
-      if (error?.response?.status === 404) {
-        const fallbackResponse = await this.api.post<AuthResponse>('/auth/register', payload, config);
-        return fallbackResponse.data;
-      }
-      throw error;
+  async signup(data: any): Promise<any> {
+    // Check if data is FormData
+    const isFormData = typeof FormData !== 'undefined' && data instanceof FormData;
+    
+    if (isFormData) {
+      return this.post('/auth/signup', data, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
     }
+    
+    return this.post('/auth/signup', data);
   }
 
   async verifyOTP(phone: string, otp: string): Promise<{ verified: boolean }> {
-    const response = await this.api.post('/auth/verify-otp', { phone, otp });
-    return response.data;
+    return this.post('/auth/verify-otp', { phone, otp });
   }
 
-  async resetPassword(email: string): Promise<{ message: string }> {
-    const response = await this.api.post('/auth/reset-password', { email });
-    return response.data;
+  async resetPassword(emailOrPhone: string): Promise<{ message: string }> {
+    // Support both email and phone for password reset
+    const isPhone = /^\+?[0-9]\d{1,14}$/.test(emailOrPhone.replace(/\s/g, ''));
+    
+    const payload = isPhone 
+      ? { phone: emailOrPhone }
+      : { email: emailOrPhone };
+    
+    return this.post('/auth/reset-password', payload);
+  }
+
+  async logout(): Promise<void> {
+    try {
+      // Send empty object as body to satisfy server requirements
+      return await this.post('/auth/logout', {});
+    } catch (error: any) {
+      // Log but don't fail logout - user should be able to logout even if API fails
+      console.warn('⚠️  [API] Logout API request failed:', error?.message);
+      // Still resolve to allow local logout to proceed
+      return;
+    }
+  }
+
+  // Referral endpoints
+  async getReferralCode(): Promise<any> {
+    try {
+      const res = await this.get('/user/referrals');
+      console.log('🔍 [API] getReferralCode raw response:', JSON.stringify(res));
+      return res;
+    } catch (error: any) {
+      console.warn('⚠️  [API] Failed to fetch referral code:', error?.message);
+      // Return graceful default if endpoint doesn't exist yet
+      return { referralCode: { referral_code: '' }, referral_code: '' };
+    }
+  }
+
+  async getReferrals(): Promise<any> {
+    try {
+      return this.get('/user/referrals');
+    } catch (error: any) {
+      console.warn('⚠️  [API] Failed to fetch referrals:', error?.message);
+      // Return graceful default if endpoint doesn't exist yet
+      return { referrals: [], referralCode: '', referral_code: '' };
+    }
+  }
+
+  async updateReferralCode(): Promise<any> {
+    try {
+      return this.post('/user/referral/generate');
+    } catch (error: any) {
+      console.warn('⚠️  [API] Failed to generate new referral code:', error?.message);
+      return { referralCode: '', referral_code: '' };
+    }
   }
 
   // Rider endpoints
   async getRiderProfile(): Promise<any> {
-    const response = await this.api.get('/riders/profile');
-    return response.data;
+    return this.get('/riders/profile');
   }
 
   async updateRiderProfile(data: any): Promise<any> {
-    const response = await this.api.post('/riders/profile', data);
-    return response.data;
+    return this.post('/riders/profile', data);
   }
 
   async getRiderRides(limit: number = 20): Promise<any> {
-    const response = await this.api.get('/rides', {
-      params: { limit },
-    });
-    return response.data;
+    return this.get('/rides', { params: { limit } });
   }
 
   // Ride endpoints
   async createRide(rideData: any): Promise<any> {
     console.log('📤 [API] Create ride payload:', rideData);
-    const response = await this.api.post('/user/book-ride', rideData);
-    console.log('📥 [API] Create ride response:', response.data);
-    return response.data;
+    const response = await this.post('/user/book-ride', rideData);
+    console.log('📥 [API] Create ride response:', response);
+    return response;
   }
 
   async getRide(rideId: string): Promise<any> {
-    const response = await this.api.get(`/rides/${rideId}`);
-    return response.data;
+    return this.get(`/rides/${rideId}`);
   }
 
   async updateRide(rideId: string, updates: any): Promise<any> {
-    const response = await this.api.put(`/rides/${rideId}`, updates);
-    return response.data;
+    return this.put(`/rides/${rideId}`, updates);
   }
 
   async cancelRide(rideId: string, reason?: string): Promise<any> {
-    const response = await this.api.put(`/rides/${rideId}`, {
+    return this.put(`/rides/${rideId}`, {
       status: 'cancelled',
       cancellationReason: reason,
     });
-    return response.data;
   }
 
-  // Driver endpoints
-  async getDriverProfile(): Promise<any> {
-    const response = await this.api.get('/drivers/profile');
-    return response.data;
+  async getRideHistory(limit: number = 20): Promise<any> {
+    return this.get('/user/ride-history', { params: { limit } });
   }
 
-  async updateDriverProfile(data: any): Promise<any> {
-    const response = await this.api.post('/drivers/profile', data);
-    return response.data;
+  async getWalletBalance(): Promise<any> {
+    return this.get('/user/wallet');
   }
 
-  async getDriverDetails(): Promise<any> {
-    const response = await this.api.get('/driver/details');
-    return response.data;
-  }
-
-  async getDriverStatus(): Promise<any> {
-    return this.retryWithBackoff(
-      () => this.api.get('/driver/status').then(r => r.data),
-      '/driver/status'
-    );
-  }
-
-  async setDriverStatus(status: 'online' | 'offline'): Promise<any> {
-    const response = await this.api.put('/driver/status', { status });
-    return response.data;
-  }
-
-  async getAvailableRides(latitude?: number, longitude?: number, radiusKm: number = 15): Promise<any> {
-    const params: any = { radiusKm };
-    if (latitude !== undefined && longitude !== undefined) {
-      params.latitude = latitude;
-      params.longitude = longitude;
-    }
-    return this.retryWithBackoff(
-      () => this.api.get('/driver/available-rides', { params }).then(r => r.data),
-      '/driver/available-rides'
-    );
-  }
-
-  async getActiveRides(): Promise<any> {
-    return this.retryWithBackoff(
-      () => this.api.get('/driver/active-rides').then(r => r.data),
-      '/driver/active-rides'
-    );
-  }
-
-  async acceptRide(rideId: string): Promise<any> {
-    const response = await this.api.post('/driver/accept-ride', { rideId });
-    return response.data;
-  }
-
-  async updateRideStatus(rideId: string, status: 'in_progress' | 'completed'): Promise<any> {
-    const response = await this.api.post('/driver/update-ride-status', { rideId, status });
-    return response.data;
-  }
-
-  // Location endpoints
-  async postLocation(rideId: string, location: any): Promise<any> {
-    const response = await this.api.post('/ride-location', {
-      rideId,
-      ...location,
-    });
-    return response.data;
-  }
-
-  async getLiveLocation(rideId: string): Promise<any> {
-    const response = await this.api.get(`/ride-location/${rideId}`);
-    return response.data;
-  }
-
-  // Wallet and Payment endpoints
-  async getPaymentStatus(driverId: string): Promise<any> {
-    const response = await this.api.get(`/driver/payment-status?driver_id=${driverId}`);
-    return response.data;
-  }
-
-  async getDriverSettlementStatus(): Promise<any> {
-    return this.retryWithBackoff(
-      () => this.api.get('/driver/settlement/status').then(r => r.data),
-      '/driver/settlement/status'
-    );
-  }
-
-  async getDriverDailySettlement(date?: string): Promise<any> {
-    return this.retryWithBackoff(
-      () => this.api.get('/driver/settlement/daily', {
-        params: date ? { date } : undefined,
-      }).then(r => r.data),
-      '/driver/settlement/daily'
-    );
-  }
-
-  async initiateDriverSettlementPayment(payload?: { date?: string }): Promise<any> {
-    const response = await this.api.post('/driver/settlement/initiate', payload || {});
-    return response.data;
-  }
-
-  async verifyDriverSettlementPayment(reference: string): Promise<any> {
-    return this.retryWithBackoff(
-      () => this.api.post('/driver/settlement/verify', { reference }).then(r => r.data),
-      '/driver/settlement/verify'
-    );
-  }
-
-  async verifyAllPendingPayments(): Promise<any> {
-    return this.retryWithBackoff(
-      () => this.api.post('/driver/settlement/verify-all').then(r => r.data),
-      '/driver/settlement/verify-all'
-    );
-  }
-
-  async getWallet(): Promise<any> {
-    // Deprecated: Use getPaymentStatus instead
-    const response = await this.api.get('/driver/payment-status');
-    return response.data;
-  }
-
-  async getTransactions(page: number = 1): Promise<any> {
-    const response = await this.api.get('/driver/ride-history', {
-      params: { page },
-    });
-    return response.data;
-  }
-
-  async getEarnings(timeframe: string = 'day'): Promise<any> {
-    const response = await this.api.get('/driver/earnings', {
-      params: { timeframe },
-    });
-    return response.data;
-  }
-
-  // Rating endpoints
   async submitRating(rideId: string, rating: number, review?: string): Promise<any> {
-    const response = await this.api.post(`/rides/${rideId}/rating`, {
-      rating,
-      review,
-    });
-    return response.data;
+    return this.post(`/rides/${rideId}/rating`, { rating, review });
   }
 
-  // Notifications
+  // Notifications endpoints
   async getNotifications(page: number = 1, limit: number = 20): Promise<any> {
-    const response = await this.api.get('/user/notifications', {
-      params: { page, limit },
-    });
-    return response.data;
+    try {
+      return this.get('/user/notifications', { params: { page, limit } });
+    } catch (error: any) {
+      console.warn('⚠️  [API] Failed to fetch notifications:', error?.message);
+      // Return graceful default if endpoint doesn't exist yet
+      return { notifications: [] };
+    }
   }
 
   async markNotificationAsRead(notificationId: string): Promise<any> {
-    const response = await this.api.patch('/user/notifications', {
-      notificationId,
-    });
-    return response.data;
+    return this.patch('/user/notifications', { notificationId });
+  }
+
+  // Driver endpoints
+  async getDriverDetails(): Promise<any> {
+    try {
+      return this.get('/driver/details');
+    } catch (error: any) {
+      console.warn('⚠️  [API] Failed to fetch driver details:', error?.message);
+      return { driver: {} };
+    }
+  }
+
+  async getDriverStatus(): Promise<any> {
+    try {
+      return this.get('/driver/status');
+    } catch (error: any) {
+      console.warn('⚠️  [API] Failed to fetch driver status:', error?.message);
+      return { status: 'offline' };
+    }
+  }
+
+  async setDriverStatus(status: 'online' | 'offline'): Promise<any> {
+    try {
+      return this.put('/driver/status', { status });
+    } catch (error: any) {
+      console.error('❌ [API] Failed to set driver status:', error?.message);
+      throw error;
+    }
+  }
+
+  async getActiveRides(): Promise<any> {
+    try {
+      return this.get('/driver/active-rides');
+    } catch (error: any) {
+      console.warn('⚠️  [API] Failed to fetch active rides:', error?.message);
+      return { rides: [] };
+    }
+  }
+
+  async getAvailableRides(latitude?: number, longitude?: number, radius?: number): Promise<any> {
+    try {
+      const params: any = {};
+      if (latitude) params.latitude = latitude;
+      if (longitude) params.longitude = longitude;
+      if (radius) params.radius = radius;
+      
+      return this.get('/driver/available-rides', { params });
+    } catch (error: any) {
+      console.warn('⚠️  [API] Failed to fetch available rides:', error?.message);
+      return { rides: [] };
+    }
+  }
+
+  async getDriverSettlementStatus(): Promise<any> {
+    try {
+      return this.get('/driver/settlement/status');
+    } catch (error: any) {
+      console.warn('⚠️  [API] Failed to fetch settlement status:', error?.message);
+      return { blocked: false, totalOutstanding: 0 };
+    }
+  }
+
+  async getDriverDailySettlement(): Promise<any> {
+    try {
+      return this.get('/driver/settlement/daily');
+    } catch (error: any) {
+      console.warn('⚠️  [API] Failed to fetch daily settlement:', error?.message);
+      return { settlement: { totalDriverEarnings: 0 }, totals: { netDriverEarnings: 0 } };
+    }
+  }
+
+  async getDriverProfile(): Promise<any> {
+    try {
+      return this.get('/driver/details');
+    } catch (error: any) {
+      console.warn('⚠️  [API] Failed to fetch driver profile:', error?.message);
+      return {};
+    }
+  }
+
+  async updateDriverProfile(data: any): Promise<any> {
+    try {
+      return this.post('/driver/details', data);
+    } catch (error: any) {
+      console.warn('⚠️  [API] Failed to update driver profile:', error?.message);
+      return {};
+    }
+  }
+
+  async getEarnings(timeframe: string = 'day'): Promise<any> {
+    try {
+      // Normalize timeframe parameter to match backend expectations
+      const validTimeframe = ['day', 'week', 'month', 'year', 'all'].includes(timeframe) ? timeframe : 'day';
+      return this.get('/driver/earnings', { params: { timeframe: validTimeframe } });
+    } catch (error: any) {
+      console.warn('⚠️  [API] Failed to fetch earnings:', error?.message);
+      return { earnings: { total_ride_earnings: 0 } };
+    }
+  }
+
+  async verifyAllPendingPayments(driverId?: string): Promise<any> {
+    try {
+      // Try GET first, fall back to other endpoints if needed
+      const url = driverId ? `/driver/payment-status?driver_id=${driverId}` : '/driver/payment-status';
+      return this.get(url);
+    } catch (error: any) {
+      console.warn('⚠️  [API] Failed to verify pending payments:', error?.message);
+      return { verified: [], updated: 0 };
+    }
+  }
+
+  async getTransactions(page: number = 1): Promise<any> {
+    try {
+      return this.get('/driver/ride-history', { params: { page } });
+    } catch (error: any) {
+      console.warn('⚠️  [API] Failed to fetch transactions:', error?.message);
+      return { transactions: [], rides: [] };
+    }
   }
 
   // Generic methods
@@ -574,35 +407,6 @@ class APIService {
   async delete<T = any>(url: string, config?: any): Promise<T> {
     const response = await this.api.delete<T>(url, config);
     return response.data;
-  }
-
-  // Set auth token
-  async setAuthToken(token: string, refreshToken: string): Promise<void> {
-    try {
-      console.log('💾 [API] Setting auth token, token length:', token.length);
-      await SecureStore.setItemAsync('authToken', token);
-      console.log('✅ [API] authToken stored in SecureStore');
-      
-      await SecureStore.setItemAsync('refreshToken', refreshToken);
-      console.log('✅ [API] refreshToken stored in SecureStore');
-      
-      this.api.defaults.headers.common.Authorization = `Bearer ${token}`;
-      console.log('✅ [API] Bearer token set in axios defaults');
-      
-      // Verify it was stored
-      const storedToken = await SecureStore.getItemAsync('authToken');
-      console.log('🔍 [API] Verification - authToken in store:', storedToken ? '✓ yes' : '✗ NOT FOUND');
-    } catch (error) {
-      console.error('❌ [API] ERROR storing auth token:', error);
-      throw error;
-    }
-  }
-
-  // Clear auth token
-  async clearAuthToken(): Promise<void> {
-    await SecureStore.deleteItemAsync('authToken');
-    await SecureStore.deleteItemAsync('refreshToken');
-    delete this.api.defaults.headers.common.Authorization;
   }
 }
 

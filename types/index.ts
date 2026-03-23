@@ -1,5 +1,5 @@
 // User Types
-export type UserRole = 'rider' | 'driver' | 'admin';
+export type UserRole = 'rider' | 'driver' | 'admin' | 'user';
 
 export interface BaseUser {
   id: string;
@@ -13,7 +13,7 @@ export interface BaseUser {
 }
 
 export interface Rider extends BaseUser {
-  role: 'rider';
+  role: 'rider' | 'user';
   homeAddress?: string;
   workAddress?: string;
   emergencyContact?: {
@@ -29,11 +29,12 @@ export interface Driver extends BaseUser {
   role: 'driver';
   licenseNumber: string;
   licenseExpiry: string;
-  vehicleType: 'keke' | 'bike' | 'car';
+  vehicleType: 'keke' | 'bike' | 'car' | 'okada';
   vehicleMake: string;
   vehicleModel: string;
   vehicleColor: string;
   vehicleRegistration: string;
+  plateNumber?: string;
   operatingZones: string[];
   isVerified: boolean;
   isActive: boolean;

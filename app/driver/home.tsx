@@ -21,6 +21,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter, useFocusEffect } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
+import CtaCarousel, { CtaCard } from '@/components/CtaCarousel';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/context/AuthContext';
 import { useLocation } from '@/context/LocationContext';
@@ -34,6 +35,7 @@ import { HomeSkeleton } from '@/components/HomeSkeleton';
 import SupportFloatingWidget from '@/components/SupportFloatingWidget';
 import { formatCurrency } from '@/utils/formatting';
 import { BRAND, COLORS } from '@/utils/colors';
+import { useAutoUpdateCheck } from '@/hooks/useAutoUpdateCheck';
 
 const { width } = Dimensions.get('window');
 
@@ -51,6 +53,9 @@ export default function DriverHomeScreen() {
   const { currentLocation } = useLocation();
   const { theme, mode, toggleTheme } = useTheme();
   const { unreadCount, resetUnreadCount, incrementUnreadCount } = useNotificationBadge();
+  
+  // Auto-check for updates on app startup
+  useAutoUpdateCheck(true);
   
   const [refreshing, setRefreshing] = useState(false);
   const [isOnline, setIsOnline] = useState(false);
@@ -280,7 +285,7 @@ export default function DriverHomeScreen() {
   }, [activeRides, recentRides]);
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+    <View style={[styles.container, { backgroundColor: isLight ? COLORS.light.background : COLORS.dark.background }]}>
       <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
       
       {loading && !driverData ? (
@@ -442,6 +447,7 @@ export default function DriverHomeScreen() {
                   return markers;
                 })}
               </MapboxMap>
+              {/* CTA Carousel moved below mapSection */}
               {mapRides.length > 0 && (
                 <View style={[styles.mapInfo, { backgroundColor: theme.colors.surface }]}> 
                   <Text numberOfLines={1} style={[styles.mapInfoText, { color: theme.colors.textPrimary }]}>
@@ -457,6 +463,36 @@ export default function DriverHomeScreen() {
                    {currentLocation ? 'You are here' : 'Locating...'}
                 </Text>
               </View>
+          </View>
+
+          {/* CTA Carousel (driver-only cards) - placed under map and above recent/available rides */}
+          <View style={[styles.paddingH, { marginTop: 16 }]}> 
+            <CtaCarousel
+              items={[
+                {
+                  id: 'earn-more',
+                  title: 'View Earnings',
+                  subtitle: 'See how much you earned today and withdraw.',
+                  label: 'Earnings',
+                  onPress: () => router.push('/driver/earnings'),
+                } as CtaCard,
+                {
+                  id: 'settlement',
+                  title: 'Settlement Status',
+                  subtitle: 'Check outstanding settlements and remittance details.',
+                  label: 'Settlements',
+                  onPress: () => router.push('/driver/wallet'),
+                } as CtaCard,
+                {
+                  id: 'refer',
+                  title: 'Refer a friend',
+                  subtitle: 'Share your referral code and earn rewards.',
+                  label: 'Share',
+                  share: true,
+                  onPress: () => router.push('/driver/referrals'),
+                } as CtaCard,
+              ]}
+            />
           </View>
 
           {isOnline && availableRides.length > 0 ? (

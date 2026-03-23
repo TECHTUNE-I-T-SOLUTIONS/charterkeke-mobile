@@ -1,10 +1,20 @@
 import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet } from 'react-native';
-import Mapbox from '@rnmapbox/maps';
+import { View, StyleSheet, Text } from 'react-native';
+let Mapbox: any = null;
+try {
+  // Try to require native Mapbox module. In Expo Go this will fail — provide a safe fallback.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  Mapbox = require('@rnmapbox/maps');
+} catch (err) {
+  console.warn('⚠️ [MapboxMap] Native @rnmapbox/maps not available, falling back to placeholder map.');
+  Mapbox = null;
+}
 import { useTheme } from '@/context/ThemeContext';
 
-// Set Mapbox access token
-Mapbox.setAccessToken(process.env.EXPO_PUBLIC_MAPBOX_PUBLIC_TOKEN || '');
+// Set Mapbox access token when module is available
+if (Mapbox && typeof Mapbox.setAccessToken === 'function') {
+  Mapbox.setAccessToken(process.env.EXPO_PUBLIC_MAPBOX_PUBLIC_TOKEN || '');
+}
 
 interface MapboxMapProps {
   latitude?: number;
@@ -23,7 +33,7 @@ interface MapboxMapProps {
   style?: any;
 }
 
-export const MapboxMap = React.forwardRef<Mapbox.MapView, MapboxMapProps>(
+export const MapboxMap = React.forwardRef<any, MapboxMapProps>(
   (
     {
       latitude = 6.5244,
@@ -68,6 +78,19 @@ export const MapboxMap = React.forwardRef<Mapbox.MapView, MapboxMapProps>(
       });
     };
 
+    if (!Mapbox) {
+      // Fallback view for environments without native Mapbox (Expo Go)
+      return (
+        <View style={[styles.container, style, { justifyContent: 'center', alignItems: 'center' }]}> 
+          {/* Minimal placeholder so route renders without crashing */}
+          <View style={{ padding: 12 }}>
+            <Text style={{ color: isLight ? '#111' : '#fff' }}>Map unavailable in this build.</Text>
+          </View>
+          {children}
+        </View>
+      );
+    }
+
     return (
       <View style={[styles.container, style]}>
         <Mapbox.MapView
@@ -91,7 +114,6 @@ export const MapboxMap = React.forwardRef<Mapbox.MapView, MapboxMapProps>(
               heading: bearing,
             }}
           />
-          
           {children}
         </Mapbox.MapView>
       </View>
@@ -118,6 +140,15 @@ export const MapboxMarker: React.FC<MarkerProps> = ({
   color = '#3B82F6',
   onPress,
 }) => {
+  // If native Mapbox isn't available (Expo Go), avoid accessing Mapbox.PointAnnotation
+  if (!Mapbox) {
+    return (
+      <View style={{ padding: 6, alignItems: 'center' }}>
+        <Text style={{ fontSize: 12, color: '#888' }}>{title}</Text>
+      </View>
+    );
+  }
+
   return (
     <Mapbox.PointAnnotation
       id={id}

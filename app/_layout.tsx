@@ -1,7 +1,6 @@
 import React, { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { COLORS } from '@utils/colors';
 import { AuthProvider } from '@context/AuthContext';
 import { LocationProvider } from '@context/LocationContext';
 import { RideProvider } from '@context/RideContext';
@@ -9,7 +8,7 @@ import { ThemeProvider } from '@context/ThemeContext';
 import { AlertProvider } from '@context/AlertContext';
 import { NotificationProvider } from '@context/NotificationContext';
 import { configureNotifications, registerBackgroundNotificationTask } from '@services/notificationService';
-import { AppErrorBoundary } from '@/components/AppErrorBoundary';
+import { AppErrorBoundary } from '@components/AppErrorBoundary';
 
 // Create a client for React Query
 const queryClient = new QueryClient({
