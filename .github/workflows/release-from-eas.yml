@@ -11,6 +11,7 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+    environment: production
     steps:
       - uses: actions/checkout@v4
       
@@ -25,7 +26,9 @@ jobs:
         run: pnpm install --frozen-lockfile
       
       - name: Verify EAS Token
-        run: eas whoami
+        run: |
+          echo "EAS_TOKEN is set: $([ -z "$EAS_TOKEN" ] && echo 'NO' || echo 'YES')"
+          eas whoami
         env:
           EAS_TOKEN: ${{ secrets.EAS_TOKEN }}
       
