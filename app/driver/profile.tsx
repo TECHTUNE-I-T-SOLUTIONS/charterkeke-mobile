@@ -26,6 +26,7 @@ import { cacheService } from '@/services/cache';
 import { BRAND, COLORS } from '@/utils/colors';
 import { useUpdateChecker } from '@/hooks/useUpdateChecker';
 import { UpdateCheckerModal } from '@/components/UpdateCheckerModal';
+import { usePushNotificationToggle } from '@/hooks/usePushNotificationToggle';
 
 interface ProfileData {
   first_name: string;
@@ -45,7 +46,7 @@ export default function DriverProfileScreen() {
   const [profileData, setProfileData] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [showLogout, setShowLogout] = useState(false);
-  const [notifEnabled, setNotifEnabled] = useState(true);
+  const { isSubscribed, isLoading: notifLoading, error: notifError, toggleSubscription } = usePushNotificationToggle();
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const renderedOnce = useRef(false);
   const [hasCached, setHasCached] = useState(false);
@@ -270,14 +271,28 @@ export default function DriverProfileScreen() {
                    <View style={[styles.iconBox, { backgroundColor: theme.colors.inputBackground }]}>
                       <MaterialCommunityIcons name="bell-outline" size={20} color={theme.colors.textPrimary} />
                    </View>
-                   <Text style={[styles.menuText, { color: theme.colors.textPrimary }]}>Notifications</Text>
+                   <View>
+                      <Text style={[styles.menuText, { color: theme.colors.textPrimary }]}>Notifications</Text>
+                      {notifError ? (
+                        <Text style={{ fontSize: 11, color: '#E74C3C', marginTop: 2 }}>{notifError}</Text>
+                      ) : (
+                        <Text style={{ fontSize: 11, color: theme.colors.textSecondary, marginTop: 2 }}>
+                          {isSubscribed ? '✓ Enabled' : '✗ Disabled'}
+                        </Text>
+                      )}
+                   </View>
                 </View>
-                <Switch 
-                  value={notifEnabled} 
-                  onValueChange={setNotifEnabled} 
-                  trackColor={{ true: BRAND.primary, false: theme.colors.border }}
-                  thumbColor="#FFF"
-                />
+                {notifLoading ? (
+                  <ActivityIndicator size="small" color={BRAND.primary} />
+                ) : (
+                  <Switch 
+                    value={isSubscribed} 
+                    onValueChange={toggleSubscription} 
+                    disabled={notifLoading || Boolean(notifError)}
+                    trackColor={{ true: BRAND.primary, false: theme.colors.border }}
+                    thumbColor="#FFF"
+                  />
+                )}
              </View>
 
              <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary, marginTop: 24 }]}>SUPPORT</Text>

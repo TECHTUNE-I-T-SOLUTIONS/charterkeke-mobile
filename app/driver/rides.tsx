@@ -70,13 +70,13 @@ export default function RidesListScreen() {
       if (showLoader) setLoading(true);
       let data;
       if (activeTab === 'active') {
-        const response = await apiService.getActiveRides();
+        const response = (await apiService.getActiveRides()) as any;
         data = response?.rides || [];
       } else if (activeTab === 'available') {
-        const response = await apiService.get('/driver/available-rides?radiusKm=10').catch(() => ({ rides: [] }));
+        const response = (await apiService.get('/driver/available-rides?radiusKm=10').catch(() => ({ rides: [] }))) as any;
         data = response?.rides || [];
       } else {
-        const response = await apiService.getTransactions(1); // Assuming this returns history
+        const response = (await apiService.getTransactions(1)) as any; // Assuming this returns history
         data = response?.rides || [];
       }
       const nextRides = Array.isArray(data) ? data : [];

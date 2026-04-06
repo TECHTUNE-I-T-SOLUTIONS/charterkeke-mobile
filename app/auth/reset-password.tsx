@@ -148,13 +148,54 @@ export default function ResetPasswordScreen() {
 
     setIsLoading(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Call OTP request endpoint
+      const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'https://charterkeke.vercel.app/api';
+      console.log('[ResetPassword] Requesting OTP from:', `${API_BASE}/otp/request`);
+
+      const response = await fetch(`${API_BASE}/otp/request`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          type: 'forgot_password',
+        }),
+      });
+
+      console.log('[ResetPassword] OTP request response status:', response.status);
+
+      // Check content type first to avoid double reading
+      const contentType = response.headers.get('content-type');
+      let data;
+
+      if (contentType && contentType.includes('application/json')) {
+        try {
+          data = await response.json();
+        } catch (parseError) {
+          console.error('[ResetPassword] Failed to parse response as JSON:', parseError);
+          setErrors({ email: 'Server error. Please check your connection and try again.' });
+          return;
+        }
+      } else {
+        console.error('[ResetPassword] Response is not JSON, status:', response.status);
+        setErrors({ email: `Server error (${response.status}). Please try again.` });
+        return;
+      }
+
+      if (!response.ok) {
+        setErrors({ email: data?.message || data?.error || 'Failed to send OTP' });
+        console.error('[ResetPassword] OTP request failed:', data);
+        return;
+      }
+
       setCurrentStep('otp');
       setResendTimer(60);
       setErrors({});
       setTimeout(triggerAnimation, 100);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to send OTP');
+    } catch (error: any) {
+      console.error('Error sending OTP:', error);
+      Alert.alert('Error', `Failed to send OTP: ${error?.message || 'Network error'}`);
     } finally {
       setIsLoading(false);
     }
@@ -173,12 +214,49 @@ export default function ResetPasswordScreen() {
 
     setIsLoading(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Call OTP verify endpoint
+      const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'https://charterkeke.vercel.app/api';
+      const response = await fetch(`${API_BASE}/otp/verify`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          code: otp.trim(),
+          type: 'forgot_password',
+        }),
+      });
+
+      // Check content type first to avoid double reading
+      const contentType = response.headers.get('content-type');
+      let data;
+
+      if (contentType && contentType.includes('application/json')) {
+        try {
+          data = await response.json();
+        } catch (parseError) {
+          console.error('[ResetPassword] Failed to parse verify response:', parseError);
+          setErrors({ otp: 'Server error. Please try again.' });
+          return;
+        }
+      } else {
+        console.error('[ResetPassword] Response is not JSON, status:', response.status);
+        setErrors({ otp: `Server error (${response.status}). Please try again.` });
+        return;
+      }
+
+      if (!response.ok || !data.success) {
+        setErrors({ otp: data?.error || 'Invalid OTP' });
+        return;
+      }
+
       setCurrentStep('password');
       setErrors({});
       setTimeout(triggerAnimation, 100);
-    } catch (error) {
-      Alert.alert('Error', 'Invalid OTP');
+    } catch (error: any) {
+      console.error('Error verifying OTP:', error);
+      Alert.alert('Error', `Failed to verify OTP: ${error?.message || 'Invalid OTP'}`);
     } finally {
       setIsLoading(false);
     }
@@ -198,10 +276,50 @@ export default function ResetPasswordScreen() {
 
     setIsLoading(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      Alert.alert('Success', 'Password reset successfully!');
-      router.push('/auth/login-new');
+      // Call password reset endpoint
+      const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'https://charterkeke.vercel.app/api';
+      const response = await fetch(`${API_BASE}/auth/reset-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          newPassword: password,
+        }),
+      });
+
+      // Check content type first to avoid double reading
+      const contentType = response.headers.get('content-type');
+      let data;
+
+      if (contentType && contentType.includes('application/json')) {
+        try {
+          data = await response.json();
+        } catch (parseError) {
+          console.error('[ResetPassword] Failed to parse reset response:', parseError);
+          Alert.alert('Error', 'Server error. Please try again.');
+          return;
+        }
+      } else {
+        console.error('[ResetPassword] Response is not JSON, status:', response.status);
+        Alert.alert('Error', `Server error (${response.status}). Please try again.`);
+        return;
+      }
+
+      if (!response.ok) {
+        Alert.alert('Error', data?.error || data?.message || 'Failed to reset password');
+        return;
+      }
+
+      Alert.alert('Success', 'Password reset successfully!', [
+        {
+          text: 'OK',
+          onPress: () => router.push('/auth/login-new'),
+        },
+      ]);
     } catch (error) {
+      console.error('Error resetting password:', error);
       Alert.alert('Error', 'Failed to reset password');
     } finally {
       setIsLoading(false);

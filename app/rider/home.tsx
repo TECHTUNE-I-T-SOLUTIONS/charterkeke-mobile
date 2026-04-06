@@ -178,7 +178,7 @@ export default function RiderHomeScreen() {
       
       if (!isMountedRef.current) return;
       
-      const nextProfile = profileRes.user || profileRes;
+      const nextProfile = (profileRes as any)?.user || profileRes;
       setProfileData(nextProfile);
       console.log('✅ [RIDER-HOME] Profile loaded:', { hasProfile: !!nextProfile });
 
@@ -188,7 +188,7 @@ export default function RiderHomeScreen() {
       try {
         const historyRes = await apiService.get('/user/ride-history?limit=100');
         if (isMountedRef.current) {
-          const rides = historyRes.rides || [];
+          const rides = (historyRes as any)?.rides || [];
           const totalRides = rides.length;
           const averageRating = rides.length > 0 ? rides.reduce((sum: number, ride: any) => sum + (ride.rating || 0), 0) / rides.length : 0;
           nextStats = { ...nextStats, totalRides, averageRating };
@@ -206,7 +206,7 @@ export default function RiderHomeScreen() {
       try {
         const walletRes = await apiService.get('/user/wallet');
         if (isMountedRef.current) {
-          nextStats = { ...nextStats, walletBalance: walletRes.wallet?.balance || 0 };
+          nextStats = { ...nextStats, walletBalance: (walletRes as any)?.wallet?.balance || 0 };
           setRideStats(nextStats);
           console.log('✅ [RIDER-HOME] Wallet loaded:', { balance: nextStats.walletBalance });
         }

@@ -1,6 +1,15 @@
 import axios from 'axios';
 import * as Updates from 'expo-updates';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system';
+import * as Linking from 'expo-linking';
+import { Platform } from 'react-native';
+import {
+  getCurrentAppVersion,
+  compareVersions,
+  isUpdateAvailable,
+  isValidVersion,
+} from '@/utils/versionUtils';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000/api';
 
@@ -32,21 +41,17 @@ const CHECK_INTERVAL_HOURS = 24;
 
 export class UpdateService {
   /**
-   * Get the current app version from package.json or expo config
+   * Get the current app version from app.json or expo constants
+   * Uses the new version utility for reliability
    */
   static async getCurrentVersion(): Promise<string> {
     try {
-      // Try to get from Updates API first (Works in native builds)
-      if (Updates.manifest && (Updates.manifest as any).version) {
-        return (Updates.manifest as any).version;
-      }
-
-      // Fallback to stored version
-      const stored = await AsyncStorage.getItem('@chart_keke_app_version');
-      return stored || '1.0.0';
+      const version = getCurrentAppVersion();
+      console.log('[UpdateService] Current app version:', version);
+      return version;
     } catch (error) {
       console.error('[UpdateService] Error getting current version:', error);
-      return '1.0.0';
+      return '2.0.0';
     }
   }
 
@@ -74,9 +79,16 @@ export class UpdateService {
    */
   static async fetchLatestRelease(): Promise<GitHubRelease | null> {
     try {
-      // Use the backend API endpoint which handles GitHub rate limiting
+      // Use the API endpoint from environment or fallback
+      const apiUrl = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000/api';
+      
+      // Ensure the URL is properly formatted
+      const baseUrl = apiUrl.endsWith('/api') ? apiUrl : `${apiUrl}/api`;
+      
+      console.log('[UpdateService] Attempting to fetch latest release from:', `${baseUrl}/app/releases`);
+
       const response = await axios.get<GitHubRelease[]>(
-        `${API_URL}/app/releases?limit=1`,
+        `${baseUrl}/app/releases?limit=1`,
         {
           timeout: 10000,
         }
@@ -85,32 +97,42 @@ export class UpdateService {
       const releases = response.data;
       return releases.length > 0 ? releases[0] : null;
     } catch (error) {
-      console.error('[UpdateService] Error fetching latest release:', error);
-      return null;
+      console.error('[UpdateService] Error fetching latest release:', error instanceof Error ? error.message : error);
+      
+      // Fallback to checking GitHub directly if backend fails
+      try {
+        console.log('[UpdateService] Falling back to GitHub API...');
+        const gitHubResponse = await axios.get(
+          'https://api.github.com/repos/TECHTUNE-I-T-SOLUTIONS/charterkeke-mobile/releases/latest',
+          {
+            timeout: 10000,
+          }
+        );
+
+        const release = gitHubResponse.data;
+        
+        return {
+          version: release.tag_name?.replace(/^v/, '') || release.name || 'unknown',
+          releaseNotes: release.body || '',
+          assets: (release.assets || []).map((asset: any) => ({
+            name: asset.name,
+            downloadUrl: asset.browser_download_url,
+          })),
+        };
+      } catch (fallbackError) {
+        console.error('[UpdateService] Fallback GitHub API also failed:', fallbackError instanceof Error ? fallbackError.message : fallbackError);
+        return null;
+      }
     }
   }
 
   /**
-   * Compare versions (returns true if latestVersion > currentVersion)
+   * Compare semantic versions - delegates to utility function
+   * Returns true if latestVersion > currentVersion
    */
   static compareVersions(current: string, latest: string): boolean {
-    try {
-      const currentParts = current.split('.').map((v) => parseInt(v, 10));
-      const latestParts = latest.split('.').map((v) => parseInt(v, 10));
-
-      for (let i = 0; i < Math.max(currentParts.length, latestParts.length); i++) {
-        const curr = currentParts[i] || 0;
-        const next = latestParts[i] || 0;
-
-        if (next > curr) return true;
-        if (next < curr) return false;
-      }
-
-      return false; // Equal versions
-    } catch (error) {
-      console.error('[UpdateService] Error comparing versions:', error);
-      return false;
-    }
+    const comparison = compareVersions(current, latest);
+    return comparison < 0; // Returns true if latest > current
   }
 
   /**
@@ -163,8 +185,15 @@ export class UpdateService {
         asset.name.endsWith('.ipa')
       );
 
-      const downloadUrl =
-        apkAsset?.downloadUrl || iosAsset?.downloadUrl || '';
+      const assetFile = apkAsset || iosAsset;
+      
+      // Construct backend download URL instead of using GitHub URL directly
+      // Format: /api/app/download/[version]/[filename]
+      const downloadUrl = assetFile
+        ? `/api/app/download/${latestVersionTag}/${assetFile.name}`
+        : '';
+
+      console.log('[UpdateService] Constructed download URL:', downloadUrl);
 
       return {
         hasUpdate,
@@ -218,6 +247,142 @@ export class UpdateService {
       await AsyncStorage.removeItem(STORAGE_KEY_DISMISSED);
     } catch (error) {
       console.error('[UpdateService] Error resetting dismissed version:', error);
+    }
+  }
+
+  /**
+   * Download APK file for Android
+   */
+  static async downloadAPK(
+    downloadUrl: string,
+    onProgress?: (progress: number) => void
+  ): Promise<string | null> {
+    try {
+      if (Platform.OS !== 'android') {
+        console.warn('[UpdateService] APK download only available on Android');
+        return null;
+      }
+
+      const fileName = 'charter-keke-update.apk';
+      const cacheDir = (FileSystem as any)?.cacheDirectory || `${(FileSystem as any)?.CacheDirectory || ''}`;
+  const filePath = `${cacheDir}${fileName}`;
+
+      console.log('📥 [UPDATE] Downloading APK to:', filePath);
+
+      // Fix URL if it's a GitHub redirect
+      const actualDownloadUrl = downloadUrl.includes('github.com')
+        ? downloadUrl.replace('github.com', 'raw.githubusercontent.com').replace('/download/', '/')
+        : downloadUrl;
+
+      const downloadResumable = FileSystem.createDownloadResumable(
+        actualDownloadUrl,
+        filePath,
+        {},
+        (downloadProgress) => {
+          const progress =
+            downloadProgress.totalBytesWritten /
+            downloadProgress.totalBytesExpectedToWrite;
+          console.log(
+            `📥 [UPDATE] Download progress: ${Math.round(progress * 100)}%`
+          );
+          onProgress?.(progress);
+        }
+      );
+
+      const result = await downloadResumable.downloadAsync();
+
+      if (result && result.uri) {
+        console.log('✅ [UPDATE] APK downloaded successfully:', result.uri);
+        await AsyncStorage.setItem('pendingUpdatePath', result.uri);
+        return result.uri;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('❌ [UPDATE] Error downloading APK:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Install downloaded APK
+   */
+  static async installAPK(apkPath: string): Promise<boolean> {
+    try {
+      if (Platform.OS !== 'android') {
+        console.warn('[UpdateService] APK installation only available on Android');
+        return false;
+      }
+
+      console.log('📦 [UPDATE] Installing APK from:', apkPath);
+
+      // Use file:// URI for installation
+      const fileUri = apkPath.startsWith('file://')
+        ? apkPath
+        : `file://${apkPath}`;
+
+      // Trigger Android system installer
+      await Linking.openURL(fileUri);
+
+      console.log('✅ [UPDATE] Installation initiated');
+      return true;
+    } catch (error) {
+      console.error('❌ [UPDATE] Error installing APK:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get pending update path if available
+   */
+  static async getPendingUpdatePath(): Promise<string | null> {
+    try {
+      return await AsyncStorage.getItem('pendingUpdatePath');
+    } catch (error) {
+      console.error('[UpdateService] Error getting pending update:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Clear pending update
+   */
+  static async clearPendingUpdate(): Promise<void> {
+    try {
+      const pendingPath = await AsyncStorage.getItem('pendingUpdatePath');
+      if (pendingPath) {
+        await FileSystem.deleteAsync(pendingPath, { idempotent: true });
+      }
+      await AsyncStorage.removeItem('pendingUpdatePath');
+      console.log('🗑️ [UPDATE] Cleared pending update');
+    } catch (error) {
+      console.error('[UpdateService] Error clearing pending update:', error);
+    }
+  }
+
+  /**
+   * Open iOS App Store for update
+   */
+  static async openIOSAppStore(): Promise<void> {
+    try {
+      const appStoreUrl =
+        'https://apps.apple.com/app/charter-keke/id1234567890';
+      await Linking.openURL(appStoreUrl);
+    } catch (error) {
+      console.error('[UpdateService] Error opening App Store:', error);
+    }
+  }
+
+  /**
+   * Open Google Play Store for update
+   */
+  static async openPlayStore(): Promise<void> {
+    try {
+      const playStoreUrl =
+        'https://play.google.com/store/apps/details?id=com.charterkeke';
+      await Linking.openURL(playStoreUrl);
+    } catch (error) {
+      console.error('[UpdateService] Error opening Play Store:', error);
     }
   }
 }

@@ -534,8 +534,7 @@ export default function WalletScreen() {
 
           {/* Settlement Card */}
           <View style={[styles.paddingH, { marginTop: 20 }]}>
-            <View style={[styles.settlementCard, { backgroundColor: theme.colors.ride, borderColor: theme.colors.border }]}
-            >
+            <View style={[styles.settlementCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
               <View style={styles.settlementHeader}>
                 <View>
                   <Text style={[styles.settlementTitle, { color: theme.colors.textPrimary }]}>Platform Remittance</Text>
@@ -599,7 +598,7 @@ export default function WalletScreen() {
               {/* Older Outstanding Remittances */}
               {((settlementInfo?.outstandingSettlements?.length) ?? 0) > 0 && (
                 <View style={[styles.paddingH, { marginTop: 12 }]}>
-                  <View style={[styles.settlementCard, { backgroundColor: theme.colors.ride, borderColor: theme.colors.border }]}>
+                  <View style={[styles.settlementCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
                     <View style={styles.settlementHeader}>
                       <View>
                         <Text style={[styles.settlementTitle, { color: theme.colors.textPrimary }]}>Outstanding Remittances</Text>
@@ -663,7 +662,7 @@ export default function WalletScreen() {
 
           {/* Daily Accepted Rides (Remittance Basis) */}
           <View style={[styles.paddingH, { marginTop: 20 }]}>
-            <View style={[styles.settlementCard, { backgroundColor: theme.colors.ride, borderColor: theme.colors.border }]}>
+            <View style={[styles.settlementCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
               <View style={styles.settlementHeader}>
                 <View>
                   <Text style={[styles.settlementTitle, { color: theme.colors.textPrimary }]}>Today's Accepted Rides</Text>

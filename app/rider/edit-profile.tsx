@@ -69,7 +69,7 @@ export default function EditProfileScreen() {
       const profileRes = await apiService.get('/user/details');
       console.log('✅ [EDIT-PROFILE] Profile fetched:', profileRes);
       
-      const user = profileRes.user;
+      const user = (profileRes as any)?.user || profileRes;
       setFormData({
         firstName: user.first_name || '',
         lastName: user.last_name || '',

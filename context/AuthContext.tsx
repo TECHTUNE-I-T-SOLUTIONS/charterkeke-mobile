@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authService } from '@services/auth';
 import { syncService } from '@services/sync';
 import { cacheService } from '@services/cache';
@@ -169,6 +170,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         // Don't fail logout if notifications fail
       }
       
+      // Clear session resumed flag
+      await AsyncStorage.removeItem('sessionResumed');
+      
       // Call logout API - this won't throw even if it fails
       await authService.logout();
       setUser(null);
@@ -251,7 +255,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     user,
     isAuthenticated: authService.isAuthenticated(),
     isLoading,
-    userRole: userRole || authService.getUserRole(),
+    userRole: userRole || (authService.getUserRole() as UserRole | null),
     error,
     login: handleLogin,
     signup: handleSignup,

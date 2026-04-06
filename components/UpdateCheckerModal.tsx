@@ -7,12 +7,13 @@ import {
   Modal,
   ScrollView,
   ActivityIndicator,
-  Linking,
   Alert,
   Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as FileSystem from 'expo-file-system';
+import * as IntentLauncher from 'expo-intent-launcher';
 import { UpdateCheckResult } from '@services/updateService';
 
 interface UpdateCheckerModalProps {
@@ -31,13 +32,14 @@ export const UpdateCheckerModal: React.FC<UpdateCheckerModalProps> = ({
   onDownload,
 }) => {
   const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
 
   if (!updateInfo || !updateInfo.hasUpdate) {
     return (
       <Modal visible={visible && isChecking} transparent animationType="fade">
         <View style={styles.checkingContainer}>
           <View style={styles.checkingCard}>
-            <ActivityIndicator size="large" color="#007AFF" />
+            <ActivityIndicator size="large" color="#FF9101" />
             <Text style={styles.checkingText}>Checking for updates...</Text>
           </View>
         </View>
@@ -53,23 +55,129 @@ export const UpdateCheckerModal: React.FC<UpdateCheckerModalProps> = ({
       }
 
       setIsDownloading(true);
+      setDownloadProgress(0);
 
-      // Open download link
-      const canOpen = await Linking.canOpenURL(updateInfo.downloadUrl);
-      if (canOpen) {
-        await Linking.openURL(updateInfo.downloadUrl);
-        await onDownload(updateInfo.downloadUrl);
-      } else {
-        Alert.alert(
-          'Cannot Open Link',
-          'Please visit the website to download the latest version.'
-        );
+      // Construct full download URL
+      // IMPORTANT: EXPO_PUBLIC_API_URL already includes /api, so we need to remove the /api prefix from downloadUrl
+      let fullUrl = updateInfo.downloadUrl;
+      
+      if (!fullUrl.startsWith('http')) {
+        // Remove leading /api if present to avoid double /api
+        const pathWithoutApi = fullUrl.startsWith('/api') 
+          ? fullUrl.substring(4)  // Remove /api prefix
+          : fullUrl;
+        
+        // Construct from EXPO_PUBLIC_API_URL which already has /api
+        fullUrl = `${process.env.EXPO_PUBLIC_API_URL}${pathWithoutApi}`;
       }
+
+      console.log('[UpdateCheckerModal] Starting download from:', fullUrl);
+
+      // Get file name from URL
+      const fileName = updateInfo.downloadUrl.split('/').pop() || `app-${updateInfo.latestVersion}.apk`;
+      const cacheDir = (FileSystem as any).cacheDirectory || (FileSystem as any).CacheDirectory;
+      
+      if (!cacheDir) {
+        throw new Error('Cache directory not available');
+      }
+
+      const fileUri = `${cacheDir}${fileName}`;
+
+      // Use fetch API for download (Expo v54+ compatible)
+      console.log('[UpdateCheckerModal] Using fetch API for download');
+        
+        const response = await fetch(fullUrl);
+        
+        if (!response.ok) {
+          throw new Error(`Download failed with status ${response.status}`);
+        }
+
+        const contentLength = parseInt(
+          response.headers.get('content-length') || '0',
+          10
+        );
+        
+        if (contentLength === 0) {
+          throw new Error('Content length is 0');
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error('Unable to read response body');
+        }
+
+        let receivedLength = 0;
+        const chunks: Uint8Array[] = [];
+
+        while (true) {
+          const { done, value } = await reader.read();
+
+          if (done) break;
+
+          chunks.push(value);
+          receivedLength += value.length;
+          setDownloadProgress(receivedLength / contentLength);
+          
+          console.log(
+            '[UpdateCheckerModal] Download progress:',
+            Math.round((receivedLength / contentLength) * 100),
+            '%'
+          );
+        }
+
+        // Write file using Expo FileSystem
+        const fileContent = new Uint8Array(receivedLength);
+        let position = 0;
+        for (const chunk of chunks) {
+          fileContent.set(chunk, position);
+          position += chunk.length;
+        }
+
+        const binaryString = String.fromCharCode.apply(null, Array.from(fileContent) as any);
+        const base64String = btoa(binaryString);
+        
+        // Encode as base64 for FileSystem write
+        const encodingType = (FileSystem as any).EncodingType?.Base64 || 'base64';
+        await (FileSystem as any).writeAsStringAsync(fileUri, base64String, { encoding: encodingType });
+
+        console.log('[UpdateCheckerModal] Download complete:', fileUri);
+
+        // Install the APK (Android only)
+        if (Platform.OS === 'android') {
+          try {
+            await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+              data: fileUri,
+              flags: 1,
+            });
+
+            console.log('[UpdateCheckerModal] APK installation started');
+            await onDownload(updateInfo.downloadUrl);
+          } catch (intentError) {
+            console.error('[UpdateCheckerModal] Intent launcher error:', intentError);
+            Alert.alert(
+              'Installation',
+              'APK downloaded successfully.\n\nPlease go to Settings > Security > Unknown Sources and install the APK manually.',
+              [{ text: 'OK' }]
+            );
+          }
+        } else if (Platform.OS === 'ios') {
+          Alert.alert(
+            'Download Complete',
+            'IPA file downloaded. Please use TestFlight or Xcode to install the app.',
+            [{ text: 'OK' }]
+          );
+          await onDownload(updateInfo.downloadUrl);
+        }
     } catch (error) {
-      Alert.alert('Error', 'Failed to start download. Please try again.');
       console.error('[UpdateCheckerModal] Download error:', error);
+      Alert.alert(
+        'Download Failed',
+        error instanceof Error ? error.message : 'Failed to download update. Please try again.',
+        [{ text: 'OK' }]
+      );
     } finally {
       setIsDownloading(false);
+      setDownloadProgress(0);
     }
   };
 
@@ -82,16 +190,9 @@ export const UpdateCheckerModal: React.FC<UpdateCheckerModalProps> = ({
   };
 
   const handleWebsiteDownload = async () => {
-    const url = 'https://charterkeke.vercel.app/app/install';
-    try {
-      const canOpen = await Linking.canOpenURL(url);
-      if (canOpen) {
-        await Linking.openURL(url);
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Could not open website');
-      console.error('[UpdateCheckerModal] Website open error:', error);
-    }
+    // Website link no longer needed as we download directly from backend
+    // Dismiss the modal instead
+    await handleDismiss();
   };
 
   return (
@@ -108,7 +209,7 @@ export const UpdateCheckerModal: React.FC<UpdateCheckerModalProps> = ({
         <View style={styles.card}>
           {/* Header with gradient */}
           <LinearGradient
-            colors={['#10b981', '#059669']}
+            colors={['#FF9101', '#FFAB3F']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.header}
@@ -153,7 +254,7 @@ export const UpdateCheckerModal: React.FC<UpdateCheckerModalProps> = ({
                 <MaterialCommunityIcons
                   name="shield-check"
                   size={20}
-                  color="#10b981"
+                  color="#FF9101"
                 />
                 <Text style={styles.benefitText}>Security improvements</Text>
               </View>
@@ -161,7 +262,7 @@ export const UpdateCheckerModal: React.FC<UpdateCheckerModalProps> = ({
                 <MaterialCommunityIcons
                   name="speedometer"
                   size={20}
-                  color="#10b981"
+                  color="#FF9101"
                 />
                 <Text style={styles.benefitText}>Performance optimization</Text>
               </View>
@@ -169,12 +270,30 @@ export const UpdateCheckerModal: React.FC<UpdateCheckerModalProps> = ({
                 <MaterialCommunityIcons
                   name="wrench"
                   size={20}
-                  color="#10b981"
+                  color="#FF9101"
                 />
                 <Text style={styles.benefitText}>Bug fixes & improvements</Text>
               </View>
             </View>
           </ScrollView>
+
+          {/* Download Progress */}
+          {isDownloading && (
+            <View style={styles.progressContainer}>
+              <Text style={styles.progressLabel}>Downloading update...</Text>
+              <View style={styles.progressBar}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    { width: `${downloadProgress * 100}%` },
+                  ]}
+                />
+              </View>
+              <Text style={styles.progressPercent}>
+                {Math.round(downloadProgress * 100)}%
+              </Text>
+            </View>
+          )}
 
           {/* Actions */}
           <View style={styles.actions}>
@@ -209,17 +328,17 @@ export const UpdateCheckerModal: React.FC<UpdateCheckerModalProps> = ({
             </TouchableOpacity>
           </View>
 
-          {/* Website Download Link */}
+          {/* Website Download Link - Now acts as fallback dismiss button */}
           <TouchableOpacity
             style={styles.websiteLink}
             onPress={handleWebsiteDownload}
           >
             <MaterialCommunityIcons
-              name="link-variant"
+              name="clock-outline"
               size={14}
-              color="#0066cc"
+              color="#666"
             />
-            <Text style={styles.websiteLinkText}>Or download from website</Text>
+            <Text style={styles.websiteLinkText}>Remind me later</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -285,9 +404,9 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   notesSection: {
-    backgroundColor: '#f0fdf4',
+    backgroundColor: 'rgba(255, 145, 1, 0.08)',
     borderLeftWidth: 3,
-    borderLeftColor: '#10b981',
+    borderLeftColor: '#FF9101',
     paddingLeft: 12,
     paddingTop: 12,
     paddingRight: 12,
@@ -297,13 +416,13 @@ const styles = StyleSheet.create({
   },
   notesTitle: {
     fontWeight: '700',
-    color: '#059669',
+    color: '#FF9101',
     marginBottom: 8,
     fontSize: 13,
   },
   notesContent: {
     fontSize: 13,
-    color: '#047857',
+    color: '#FF9101',
     lineHeight: 18,
   },
   benefitsSection: {
@@ -338,6 +457,39 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#333',
   },
+  checkingSpinner: {
+    color: '#FF9101',
+  },
+  progressContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    marginBottom: 12,
+    backgroundColor: '#f5f5f5',
+  },
+  progressLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
+  },
+  progressBar: {
+    height: 8,
+    backgroundColor: '#e0e0e0',
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#FF9101',
+    borderRadius: 4,
+  },
+  progressPercent: {
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'right',
+    fontWeight: '500',
+  },
   actions: {
     flexDirection: 'row',
     paddingHorizontal: 20,
@@ -364,9 +516,9 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   downloadButton: {
-    backgroundColor: '#10b981',
+    backgroundColor: '#FF9101',
     elevation: 3,
-    shadowColor: '#10b981',
+    shadowColor: '#FF9101',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
@@ -384,7 +536,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   websiteLinkText: {
-    color: '#0066cc',
+    color: '#666',
     fontSize: 12,
     fontWeight: '600',
   },

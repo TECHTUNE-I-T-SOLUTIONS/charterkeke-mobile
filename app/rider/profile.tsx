@@ -98,7 +98,7 @@ export default function ProfileScreen() {
     try {
       if (showLoader) setLoading(true);
       const res = await apiService.get('/user/profile');
-      const nextProfile = res.user || res;
+      const nextProfile = (res as any)?.user || res;
       setProfileData(nextProfile);
       await cacheService.set(STORAGE_KEYS.RIDER_PROFILE, nextProfile);
     } catch (error) { console.error(error); } 

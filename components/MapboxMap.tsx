@@ -55,7 +55,7 @@ export const MapboxMap = React.forwardRef<any, MapboxMapProps>(
   ) => {
     const { theme } = useTheme();
     const isLight = theme.mode === 'light';
-    const cameraRef = useRef<Mapbox.Camera>(null);
+    const cameraRef = useRef<any>(null);
 
     useEffect(() => {
       if (!cameraCenterCoordinate || !cameraRef.current) return;

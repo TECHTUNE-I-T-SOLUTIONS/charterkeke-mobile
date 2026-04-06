@@ -175,12 +175,12 @@ export default function BankAccountsScreen() {
         accountNumber: formData.accountNumber,
         bankCode: formData.bankCode,
         driverId: user.id,
-      });
+      }) as any;
 
       if (response?.success) {
         setFormData((prev) => ({
           ...prev,
-          accountName: response.accountName || prev.accountName,
+          accountName: response?.accountName || prev.accountName,
         }));
         setAccountVerified(true);
         Alert.alert('Verified', 'Account verified successfully.');

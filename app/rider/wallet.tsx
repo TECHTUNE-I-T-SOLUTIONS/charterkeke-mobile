@@ -69,8 +69,8 @@ export default function WalletScreen() {
     try {
       if (showLoader) setLoading(true);
       const data = await apiService.get('/user/wallet');
-      const nextWallet = data.wallet || null;
-      const nextTransactions = data.transactions || [];
+      const nextWallet = (data as any)?.wallet || null;
+      const nextTransactions = (data as any)?.transactions || [];
       setWalletData(nextWallet);
       setTransactions(nextTransactions);
 

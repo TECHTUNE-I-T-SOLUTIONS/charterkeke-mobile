@@ -46,7 +46,7 @@ export default function CtaCarousel({ items }: { items: CtaCard[] }) {
     <View style={styles.container}>
       <View>
       <ScrollView
-        ref={(r) => (scrollRef.current = r)}
+        ref={scrollRef as any}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}

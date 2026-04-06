@@ -64,7 +64,7 @@ export default function EmergencyContactsScreen() {
       const userDetailsRes = await apiService.get('/user/details');
       console.log('✅ [EMERGENCY-CONTACTS] User details fetched:', userDetailsRes);
       
-      const user = userDetailsRes.user;
+      const user = (userDetailsRes as any)?.user || userDetailsRes;
       // In production, emergency contacts would be stored in a dedicated endpoint
       // For now, we'll use the emergency_contact and emergency_phone from user details
       if (user.emergency_contact || user.emergency_phone) {

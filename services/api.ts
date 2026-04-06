@@ -383,30 +383,31 @@ class APIService {
     }
   }
 
-  // Generic methods
-  async get<T = any>(url: string, config?: any): Promise<T> {
-    const response = await this.api.get<T>(url, config);
-    return response.data;
+  // Driver endpoints - missing methods
+  async acceptRide(rideId: string): Promise<any> {
+    return this.post('/driver/accept-ride', { rideId });
   }
 
-  async post<T = any>(url: string, data?: any, config?: any): Promise<T> {
-    const response = await this.api.post<T>(url, data, config);
-    return response.data;
+  async updateRideStatus(rideId: string, status: 'in_progress' | 'completed'): Promise<any> {
+    return this.post('/driver/update-ride-status', { rideId, status });
   }
 
-  async put<T = any>(url: string, data?: any, config?: any): Promise<T> {
-    const response = await this.api.put<T>(url, data, config);
-    return response.data;
+  async verifyDriverSettlementPayment(reference: string): Promise<any> {
+    return this.post('/driver/payment-callback', { reference });
   }
 
-  async patch<T = any>(url: string, data?: any, config?: any): Promise<T> {
-    const response = await this.api.patch<T>(url, data, config);
-    return response.data;
+  async initiateDriverSettlementPayment(): Promise<any> {
+    return this.get('/driver/initiate-payment');
   }
 
-  async delete<T = any>(url: string, config?: any): Promise<T> {
-    const response = await this.api.delete<T>(url, config);
-    return response.data;
+  async setAuthToken(token: string, refreshToken?: string): Promise<void> {
+    if (token) {
+      await SecureStore.setItemAsync('authToken', token);
+      this.api.defaults.headers.common.Authorization = `Bearer ${token}`;
+    }
+    if (refreshToken) {
+      await SecureStore.setItemAsync('refreshToken', refreshToken);
+    }
   }
 }
 

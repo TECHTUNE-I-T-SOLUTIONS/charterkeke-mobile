@@ -9,28 +9,29 @@ export default function Index() {
 
   useEffect(() => {
     const checkFirstTime = async () => {
+      // Always clear sessionResumed on app startup - forces re-verification for security
+      // Each time the app is closed and reopened, the user must verify their identity
+      await AsyncStorage.removeItem('sessionResumed');
+      
       if (!isLoading) {
         if (!isAuthenticated) {
           // Not authenticated - show login
+          console.log('🔐 [ROUTING] User not authenticated, routing to welcome');
           router.replace('/auth/welcome');
         } else {
-          // Authenticated - route based on user role
-          if (userRole === 'driver') {
-            console.log('✅ [ROUTING] User is driver, routing to /driver/home');
-            router.replace('/driver/home');
-          } else if (userRole === 'rider') {
-            console.log('✅ [ROUTING] User is rider, routing to /rider/home');
-            router.replace('/rider/home');
-          } else {
-            console.warn('⚠️  [ROUTING] Unknown user role:', userRole, 'defaulting to rider');
-            router.replace('/rider/home');
-          }
+          // Authenticated but session closed - user needs to verify identity
+          const userEmail = user && 'email' in user ? user.email : '';
+          console.log('🔐 [ROUTING] Session needs verification, routing to resume-session');
+          router.replace({
+            pathname: '/auth/resume-session',
+            params: { email: userEmail },
+          });
         }
       }
     };
 
     checkFirstTime();
-  }, [isLoading, isAuthenticated, userRole]);
+  }, [isLoading, isAuthenticated]);
 
   // Return null while redirecting
   return null;

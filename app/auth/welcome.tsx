@@ -20,6 +20,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@context/ThemeContext';
 import { ThemeToggle } from '@components/ThemeToggle';
+import { logVideoError } from '@utils/videoErrorHandler';
 
 const { width, height } = Dimensions.get('window');
 
@@ -58,6 +59,7 @@ export default function WelcomeScreen() {
   const { theme } = useTheme();
   const [scrollY] = useState(new Animated.Value(0));
   const videoRef = useRef<Video>(null);
+  const [videoError, setVideoError] = useState(false);
 
   // --- Core Animations ---
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -291,6 +293,15 @@ export default function WelcomeScreen() {
         isMuted
         resizeMode={'cover' as any}
         style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}
+        onError={(error) => {
+          logVideoError(error, 'Welcome Screen Video');
+          setVideoError(true);
+        }}
+        onLoad={() => {
+          console.log('🟢 Video loaded successfully');
+          setVideoError(false);
+        }}
+        progressUpdateIntervalMillis={500}
       />
       
       {/* Background Gradient - subtle branding */}

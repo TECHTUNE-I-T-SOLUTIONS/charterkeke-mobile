@@ -91,7 +91,7 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
   const handleStartTracking = async (rideId: string) => {
     try {
       setError(null);
-      const hasPermission = await locationService.hasLocationPermission();
+      const hasPermission = await locationService.checkLocationPermission();
       if (!hasPermission) {
         throw new Error('Location permission not granted');
       }
@@ -175,7 +175,7 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   const handleHasLocationPermission = async (): Promise<boolean> => {
     try {
-      return await locationService.hasLocationPermission();
+      return await locationService.checkLocationPermission();
     } catch (err) {
       console.error('Error checking permission:', err);
       return false;

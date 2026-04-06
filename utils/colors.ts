@@ -45,8 +45,8 @@ export const COLORS = {
     // Basic colors
     background: '#000000',
     foreground: '#ffffff',
-    surface: '#374151',      // Dark surface for cards, dialogs
-    card: '#111827',
+    surface: '#0B0D0F',      // Dark surface for cards, dialogs
+    card: '#000000',
     
     // Text colors
     text: '#f3f4f6',
@@ -57,7 +57,7 @@ export const COLORS = {
     // UI Elements
     border: '#374151',
     input: '#111827',
-    inputBackground: '#111827',
+    inputBackground: '#010308',
     inputBorder: '#374151',
     inputPlaceholder: '#9ca3af',
     

@@ -68,7 +68,7 @@ export default function DriverReferrals() {
         <View style={[styles.card, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
           <Text style={{ fontSize: 12, color: theme.colors.textSecondary }}>Your Referral Code</Text>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-            <Text style={{ fontSize: 18, fontWeight: '700' }}>{referralData?.referral_code || referralData?.referralCode || 'N/A'}</Text>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: theme.colors.textPrimary}}>{referralData?.referral_code || referralData?.referralCode || 'N/A'}</Text>
             <TouchableOpacity onPress={handleCopy}>
               <MaterialCommunityIcons name="content-copy" size={20} color={theme.colors.textPrimary} />
             </TouchableOpacity>

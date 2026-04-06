@@ -197,6 +197,32 @@ class AuthService {
   isDriver(): boolean {
     return this.currentUser?.role === 'driver';
   }
+
+  /**
+   * Verify OTP sent to phone
+   */
+  async verifyOTP(phone: string, otp: string): Promise<boolean> {
+    try {
+      const response = await apiService.verifyOTP(phone, otp);
+      return response.verified || false;
+    } catch (error) {
+      console.error('OTP verification error:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Request password reset via email or phone
+   */
+  async requestPasswordReset(emailOrPhone: string): Promise<boolean> {
+    try {
+      const response = await apiService.resetPassword(emailOrPhone);
+      return !!response.message;
+    } catch (error) {
+      console.error('Password reset request error:', error);
+      return false;
+    }
+  }
 }
 
 export const authService = new AuthService();

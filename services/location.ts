@@ -52,7 +52,7 @@ class LocationService {
     }
   }
 
-  async startLocationTracking(): Promise<void> {
+  async startLocationTracking(rideId?: string): Promise<void> {
     try {
       const hasPermission = await this.hasLocationPermission();
       if (!hasPermission) {
@@ -123,6 +123,70 @@ class LocationService {
 
   isLocationTracking(): boolean {
     return this.isTracking;
+  }
+
+  // Public method to check permission
+  async checkLocationPermission(): Promise<boolean> {
+    return this.hasLocationPermission();
+  }
+
+  async geocodeAddress(address: string): Promise<any> {
+    try {
+      const result = await Location.geocodeAsync(address);
+      if (result.length > 0) {
+        return {
+          latitude: result[0].latitude,
+          longitude: result[0].longitude,
+          address,
+        };
+      }
+      return null;
+    } catch (error) {
+      console.error('Geocoding error:', error);
+      return null;
+    }
+  }
+
+  async reverseGeocodeLocation(location: { latitude: number; longitude: number }): Promise<string | null> {
+    try {
+      const result = await Location.reverseGeocodeAsync(location);
+      if (result.length > 0) {
+        const addr = result[0];
+        return `${addr.street || ''} ${addr.city || ''} ${addr.region || ''}`.trim();
+      }
+      return null;
+    } catch (error) {
+      console.error('Reverse geocoding error:', error);
+      return null;
+    }
+  }
+
+  async watchLocation(callback: (location: any) => void): Promise<() => void> {
+    try {
+      const subscription = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.High,
+          timeInterval: 1000,
+          distanceInterval: 0,
+        },
+        (location) => {
+          const locationData = {
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+            accuracy: location.coords.accuracy || 0,
+            altitude: location.coords.altitude || 0,
+            timestamp: location.timestamp,
+          };
+          callback(locationData);
+        }
+      );
+
+      // Return unwatch function
+      return () => subscription.remove();
+    } catch (error) {
+      console.error('Watch location error:', error);
+      return () => {};
+    }
   }
 }
 

@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@context/ThemeContext';
 import { ThemeToggle } from '@components/ThemeToggle';
 import { BRAND } from '@utils/colors';
+import { logVideoError } from '@utils/videoErrorHandler';
 
 const { width } = Dimensions.get('window');
 const scale = (size: number) => (width / 375) * size;
@@ -29,6 +30,7 @@ export default function AuthChoiceScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const [userName, setUserName] = useState<string>('');
+  const [videoError, setVideoError] = useState(false);
   
   const fadeAnim = useState(new Animated.Value(0))[0];
   const slideAnim = useState(new Animated.Value(20))[0];
@@ -221,11 +223,14 @@ export default function AuthChoiceScreen() {
         resizeMode={'cover' as any}
         style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}
         onError={(error) => {
-          console.log('🔴 Video error:', error);
+          logVideoError(error, 'Welcome Video');
+          setVideoError(true);
         }}
         onLoad={() => {
           console.log('🟢 Video loaded successfully');
+          setVideoError(false);
         }}
+        progressUpdateIntervalMillis={500}
       />
 
       {/* Dark Overlay - more dimmed for better readability */}

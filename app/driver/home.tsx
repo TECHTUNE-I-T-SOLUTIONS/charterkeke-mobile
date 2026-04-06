@@ -215,7 +215,7 @@ export default function DriverHomeScreen() {
       const nextActiveRides = rides.rides || [];
       const nextActiveRidesCount = nextActiveRides.length;
       const nextAvailableRides = available.rides?.slice(0, 3) || [];
-      const nextRecentRides = (history.rides || history.data || []).slice(0, 5);
+      const nextRecentRides = ((history as any)?.rides || (history as any)?.data || []).slice(0, 5);
       const nextTodayEarnings = Number(dailyEarnings?.settlement?.totalDriverEarnings || dailyEarnings?.totals?.netDriverEarnings || 0);
 
       console.log('✅ [DRIVER-HOME] Dashboard data loaded:', {
@@ -602,6 +602,7 @@ const styles = StyleSheet.create({
   metaText: { fontSize: 11 },
   emptyState: { margin: 20, padding: 30, borderRadius: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   emptyText: { marginTop: 8, fontSize: 13 },
+  paddingH: { paddingHorizontal: 20 },
 });
 
 const mapDarkStyle = [

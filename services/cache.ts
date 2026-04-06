@@ -100,6 +100,36 @@ class CacheService {
     const filtered = queue.filter((item) => item.id !== id);
     await this.set('syncQueue', filtered, 24 * 60);
   }
+
+  // Ride Management
+  async saveRide(ride: any): Promise<void> {
+    await this.set(`ride:${ride.id}`, ride, 24 * 60);
+    // Also update rides list
+    const ridesList = (await this.get<any[]>('ridesList')) || [];
+    const existingIndex = ridesList.findIndex(r => r.id === ride.id);
+    if (existingIndex >= 0) {
+      ridesList[existingIndex] = ride;
+    } else {
+      ridesList.push(ride);
+    }
+    await this.set('ridesList', ridesList, 24 * 60);
+  }
+
+  async getRideById(rideId: string): Promise<any> {
+    return this.get(`ride:${rideId}`);
+  }
+
+  async updateRide(rideId: string, updates: any): Promise<void> {
+    const ride = await this.getRideById(rideId);
+    if (ride) {
+      const updated = { ...ride, ...updates };
+      await this.saveRide(updated);
+    }
+  }
+
+  async getRidesList(): Promise<any[]> {
+    return (await this.get('ridesList')) || [];
+  }
 }
 
 export const cacheService = new CacheService();

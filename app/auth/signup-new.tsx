@@ -474,7 +474,7 @@ export default function SignupMultiStepScreen() {
       const response = await apiService.post('/paystack/verify-account', {
         accountNumber: formData.bankAccountNumber,
         bankCode: formData.bankCode,
-      });
+      }) as any;
 
       if (response?.status === true) {
         setFormData((prev) => ({
@@ -485,7 +485,7 @@ export default function SignupMultiStepScreen() {
         setAccountVerified(true);
         Alert.alert('Verified', 'Account verified successfully.');
       } else {
-        const message = response?.error || response?.message || 'Account verification failed.';
+        const message = (response?.error || response?.message || 'Account verification failed.') as string;
         setAccountVerified(false);
         Alert.alert('Verification Failed', message);
       }

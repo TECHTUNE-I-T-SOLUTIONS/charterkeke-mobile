@@ -78,12 +78,14 @@ export const configureNotifications = async () => {
 
 /**
  * Request notification permissions and get push token
+ * Handles Firebase FCM errors gracefully by separating permission request from token retrieval
  */
 export const requestNotificationPermissions = async () => {
   try {
     devLog('Requesting notification permissions...');
     console.log('🔔 [NOTIFICATIONS] Requesting permissions...');
     
+    // Step 1: Check and request permissions (independent of token retrieval)
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
 
@@ -93,23 +95,60 @@ export const requestNotificationPermissions = async () => {
     }
 
     if (finalStatus !== 'granted') {
-      console.warn('⚠️ [NOTIFICATIONS] Permission denied');
+      console.warn('⚠️ [NOTIFICATIONS] Permission denied by user');
       devLog('Permission denied by user');
       return null;
     }
 
-    // Get expo push token
-    const expoPushToken = await Notifications.getExpoPushTokenAsync({
-      projectId: process.env.EXPO_PUBLIC_PROJECT_ID,
-    });
+    console.log('✅ [NOTIFICATIONS] Permissions granted');
 
-    const tokenValue = expoPushToken.data;
-    devLog('Got token:', tokenValue.slice(0, 30) + '...');
-    
-    console.log('✅ [NOTIFICATIONS] Permissions granted, token:', tokenValue.slice(0, 20) + '...');
-    return tokenValue;
-  } catch (error) {
+    // Step 2: Try to get push token (separate from permission request)
+    // This prevents Firebase/FCM errors from blocking the permission grant
+    try {
+      const expoPushToken = await Notifications.getExpoPushTokenAsync({
+        projectId: process.env.EXPO_PUBLIC_PROJECT_ID,
+      });
+
+      const tokenValue = expoPushToken.data;
+      devLog('Got push token:', tokenValue.slice(0, 30) + '...');
+      
+      console.log('✅ [NOTIFICATIONS] Push token obtained:', tokenValue.slice(0, 20) + '...');
+      return tokenValue;
+    } catch (tokenError: any) {
+      // Handle specific Firebase/FCM errors
+      const errorMessage = tokenError?.message || String(tokenError);
+      const errorCode = tokenError?.code || '';
+
+      // Check for MISSING_INSTANCEID_SERVICE error (Firebase not initialized on device)
+      if (errorMessage.includes('MISSING_INSTANCEID_SERVICE') || 
+          errorMessage.includes('java.io.IOException')) {
+        console.warn('⚠️ [NOTIFICATIONS] Firebase/Google Play Services unavailable on this device');
+        console.warn('📱 This is normal on emulators without Google Play Services installed');
+        console.log('💡 [NOTIFICATIONS] On real devices, ensure Google Play Services is installed');
+        devLog('Firebase unavailable, permissions still granted');
+        
+        // Return a placeholder token so subscription can continue
+        // The backend can retry when device is available
+        return `placeholder_${Date.now()}`;
+      }
+
+      // For other token errors, still allow subscription with placeholder
+      console.warn('⚠️ [NOTIFICATIONS] Could not obtain push token:', errorMessage);
+      console.warn('💡 [NOTIFICATIONS] Will retry token retrieval later');
+      devLog('Token retrieval failed, using placeholder');
+      
+      return `placeholder_${Date.now()}`;
+    }
+  } catch (error: any) {
+    const errorMessage = error?.message || String(error);
     console.error('❌ [NOTIFICATIONS] Error requesting permissions:', error);
+    
+    // Don't fail completely - permission might still be granted
+    if (errorMessage.includes('MISSING_INSTANCEID_SERVICE')) {
+      console.warn('⚠️ [NOTIFICATIONS] Permissions granted but token unavailable (Firebase issue)');
+      return `placeholder_${Date.now()}`;
+    }
+    
     devLog('Permission request error:', error);
     return null;
   }
@@ -180,16 +219,33 @@ export const sendWelcomeNotification = async () => {
 
 /**
  * Subscribe to push notifications from backend
+ * Handles cases where token is temporarily unavailable (Firebase not initialized)
  */
 export const subscribeToPushNotifications = async (userId: string) => {
   try {
     console.log('📡 [NOTIFICATIONS] Subscribing to push for user:', userId);
 
-    // Get push token
+    // Get push token (may be placeholder if Firebase unavailable)
     const pushToken = await requestNotificationPermissions();
     if (!pushToken) {
-      console.warn('⚠️ [NOTIFICATIONS] No push token available');
+      console.warn('⚠️ [NOTIFICATIONS] No push token or permissions available');
+      // Still try to sync permission status to backend
+      try {
+        await apiService.post('/notifications/subscribe', {
+          pushToken: null,
+          platform: Platform.OS,
+          status: 'permission_denied',
+        });
+      } catch (err) {
+        // Ignore if backend call fails
+      }
       return;
+    }
+
+    const isPlaceholder = pushToken.startsWith('placeholder_');
+    
+    if (isPlaceholder) {
+      console.log('⏳ [NOTIFICATIONS] Using temporary placeholder token (Firebase not ready)');
     }
 
     // Save subscription to device storage
@@ -198,6 +254,7 @@ export const subscribeToPushNotifications = async (userId: string) => {
       pushToken,
       subscribedAt: new Date().toISOString(),
       platform: Platform.OS,
+      isPlaceholder,
     };
 
     await AsyncStorage.setItem(
@@ -206,20 +263,36 @@ export const subscribeToPushNotifications = async (userId: string) => {
     );
 
     try {
-      await apiService.post('/notifications/subscribe', {
+      const subscriptionPayload: any = {
         pushToken,
         platform: Platform.OS,
-      });
-      console.log('✅ [NOTIFICATIONS] Push token synced to backend');
+      };
+
+      // Include status indicators for backend to understand token state
+      if (isPlaceholder) {
+        subscriptionPayload.status = 'permission_granted_token_pending';
+        subscriptionPayload.reason = 'Firebase/Google Play Services not available';
+      } else {
+        subscriptionPayload.status = 'token_ready';
+      }
+
+      await apiService.post('/notifications/subscribe', subscriptionPayload);
+      console.log('✅ [NOTIFICATIONS] Push subscription synced to backend');
     } catch (backendError) {
-      console.error('❌ [NOTIFICATIONS] Failed syncing push token to backend:', backendError);
+      console.error('❌ [NOTIFICATIONS] Failed syncing push subscription to backend:', backendError);
+      // Don't fail - permission is still granted
     }
 
     console.log('✅ [NOTIFICATIONS] Subscribed to push notifications');
 
+    // If using placeholder, schedule a retry for getting real token
+    if (isPlaceholder) {
+      scheduleTokenRetry(userId);
+    }
+
     // Send welcome notification on first app run
     const hasSeen = await hasSeenWelcomeNotification();
-    if (!hasSeen) {
+    if (!hasSeen && !isPlaceholder) {
       console.log('🎯 [NOTIFICATIONS] First time user - sending welcome notification');
       await sendWelcomeNotification();
     }
@@ -227,7 +300,73 @@ export const subscribeToPushNotifications = async (userId: string) => {
     return subscription;
   } catch (error) {
     console.error('❌ [NOTIFICATIONS] Subscription error:', error);
+    // Don't throw - allow app to continue even if subscription fails
   }
+};
+
+/**
+ * Schedule automatic retry for getting real push token
+ * Retries up to 5 times with exponential backoff
+ */
+const scheduleTokenRetry = async (userId: string, attempt: number = 1) => {
+  const MAX_RETRIES = 5;
+  
+  if (attempt > MAX_RETRIES) {
+    console.warn('⚠️ [NOTIFICATIONS] Max retry attempts reached for push token');
+    return;
+  }
+
+  // Exponential backoff: 10s, 20s, 40s, 80s, 160s
+  const delaySeconds = Math.min(10 * Math.pow(2, attempt - 1), 300);
+  
+  setTimeout(async () => {
+    try {
+      console.log(`🔄 [NOTIFICATIONS] Retry attempt ${attempt}/${MAX_RETRIES} to get real push token`);
+      
+      const realToken = await Notifications.getExpoPushTokenAsync({
+        projectId: process.env.EXPO_PUBLIC_PROJECT_ID,
+      });
+
+      if (realToken?.data && !realToken.data.startsWith('placeholder')) {
+        console.log('✅ [NOTIFICATIONS] Successfully obtained real push token on retry');
+        
+        // Update local storage with real token
+        const subscriptionStr = await AsyncStorage.getItem('pushSubscription');
+        if (subscriptionStr) {
+          const subscription = JSON.parse(subscriptionStr);
+          subscription.pushToken = realToken.data;
+          subscription.isPlaceholder = false;
+          await AsyncStorage.setItem('pushSubscription', JSON.stringify(subscription));
+        }
+
+        // Sync real token to backend
+        try {
+          await apiService.post('/notifications/subscribe', {
+            pushToken: realToken.data,
+            platform: Platform.OS,
+            status: 'token_ready',
+          });
+          console.log('✅ [NOTIFICATIONS] Real token synced to backend');
+        } catch (err) {
+          console.error('❌ [NOTIFICATIONS] Failed to sync real token to backend:', err);
+        }
+        
+        return; // Success, no more retries needed
+      }
+    } catch (error: any) {
+      const errorMessage = error?.message || String(error);
+      if (errorMessage.includes('MISSING_INSTANCEID_SERVICE')) {
+        console.log(`⏳ [NOTIFICATIONS] Firebase still unavailable (retry ${attempt}/${MAX_RETRIES})`);
+      } else {
+        console.error(`❌ [NOTIFICATIONS] Retry attempt ${attempt} failed:`, error);
+      }
+      
+      // Schedule next retry
+      if (attempt < MAX_RETRIES) {
+        scheduleTokenRetry(userId, attempt + 1);
+      }
+    }
+  }, delaySeconds * 1000);
 };
 
 /**
@@ -359,16 +498,89 @@ export const getPushSubscription = async () => {
  */
 export const clearPushSubscription = async () => {
   try {
+    // Get the current push token to remove from database
+    const pushToken = await AsyncStorage.getItem('expo_push_token');
+    
     try {
-      await apiService.delete('/notifications/subscribe');
+      if (pushToken) {
+        // Remove specific token subscription
+        await apiService.delete('/notifications/subscribe', {
+          data: { push_token: pushToken },
+        });
+      } else {
+        // Fallback: remove all subscriptions if no token stored
+        await apiService.delete('/notifications/subscribe');
+      }
     } catch (error) {
       console.error('❌ [NOTIFICATIONS] Failed removing backend subscription:', error);
     }
 
     await AsyncStorage.removeItem('pushSubscription');
+    await AsyncStorage.removeItem('expo_push_token');
     console.log('✅ [NOTIFICATIONS] Subscription cleared');
   } catch (error) {
     console.error('❌ [NOTIFICATIONS] Error clearing subscription:', error);
+  }
+};
+
+/**
+ * Manually retry getting push token (useful for settings screen or after device returns online)
+ */
+export const manuallyRetryPushToken = async (userId: string) => {
+  try {
+    console.log('🔄 [NOTIFICATIONS] Manual push token retry initiated');
+    
+    const realToken = await Notifications.getExpoPushTokenAsync({
+      projectId: process.env.EXPO_PUBLIC_PROJECT_ID,
+    });
+
+    if (!realToken?.data) {
+      console.warn('⚠️ [NOTIFICATIONS] Token still unavailable');
+      return { success: false, message: 'Firebase still initializing. Try again in a moment.' };
+    }
+
+    if (realToken.data.startsWith('placeholder')) {
+      console.warn('⚠️ [NOTIFICATIONS] Still getting placeholder token');
+      return { success: false, message: 'Google Play Services still initializing' };
+    }
+
+    console.log('✅ [NOTIFICATIONS] Real token obtained:', realToken.data.slice(0, 20) + '...');
+
+    // Update local storage
+    const subscriptionStr = await AsyncStorage.getItem('pushSubscription');
+    if (subscriptionStr) {
+      const subscription = JSON.parse(subscriptionStr);
+      subscription.pushToken = realToken.data;
+      subscription.isPlaceholder = false;
+      subscription.tokenUpdatedAt = new Date().toISOString();
+      await AsyncStorage.setItem('pushSubscription', JSON.stringify(subscription));
+    }
+
+    // Sync to backend
+    try {
+      await apiService.post('/notifications/subscribe', {
+        pushToken: realToken.data,
+        platform: Platform.OS,
+        status: 'token_ready',
+      });
+      console.log('✅ [NOTIFICATIONS] Real token synced to backend');
+      return { success: true, message: 'Push token updated successfully!', token: realToken.data };
+    } catch (err) {
+      console.error('❌ [NOTIFICATIONS] Failed to sync real token to backend:', err);
+      return { success: false, message: 'Token obtained but sync failed. Will retry automatically.' };
+    }
+  } catch (error: any) {
+    const errorMessage = error?.message || String(error);
+    console.error('❌ [NOTIFICATIONS] Manual retry failed:', error);
+    
+    if (errorMessage.includes('MISSING_INSTANCEID_SERVICE')) {
+      return { 
+        success: false, 
+        message: 'Google Play Services not available on this device. Manual token unavailable.' 
+      };
+    }
+    
+    return { success: false, message: errorMessage };
   }
 };
 
