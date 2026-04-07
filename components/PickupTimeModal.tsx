@@ -415,7 +415,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingVertical: 20,
+    paddingTop: 24,
     borderBottomWidth: 1,
   },
   headerCenter: {
@@ -429,6 +430,9 @@ const styles = StyleSheet.create({
   headerButton: {
     fontSize: 15,
     fontWeight: '600',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
   },
   selectionCard: {
     borderRadius: 16,
