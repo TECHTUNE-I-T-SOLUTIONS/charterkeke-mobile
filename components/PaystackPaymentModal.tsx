@@ -41,14 +41,14 @@ export const PaystackPaymentModal: React.FC<PaystackPaymentModalProps> = ({
 
       if (result.type === 'success') {
         console.log('✅ [PAYSTACK_BROWSER] Redirected back to app, verifying payment...');
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise<void>(resolve => setTimeout(() => resolve(), 1000));
         onSuccess(reference);
         return;
       }
 
       if (result.type === 'dismiss') {
         console.log('⏳ [PAYSTACK_BROWSER] Session dismissed, attempting verification...');
-        await new Promise(resolve => setTimeout(resolve, 1200));
+        await new Promise<void>(resolve => setTimeout(() => resolve(), 1200));
         onSuccess(reference);
         return;
       }

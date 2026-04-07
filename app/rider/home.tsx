@@ -28,10 +28,8 @@ import { setNavigationRef } from '@/services/navigationService';
 import { HomeSkeleton } from '@/components/HomeSkeleton';
 import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
 import CtaCarousel, { CtaCard } from '@/components/CtaCarousel';
-import { FullScreenAdDisplay } from '@/components/FullScreenAdDisplay';
 import SupportFloatingWidget from '@/components/SupportFloatingWidget';
 import { useAutoUpdateCheck } from '@/hooks/useAutoUpdateCheck';
-import { useIdleAdTracking } from '@/hooks/useIdleAdTracking';
 import { BRAND, COLORS } from '@/utils/colors';
 import { cacheService } from '@/services/cache';
 import { STORAGE_KEYS } from '@/utils/constants';
@@ -67,13 +65,6 @@ export default function RiderHomeScreen() {
   const [scrollEnabled, setScrollEnabled] = useState(true);
   const [hasCached, setHasCached] = useState(false);
   const { unreadCount, resetUnreadCount, incrementUnreadCount } = useNotificationBadge();
-
-  // Ad modal tracking
-  const { shouldShowAd, dismissAd } = useIdleAdTracking({
-    enabled: true,
-    excludeRoutes: ['booking', 'payment', 'confirm-ride', 'ride-details', 'map'],
-    currentRoute: 'home',
-  });
 
   // Refs to prevent state updates on unmounted component
   const isMountedRef = useRef(true);
@@ -551,16 +542,6 @@ export default function RiderHomeScreen() {
           </ScrollView>
         </>
       )}
-
-      {/* Full Screen Ad Display - shown at idle intervals */}
-      <FullScreenAdDisplay
-        visible={shouldShowAd}
-        onClose={dismissAd}
-        onBookNow={() => {
-          dismissAd();
-          router.push('/rider/booking');
-        }}
-      />
 
       <SupportFloatingWidget route="/rider/help-and-support" />
     </View>

@@ -11,6 +11,7 @@ import {
   Easing,
   Dimensions,
   TextInput,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -62,7 +63,7 @@ export default function DriverActiveRideScreen() {
 
   const handleCompleteRide = async () => {
     if (!odometer) {
-      alert('Please enter the distance traveled');
+      Alert.alert('Error', 'Please enter the distance traveled');
       return;
     }
 

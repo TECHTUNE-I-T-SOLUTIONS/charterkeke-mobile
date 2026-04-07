@@ -11,6 +11,7 @@ import {
   StatusBar,
   Modal,
   Platform,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -25,6 +26,14 @@ import { sendLocalNotification } from '@/services/notificationService';
 import { BRAND, COLORS } from '@/utils/colors';
 import { ErrorDialog } from '@/components/ErrorDialog';
 import { SuccessDialog } from '@/components/SuccessDialog';
+import { OperationalAreasModal } from '@/components/OperationalAreasModal';
+import { OutOfServiceAreaModal } from '@/components/OutOfServiceAreaModal';
+import { PickupTimeModal } from '@/components/PickupTimeModal';
+import {
+  validateLocationInOperationalArea,
+  getNearbyOperationalAreas,
+  getOperationalAreaByLocation,
+} from '@/utils/geofencing';
 
 // Fare calculation constants
 const BASE_FARE_PER_KM = 600;
@@ -285,6 +294,15 @@ export default function BookingScreen() {
   const [userName, setUserName] = useState<string>('');
   const [errorDialogVisible, setErrorDialogVisible] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [showOperationalAreasModal, setShowOperationalAreasModal] = useState(false);
+  const [showOutOfServiceAreaModal, setShowOutOfServiceAreaModal] = useState(false);
+  const [outOfServiceAreaInfo, setOutOfServiceAreaInfo] = useState<{
+    closestArea?: string;
+    distance?: number;
+    locationType?: 'pickup' | 'dropoff';
+  }>({});
+  const [showPickupTimeModal, setShowPickupTimeModal] = useState(false);
+  const [selectedPickupTime, setSelectedPickupTime] = useState<string | null>(null);
 
   const isLight = theme.mode === 'light';
 
@@ -363,6 +381,23 @@ export default function BookingScreen() {
 
   const selectSearchResult = async (result: SearchResult, type: 'pickup' | 'dropoff') => {
     const location: Location = { lat: result.lat, lng: result.lng, address: sanitizeAddress(result.address) };
+    
+    // Validate location is in operational area
+    const validation = validateLocationInOperationalArea({
+      latitude: location.lat,
+      longitude: location.lng,
+    });
+
+    if (!validation.isValid) {
+      setOutOfServiceAreaInfo({
+        closestArea: validation.areaName,
+        distance: validation.distance,
+        locationType: type,
+      });
+      setShowOutOfServiceAreaModal(true);
+      return;
+    }
+
     if (type === 'pickup') {
       setPickupLocation(location);
       setPickupSearch('');
@@ -384,6 +419,23 @@ export default function BookingScreen() {
 
   const handleMapLocationPick = async (coordinate: { latitude: number; longitude: number }) => {
     if (!activeLocationPicker) return;
+
+    // Validate location is in operational area
+    const validation = validateLocationInOperationalArea({
+      latitude: coordinate.latitude,
+      longitude: coordinate.longitude,
+    });
+
+    if (!validation.isValid) {
+      setOutOfServiceAreaInfo({
+        closestArea: validation.areaName,
+        distance: validation.distance,
+        locationType: activeLocationPicker,
+      });
+      setShowOutOfServiceAreaModal(true);
+      setActiveLocationPicker(null);
+      return;
+    }
 
     const nearest = findNearestLocation(coordinate.latitude, coordinate.longitude);
     const location: Location = {
@@ -413,13 +465,57 @@ export default function BookingScreen() {
     setRecentLocations(await getRecentLocations());
   };
 
+  const handleAutoSelectNearestArea = async () => {
+    if (!outOfServiceAreaInfo.closestArea) return;
+
+    // Find the operational area by name
+    const allAreas = getNearbyOperationalAreas(
+      { latitude: 6.5, longitude: 3.35 }, // Use a Lagos center point to get all areas
+      100 // Large radius to get all
+    );
+
+    const targetArea = allAreas.find(
+      area => area.name === outOfServiceAreaInfo.closestArea
+    );
+
+    if (targetArea) {
+      const location: Location = {
+        lat: targetArea.center[0],
+        lng: targetArea.center[1],
+        address: `${targetArea.name} Service Area`,
+      };
+
+      if (outOfServiceAreaInfo.locationType === 'pickup') {
+        setPickupLocation(location);
+      } else {
+        setDropoffLocation(location);
+      }
+
+      setCameraCenter([targetArea.center[1], targetArea.center[0]]);
+      setCameraZoom(13);
+      await saveRecentLocation(location);
+      setRecentLocations(await getRecentLocations());
+      setShowOutOfServiceAreaModal(false);
+    }
+  };
+
   const handleBookRide = async () => {
     if (!pickupLocation || !dropoffLocation) {
       setErrorMessage('Please select both pickup and dropoff locations');
       setErrorDialogVisible(true);
       return;
     }
+    // Show pickup time modal instead of directly booking
+    setSelectedPickupTime(null);
+    setShowPickupTimeModal(true);
+  };
+
+  const handlePickupTimeConfirmed = async (pickupTime: string) => {
+    if (!pickupLocation || !dropoffLocation) return;
+
+    setShowPickupTimeModal(false);
     setIsBooking(true);
+
     try {
       const rideData = {
         pickup_location: {
@@ -434,7 +530,7 @@ export default function BookingScreen() {
         },
         estimated_distance: Number.isFinite(estimatedDistance) ? estimatedDistance : 0,
         number_of_seats: 1,
-        pickup_time: new Date().toISOString(),
+        pickup_time: pickupTime, // Use the selected time from modal
         fare_amount: Number.isFinite(estimatedFare) ? estimatedFare : 0,
         platform_fee: 0,
         driver_earnings: Number.isFinite(estimatedFare) ? estimatedFare : 0,
@@ -463,7 +559,9 @@ export default function BookingScreen() {
       const message = error?.message || error?.details || 'Failed to book ride. Please try again.';
       setErrorMessage(message);
       setErrorDialogVisible(true);
-    } finally { setIsBooking(false); }
+    } finally {
+      setIsBooking(false);
+    }
   };
 
   const handleViewBookedRide = () => {
@@ -530,6 +628,14 @@ export default function BookingScreen() {
             <Text style={styles.pillText}>₦{estimatedFare.toLocaleString()}</Text>
           </View>
         )}
+
+        {/* Operational Areas Info Button */}
+        <TouchableOpacity
+          onPress={() => setShowOperationalAreasModal(true)}
+          style={[styles.iconButton, { backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border }]}
+        >
+          <MaterialCommunityIcons name="information" size={20} color={BRAND.primary} />
+        </TouchableOpacity>
       </View>
 
       {/* Bottom Sheet */}
@@ -673,6 +779,34 @@ export default function BookingScreen() {
         message={errorMessage}
         actionText="Try Again"
         onClose={() => setErrorDialogVisible(false)}
+      />
+
+      {/* Operational Areas Modal */}
+      <OperationalAreasModal
+        visible={showOperationalAreasModal}
+        onClose={() => setShowOperationalAreasModal(false)}
+      />
+
+      {/* Out of Service Area Modal */}
+      <OutOfServiceAreaModal
+        visible={showOutOfServiceAreaModal}
+        onClose={() => setShowOutOfServiceAreaModal(false)}
+        closestArea={outOfServiceAreaInfo.closestArea}
+        distance={outOfServiceAreaInfo.distance}
+        onNavigateToArea={() => {
+          setShowOutOfServiceAreaModal(false);
+          setShowOperationalAreasModal(true);
+        }}
+        onAutoSelectNearestArea={handleAutoSelectNearestArea}
+      />
+
+      {/* Pickup Time Selection Modal */}
+      <PickupTimeModal
+        visible={showPickupTimeModal}
+        theme={theme}
+        isLoading={isBooking}
+        onConfirm={handlePickupTimeConfirmed}
+        onCancel={() => setShowPickupTimeModal(false)}
       />
     </View>
   );

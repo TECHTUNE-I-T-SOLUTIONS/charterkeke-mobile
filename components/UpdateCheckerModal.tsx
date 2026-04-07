@@ -101,7 +101,7 @@ export const UpdateCheckerModal: React.FC<UpdateCheckerModalProps> = ({
           throw new Error('Content length is 0');
         }
 
-        const reader = response.body?.getReader();
+        const reader = (response as any).body?.getReader?.();
         if (!reader) {
           throw new Error('Unable to read response body');
         }
@@ -134,7 +134,20 @@ export const UpdateCheckerModal: React.FC<UpdateCheckerModalProps> = ({
         }
 
         const binaryString = String.fromCharCode.apply(null, Array.from(fileContent) as any);
-        const base64String = btoa(binaryString);
+        // Base64 encode for file system write
+        const base64Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+        let result = '';
+        for (let i = 0; i < binaryString.length; i += 3) {
+          const a = binaryString.charCodeAt(i);
+          const b = i + 1 < binaryString.length ? binaryString.charCodeAt(i + 1) : 0;
+          const c = i + 2 < binaryString.length ? binaryString.charCodeAt(i + 2) : 0;
+          const bitmap = (a << 16) | (b << 8) | c;
+          result += base64Chars.charAt((bitmap >> 18) & 63);
+          result += base64Chars.charAt((bitmap >> 12) & 63);
+          result += i + 1 < binaryString.length ? base64Chars.charAt((bitmap >> 6) & 63) : '=';
+          result += i + 2 < binaryString.length ? base64Chars.charAt(bitmap & 63) : '=';
+        }
+        const base64String = result;
         
         // Encode as base64 for FileSystem write
         const encodingType = (FileSystem as any).EncodingType?.Base64 || 'base64';

@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Button from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
 import { COLORS } from '@/utils/colors';
@@ -28,7 +29,7 @@ type VerificationMethod = 'otp' | 'biometric' | 'password';
 
 interface BiometricInfo {
   available: boolean;
-  compatible: boolean[];
+  compatible: string[];
   enrolled: boolean;
 }
 
@@ -144,9 +145,10 @@ export default function ResumeSessionScreen() {
 
       if (compatible && enrolled) {
         const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
-        const biometricType = types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)
+        const typeStrings = types.map((t) => t.toString());
+        const biometricType = typeStrings.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION.toString())
           ? 'Face ID'
-          : types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)
+          : typeStrings.includes(LocalAuthentication.AuthenticationType.FINGERPRINT.toString())
           ? 'Fingerprint'
           : 'Biometric';
         
@@ -154,7 +156,7 @@ export default function ResumeSessionScreen() {
         
         setBiometricInfo({
           available: true,
-          compatible: types,
+          compatible: typeStrings,
           enrolled: true,
         });
       } else {
@@ -418,7 +420,7 @@ export default function ResumeSessionScreen() {
     try {
       const result = await LocalAuthentication.authenticateAsync({
         disableDeviceFallback: false,
-        reason: 'Verify your identity to resume your session',
+        fallbackLabel: 'Use passcode',
       });
 
       if (result.success) {
@@ -456,10 +458,10 @@ export default function ResumeSessionScreen() {
   // Determine biometric type for display
   const getBiometricType = () => {
     if (!biometricInfo.available) return 'Biometric';
-    if (biometricInfo.compatible.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) {
+    if (biometricInfo.compatible.includes('facial')) {
       return 'Face ID';
     }
-    if (biometricInfo.compatible.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) {
+    if (biometricInfo.compatible.includes('fingerprint')) {
       return 'Fingerprint';
     }
     return 'Biometric';
@@ -550,6 +552,13 @@ export default function ResumeSessionScreen() {
                 </Text>
               </Text>
             )}
+          </View>
+
+          {/* SMS Delivery Notice */}
+          <View style={{ marginTop: 20, backgroundColor: colors.primary + '10', borderLeftWidth: 4, borderLeftColor: colors.primary, padding: 12, borderRadius: 6 }}>
+            <Text style={{ fontSize: 12, color: colors.textSecondary, fontStyle: 'italic' }}>
+              💡 <Text style={{ fontWeight: '600', color: colors.text }}>Note:</Text> If the SMS didn't deliver, it could be due to temporary service provider delays or network issues. Please check your spam folder or try resending once the timer expires.
+            </Text>
           </View>
         </>
       )}
@@ -876,9 +885,11 @@ export default function ResumeSessionScreen() {
                 style={{ marginRight: 12 }}
                 disabled={isVerifying}
               >
-                <Text style={{ fontSize: 20, color: colors.primary, fontWeight: '600' }}>
-                  ← Back
-                </Text>
+                <MaterialCommunityIcons
+                  name="arrow-left"
+                  size={24}
+                  color={colors.primary}
+                />
               </TouchableOpacity>
             )}
             <View style={{ flex: 1 }} />

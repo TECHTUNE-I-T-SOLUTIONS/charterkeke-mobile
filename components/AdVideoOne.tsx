@@ -2,40 +2,18 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
-  ScrollView,
   TouchableOpacity,
   Image,
   StyleSheet,
   Dimensions,
   Animated,
   Platform,
-  ActivityIndicator,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Audio } from 'expo-av';
 
 const { width, height } = Dimensions.get('window');
-
-// Get audio file by index - using require with string literals instead of template strings
-const getAudioFile = (index: number) => {
-  switch (index) {
-    case 0:
-      return require('../assets/promotional-ads/ads-audio (1).mp3');
-    case 1:
-      return require('../assets/promotional-ads/ads-audio (2).mp3');
-    case 2:
-      return require('../assets/promotional-ads/ads-audio (3).mp3');
-    case 3:
-      return require('../assets/promotional-ads/ads-audio (4).mp3');
-    case 4:
-      return require('../assets/promotional-ads/ads-audio (5).mp3');
-    case 5:
-      return require('../assets/promotional-ads/ads-audio (6).mp3');
-    default:
-      return null;
-  }
-};
 
 interface PromotionalAd {
   id: string;
@@ -47,7 +25,6 @@ interface PromotionalAd {
   gradient: [string, string];
   highlights: { icon: string; text: string }[];
   cta: string;
-  audioFile: string;
   imageUrl: string;
   color: string;
   accentColor: string;
@@ -68,7 +45,6 @@ const PROMOTIONAL_ADS: PromotionalAd[] = [
       { icon: 'check-circle', text: 'No waiting' },
     ],
     cta: 'Book Now - Fastest Ride',
-    audioFile: 'ads-audio (1).mp3',
     imageUrl: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&h=600&fit=crop',
     color: '#ff6b6b',
     accentColor: '#ee5a52',
@@ -87,7 +63,6 @@ const PROMOTIONAL_ADS: PromotionalAd[] = [
       { icon: 'stop-circle', text: 'Zero Stops' },
     ],
     cta: 'Get Your Personal Keke',
-    audioFile: 'ads-audio (2).mp3',
     imageUrl: 'https://images.unsplash.com/photo-1552519507-da3effff991c?w=600&h=600&fit=crop',
     color: '#8b5cf6',
     accentColor: '#a855f7',
@@ -106,7 +81,6 @@ const PROMOTIONAL_ADS: PromotionalAd[] = [
       { icon: 'shield-check', text: 'No Hidden Fees' },
     ],
     cta: 'Save Money - Book Keke',
-    audioFile: 'ads-audio (3).mp3',
     imageUrl: 'https://images.unsplash.com/photo-1573937506759-0eed69e47da0?w=600&h=600&fit=crop',
     color: '#10b981',
     accentColor: '#059669',
@@ -125,7 +99,6 @@ const PROMOTIONAL_ADS: PromotionalAd[] = [
       { icon: 'lightning-bolt', text: 'Super Fast' },
     ],
     cta: 'Experience Keke Speed',
-    audioFile: 'ads-audio (4).mp3',
     imageUrl: 'https://images.unsplash.com/photo-1464219414179-4eb3854af2d7?w=600&h=600&fit=crop',
     color: '#0ea5e9',
     accentColor: '#06b6d4',
@@ -144,7 +117,6 @@ const PROMOTIONAL_ADS: PromotionalAd[] = [
       { icon: 'star', text: 'Rated & Safe' },
     ],
     cta: 'Trust KEKE - Book Now',
-    audioFile: 'ads-audio (5).mp3',
     imageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=600&h=600&fit=crop',
     color: '#f97316',
     accentColor: '#ea580c',
@@ -163,18 +135,18 @@ const PROMOTIONAL_ADS: PromotionalAd[] = [
       { icon: 'lightning-bolt', text: 'Smart Choice' },
     ],
     cta: '🔥 Book Your Keke Now',
-    audioFile: 'ads-audio (6).mp3',
     imageUrl: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=600&h=600&fit=crop',
     color: '#ec4899',
     accentColor: '#db2777',
   },
 ];
 
-interface PromotionalAdCarouselProps {
+interface AdVideoOneProps {
   onBookNowPress?: () => void;
+  onSkip?: () => void;
 }
 
-export function PromotionalAdCarousel({ onBookNowPress }: PromotionalAdCarouselProps = {}) {
+export function AdVideoOne({ onBookNowPress, onSkip }: AdVideoOneProps = {}) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -182,39 +154,33 @@ export function PromotionalAdCarousel({ onBookNowPress }: PromotionalAdCarouselP
   const iconAnim = useRef(new Animated.Value(0)).current;
   const benefitSlideAnim = useRef(new Animated.Value(0)).current;
 
-  // Load and play audio
+  // Play background audio throughout entire video
   useEffect(() => {
-    const playAudio = async () => {
+    const playBackgroundAudio = async () => {
       try {
-        // Stop previous audio
         if (sound) {
           await sound.unloadAsync();
         }
 
-        const audioFile = getAudioFile(currentIndex);
-        
-        if (!audioFile) {
-          console.log('Audio file not found for index:', currentIndex);
-          return;
-        }
-        
-        const { sound: newSound } = await Audio.Sound.createAsync(audioFile);
+        // Use first audio file throughout the entire video
+        const audioFile = require('../assets/promotional-ads/ads-audio (1).mp3');
+        const { sound: newSound } = await Audio.Sound.createAsync(audioFile, {
+          isLooping: true,
+        });
         setSound(newSound);
         await newSound.playAsync();
       } catch (error) {
         console.log('Audio playback error:', error);
-        // Silently fail - don't block UI if audio fails
       }
     };
 
-    playAudio();
+    playBackgroundAudio();
 
     return () => {
-      // Cleanup
+      sound?.unloadAsync();
     };
-  }, [currentIndex]);
+  }, []);
 
-  // Cleanup sound on unmount
   useEffect(() => {
     return () => {
       sound?.unloadAsync();
@@ -222,13 +188,11 @@ export function PromotionalAdCarousel({ onBookNowPress }: PromotionalAdCarouselP
   }, [sound]);
 
   useEffect(() => {
-    // Reset all animations
     fadeAnim.setValue(0);
     textAnim.setValue(0);
     iconAnim.setValue(0);
     benefitSlideAnim.setValue(0);
 
-    // Sequence of animations for excitement
     Animated.sequence([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -268,7 +232,6 @@ export function PromotionalAdCarousel({ onBookNowPress }: PromotionalAdCarouselP
 
   return (
     <View style={styles.container}>
-      {/* Full-Screen Ad Card */}
       <Animated.View
         style={[
           styles.adCard,
@@ -283,13 +246,11 @@ export function PromotionalAdCarousel({ onBookNowPress }: PromotionalAdCarouselP
           end={{ x: 1, y: 1 }}
           style={styles.gradientContainer}
         >
-          {/* Background Image */}
           <Image
             source={{ uri: currentAd.imageUrl }}
             style={styles.backgroundImage}
           />
 
-          {/* Overlay gradient for text readability */}
           <LinearGradient
             colors={[
               'rgba(0, 0, 0, 0.1)',
@@ -301,9 +262,24 @@ export function PromotionalAdCarousel({ onBookNowPress }: PromotionalAdCarouselP
             style={styles.overlay}
           />
 
-          {/* Content Container */}
+          {/* Decorative top-left elements */}
+          <View style={[styles.decorativeCircle, styles.topLeft, { backgroundColor: currentAd.accentColor }]} />
+          <View style={[styles.decorativeLine, styles.lineTopRight, { backgroundColor: currentAd.accentColor }]} />
+
+          {/* Close/Skip Button */}
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={onSkip}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <MaterialCommunityIcons
+              name="close"
+              size={28}
+              color="rgba(255, 255, 255, 0.9)"
+            />
+          </TouchableOpacity>
+
           <View style={styles.contentWrapper}>
-            {/* Icon with pulse animation */}
             <Animated.View
               style={[
                 styles.iconContainer,
@@ -334,7 +310,6 @@ export function PromotionalAdCarousel({ onBookNowPress }: PromotionalAdCarouselP
               </View>
             </Animated.View>
 
-            {/* Title with animation */}
             <Animated.View
               style={[
                 {
@@ -353,7 +328,6 @@ export function PromotionalAdCarousel({ onBookNowPress }: PromotionalAdCarouselP
               <Text style={styles.title}>{currentAd.title}</Text>
             </Animated.View>
 
-            {/* Problem Statement */}
             <Animated.View
               style={[
                 {
@@ -375,7 +349,6 @@ export function PromotionalAdCarousel({ onBookNowPress }: PromotionalAdCarouselP
               </View>
             </Animated.View>
 
-            {/* Solution */}
             <Animated.View
               style={[
                 {
@@ -397,7 +370,6 @@ export function PromotionalAdCarousel({ onBookNowPress }: PromotionalAdCarouselP
               </View>
             </Animated.View>
 
-            {/* Key Highlights - Slide in animation */}
             <Animated.View
               style={[
                 styles.highlightsContainer,
@@ -427,7 +399,6 @@ export function PromotionalAdCarousel({ onBookNowPress }: PromotionalAdCarouselP
               ))}
             </Animated.View>
 
-            {/* Bold Benefit Statement */}
             <Animated.View
               style={[
                 {
@@ -448,7 +419,6 @@ export function PromotionalAdCarousel({ onBookNowPress }: PromotionalAdCarouselP
               </View>
             </Animated.View>
 
-            {/* CTA Button - with pulse effect */}
             <Animated.View
               style={{
                 opacity: benefitSlideAnim,
@@ -467,7 +437,10 @@ export function PromotionalAdCarousel({ onBookNowPress }: PromotionalAdCarouselP
                   styles.ctaButton,
                   { backgroundColor: currentAd.color },
                 ]}
-                onPress={onBookNowPress}
+                onPress={async () => {
+                  await sound?.stopAsync();
+                  onBookNowPress?.();
+                }}
               >
                 <Text style={styles.ctaText}>{currentAd.cta}</Text>
                 <MaterialCommunityIcons
@@ -480,21 +453,9 @@ export function PromotionalAdCarousel({ onBookNowPress }: PromotionalAdCarouselP
             </Animated.View>
           </View>
 
-          {/* Decorative Accent Elements */}
-          <View
-            style={[
-              styles.accentElement,
-              styles.accentTop,
-              { borderTopColor: currentAd.accentColor },
-            ]}
-          />
-          <View
-            style={[
-              styles.accentElement,
-              styles.accentBottom,
-              { borderBottomColor: currentAd.accentColor },
-            ]}
-          />
+          {/* Decorative bottom-right elements */}
+          <View style={[styles.decorativeCircle, styles.bottomRight, { backgroundColor: currentAd.accentColor }]} />
+          <View style={[styles.decorativeLine, styles.lineBottomLeft, { backgroundColor: currentAd.accentColor }]} />
         </LinearGradient>
       </Animated.View>
 
@@ -518,7 +479,6 @@ export function PromotionalAdCarousel({ onBookNowPress }: PromotionalAdCarouselP
         ))}
       </View>
 
-      {/* Slide counter */}
       <Text style={styles.slideCounter}>
         {currentIndex + 1} / {PROMOTIONAL_ADS.length}
       </Text>
@@ -533,13 +493,18 @@ const styles = StyleSheet.create({
     paddingBottom: 0,
     backgroundColor: 'transparent',
   },
+  closeButton: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    zIndex: 20,
+    padding: 8,
+  },
   adCard: {
     flex: 1,
     borderRadius: 0,
     overflow: 'hidden',
     elevation: 12,
-    marginHorizontal: 0,
-    marginVertical: 0,
   },
   gradientContainer: {
     flex: 1,
@@ -556,6 +521,41 @@ const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 1,
+  },
+  decorativeCircle: {
+    position: 'absolute',
+    borderRadius: 1000,
+    zIndex: 0,
+    opacity: 0.15,
+  },
+  topLeft: {
+    width: 120,
+    height: 120,
+    top: -30,
+    left: -30,
+  },
+  bottomRight: {
+    width: 100,
+    height: 100,
+    bottom: -20,
+    right: -20,
+  },
+  decorativeLine: {
+    position: 'absolute',
+    zIndex: 0,
+    opacity: 0.2,
+  },
+  lineTopRight: {
+    width: 80,
+    height: 2,
+    top: '20%',
+    right: 0,
+  },
+  lineBottomLeft: {
+    width: 60,
+    height: 2,
+    bottom: '25%',
+    left: 0,
   },
   contentWrapper: {
     paddingHorizontal: 20,
@@ -715,21 +715,5 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     paddingBottom: 12,
     letterSpacing: 0.3,
-  },
-  accentElement: {
-    position: 'absolute',
-    width: 2,
-  },
-  accentTop: {
-    top: 0,
-    left: '50%',
-    height: 60,
-    borderTopWidth: 3,
-  },
-  accentBottom: {
-    bottom: 0,
-    right: '50%',
-    height: 40,
-    borderBottomWidth: 3,
   },
 });

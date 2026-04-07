@@ -95,36 +95,34 @@ export function FullScreenAdDisplay({
       ]}
       pointerEvents={visible ? 'auto' : 'none'}
     >
-      <SafeAreaView style={styles.safeArea}>
-        {/* Skip Button with Countdown */}
-        <View style={styles.skipContainer}>
-          <TouchableOpacity
-            style={[
-              styles.skipButton,
-              !canSkip && styles.skipButtonDisabled,
-            ]}
-            onPress={handleClose}
-            disabled={!canSkip}
-            activeOpacity={canSkip ? 0.7 : 1}
-          >
-            <Text style={styles.skipText}>
-              {canSkip ? '✕ Skip' : `Skip in ${countdown}s`}
-            </Text>
-          </TouchableOpacity>
-        </View>
+      {/* Skip Button - Absolute positioning */}
+      <View style={styles.skipContainer}>
+        <TouchableOpacity
+          style={[
+            styles.skipButton,
+            !canSkip && styles.skipButtonDisabled,
+          ]}
+          onPress={handleClose}
+          disabled={!canSkip}
+          activeOpacity={canSkip ? 0.7 : 1}
+        >
+          <Text style={styles.skipText}>
+            {canSkip ? '✕ Skip' : `Skip in ${countdown}s`}
+          </Text>
+        </TouchableOpacity>
+      </View>
 
-        {/* Full Screen Ad Carousel */}
-        <View style={styles.carouselContainer}>
-          <PromotionalAdCarousel
-            onBookNowPress={handleBookNow}
-          />
-        </View>
+      {/* Full Screen Ad Carousel - Takes entire space */}
+      <View style={styles.carouselContainer}>
+        <PromotionalAdCarousel
+          onBookNowPress={handleBookNow}
+        />
+      </View>
 
-        {/* Video Ad Warning Text */}
-        <View style={styles.adLabel}>
-          <Text style={styles.adLabelText}>Advertisement • 1 of 1</Text>
-        </View>
-      </SafeAreaView>
+      {/* Ad Label at bottom */}
+      <View style={styles.adLabel}>
+        <Text style={styles.adLabelText}>Advertisement • 1 of 1</Text>
+      </View>
     </Animated.View>
   );
 }
@@ -132,57 +130,54 @@ export function FullScreenAdDisplay({
 const styles = StyleSheet.create({
   container: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#000000',
-    zIndex: 9999,
-  },
-  safeArea: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 0,
-    paddingVertical: 0,
-    paddingBottom: 0,
+    backgroundColor: '#000',
+    zIndex: 1000,
+    justifyContent: 'flex-start',
   },
   skipContainer: {
-    position: 'absolute',
-    top: Platform.OS === 'android' ? 16 : 8,
-    right: 16,
-    zIndex: 10,
+    paddingTop: 16,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    zIndex: 1001,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   skipButton: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    paddingVertical: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.5)',
+    borderColor: 'rgba(255, 255, 255, 0.3)',
   },
   skipButtonDisabled: {
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderColor: 'rgba(255, 255, 255, 0.25)',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: 'rgba(255, 255, 255, 0.15)',
   },
   skipText: {
     color: 'white',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
-    textAlign: 'center',
   },
   carouselContainer: {
     flex: 1,
-    justifyContent: 'center',
-    paddingVertical: 20,
-    paddingHorizontal: 0,
+    width: '100%',
+    backgroundColor: '#000',
   },
   adLabel: {
     position: 'absolute',
-    bottom: 20,
+    bottom: 0,
     left: 0,
     right: 0,
+    paddingHorizontal: 24,
+    paddingBottom: 16,
     alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
   },
   adLabelText: {
-    color: 'rgba(255, 255, 255, 0.5)',
-    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 12,
     fontWeight: '500',
-    letterSpacing: 0.3,
   },
 });
+
