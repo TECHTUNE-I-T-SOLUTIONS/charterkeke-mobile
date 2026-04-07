@@ -32,14 +32,5 @@
   },
   "submit": {
     "production": {}
-  },
-  "update": {
-    "enabled": true,
-    "codeSigningCertificate": "./certs/code-signing-cert.pem",
-    "codeSigningMetadata": {
-      "keyid": "main",
-      "alg": "rsa-sha256"
-    },
-    "url": "https://u.expo.dev/9966caa5-2d6e-4192-a97c-0eb0f3108fa0"
   }
 }
