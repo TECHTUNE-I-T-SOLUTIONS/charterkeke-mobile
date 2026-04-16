@@ -10,7 +10,6 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Audio } from 'expo-av';
 
 const { width, height } = Dimensions.get('window');
 
@@ -44,34 +43,12 @@ const testimonials = [
 ];
 
 export function AdVideoSeven({ onBookNowPress, onSkip }: AdVideoSevenProps = {}) {
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const scaleAnim = useRef(new Animated.Value(0.85)).current;
 
-  // Play looping background audio
-  useEffect(() => {
-    const playBackgroundAudio = async () => {
-      try {
-        const audioFile = require('../assets/promotional-ads/ads-audio (1).mp3');
-        const { sound: newSound } = await Audio.Sound.createAsync(audioFile, {
-          isLooping: true,
-        });
-        setSound(newSound);
-        await newSound.playAsync();
-      } catch (error) {
-        console.log('Audio playback error:', error);
-      }
-    };
-
-    playBackgroundAudio();
-
-    return () => {
-      sound?.unloadAsync();
-    };
-  }, []);
-
+  // No audio - ads are now silent for session resumption flow
   // Animations
   useEffect(() => {
     Animated.sequence([
@@ -112,12 +89,12 @@ export function AdVideoSeven({ onBookNowPress, onSkip }: AdVideoSevenProps = {})
   }, [fadeAnim, slideAnim, scaleAnim, pulseAnim]);
 
   const handleDismiss = async () => {
-    await sound?.stopAsync();
+    // await sound?.stopAsync();
     onSkip?.();
   };
 
   const handleBookNow = async () => {
-    await sound?.stopAsync();
+    // await sound?.stopAsync();
     onBookNowPress?.();
   };
 
@@ -216,84 +193,40 @@ export function AdVideoSeven({ onBookNowPress, onSkip }: AdVideoSevenProps = {})
             </Text>
           </Animated.View>
 
-          {/* Stats */}
-          <Animated.View
-            style={[
-              styles.statsBox,
-              {
-                opacity: fadeAnim,
-                transform: [
-                  {
-                    scale: scaleAnim,
-                  },
-                ],
-              },
-            ]}
-          >
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>50K+</Text>
-              <Text style={styles.statLabel}>Happy Riders</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>4.9★</Text>
-              <Text style={styles.statLabel}>Average Rating</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>98%</Text>
-              <Text style={styles.statLabel}>Satisfaction</Text>
-            </View>
-          </Animated.View>
+          {/* Stats - Hidden for compact design */}
 
-          {/* Testimonials */}
+          {/* Single Testimonial */}
           <Animated.View
             style={{
               opacity: fadeAnim,
-              transform: [
-                {
-                  translateY: slideAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [80, 0],
-                  }),
-                },
-              ],
+              width: '100%',
             }}
           >
-            <Text style={styles.testimonialsTitle}>What Riders Say</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.testimonialScroll}
-              scrollEnabled={false}
-            >
-              {testimonials.map((testimonial, index) => (
-                <View key={index} style={[styles.testimonialCard, { borderLeftColor: testimonial.color }]}>
-                  <View style={styles.stars}>
-                    {[...Array(testimonial.rating)].map((_, i) => (
-                      <MaterialCommunityIcons
-                        key={i}
-                        name="star"
-                        size={12}
-                        color="#fbbf24"
-                      />
-                    ))}
-                  </View>
-                  <Text style={styles.testimonialText}>{testimonial.text}</Text>
-                  <View style={styles.testimonialAuthor}>
-                    <View style={[styles.avatarCircle, { backgroundColor: testimonial.color }]}>
-                      <Text style={styles.avatarText}>
-                        {testimonial.name[0]}
-                      </Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.authorName}>{testimonial.name}</Text>
-                      <Text style={styles.authorRole}>{testimonial.role}</Text>
-                    </View>
-                  </View>
+            <Text style={styles.testimonialsTitle}>Loved by Riders</Text>
+            <View style={[styles.testimonialCard, { borderLeftColor: testimonials[0].color }]}>
+              <View style={styles.stars}>
+                {[...Array(testimonials[0].rating)].map((_, i) => (
+                  <MaterialCommunityIcons
+                    key={i}
+                    name="star"
+                    size={11}
+                    color="#fbbf24"
+                  />
+                ))}
+              </View>
+              <Text style={styles.testimonialText}>{testimonials[0].text}</Text>
+              <View style={styles.testimonialAuthor}>
+                <View style={[styles.avatarCircle, { backgroundColor: testimonials[0].color }]}>
+                  <Text style={styles.avatarText}>
+                    {testimonials[0].name[0]}
+                  </Text>
                 </View>
-              ))}
-            </ScrollView>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.authorName}>{testimonials[0].name}</Text>
+                  <Text style={styles.authorRole}>{testimonials[0].role}</Text>
+                </View>
+              </View>
+            </View>
           </Animated.View>
 
           {/* Community Message */}
@@ -303,12 +236,12 @@ export function AdVideoSeven({ onBookNowPress, onSkip }: AdVideoSevenProps = {})
             }}
           >
             <View style={styles.communityBox}>
-              <MaterialCommunityIcons
-                name="handshake"
-                size={28}
-                color="#ffffff"
-                style={{ marginBottom: 8 }}
-              />
+            <MaterialCommunityIcons
+              name="handshake"
+              size={20}
+              color="#ffffff"
+              style={{ marginBottom: 4 }}
+            />
               <Text style={styles.communityText}>
                 Join thousands of smart Lagos residents
               </Text>
@@ -337,9 +270,9 @@ export function AdVideoSeven({ onBookNowPress, onSkip }: AdVideoSevenProps = {})
               <Text style={styles.ctaText}>JOIN THE COMMUNITY</Text>
               <MaterialCommunityIcons
                 name="heart"
-                size={20}
+                size={16}
                 color="#f59e0b"
-                style={{ marginLeft: 8 }}
+                style={{ marginLeft: 6 }}
               />
             </TouchableOpacity>
 
@@ -384,18 +317,22 @@ const styles = StyleSheet.create({
     left: '-5%',
   },
   contentWrapper: {
-    paddingHorizontal: 24,
-    paddingVertical: 40,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
   },
   header: {
     width: '100%',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 8,
   },
   closeButton: {
     padding: 8,
@@ -417,43 +354,43 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   heartIcon: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: 'rgba(236, 72, 153, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 8,
     borderWidth: 2,
     borderColor: 'rgba(236, 72, 153, 0.3)',
   },
   mainHeadline: {
-    fontSize: 44,
+    fontSize: 28,
     fontWeight: '900',
     color: '#ffffff',
     textAlign: 'center',
-    lineHeight: 52,
-    marginBottom: 8,
+    lineHeight: 36,
+    marginBottom: 4,
   },
   highlight: {
     color: '#fbbf24',
     fontStyle: 'italic',
   },
   subHeadline: {
-    fontSize: 15,
+    fontSize: 12,
     color: 'rgba(255, 255, 255, 0.9)',
     textAlign: 'center',
     fontWeight: '600',
-    marginBottom: 20,
+    marginBottom: 10,
   },
   statsBox: {
     width: '100%',
     flexDirection: 'row',
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    marginBottom: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
     alignItems: 'center',
@@ -464,44 +401,45 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   statNumber: {
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: '900',
     color: '#fbbf24',
-    marginBottom: 2,
+    marginBottom: 1,
   },
   statLabel: {
-    fontSize: 10,
+    fontSize: 8,
     color: 'rgba(255, 255, 255, 0.8)',
     fontWeight: '600',
     textAlign: 'center',
     textTransform: 'uppercase',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
   statDivider: {
     width: 1,
-    height: 35,
+    height: 28,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
   testimonialsTitle: {
-    fontSize: 15,
+    fontSize: 11,
     fontWeight: '800',
     color: '#ffffff',
-    marginBottom: 12,
+    marginBottom: 6,
     textAlign: 'center',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
   testimonialScroll: {
-    marginBottom: 20,
+    marginBottom: 12,
   },
   testimonialCard: {
-    width: width - 48,
+    width: width - 28,
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
     borderLeftWidth: 4,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
     marginRight: 0,
+    marginBottom: 8,
   },
   stars: {
     flexDirection: 'row',
@@ -509,23 +447,23 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   testimonialText: {
-    fontSize: 13,
+    fontSize: 11,
     color: '#ffffff',
     fontWeight: '600',
-    lineHeight: 18,
-    marginBottom: 10,
+    lineHeight: 15,
+    marginBottom: 6,
   },
   testimonialAuthor: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   avatarCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 10,
+    marginRight: 8,
   },
   avatarText: {
     color: '#ffffff',
@@ -533,60 +471,61 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   authorName: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     color: '#ffffff',
   },
   authorRole: {
-    fontSize: 10,
+    fontSize: 9,
     color: 'rgba(255, 255, 255, 0.6)',
-    marginTop: 2,
+    marginTop: 1,
   },
   communityBox: {
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.15)',
   },
   communityText: {
-    fontSize: 13,
+    fontSize: 11,
     color: '#ffffff',
     fontWeight: '700',
     textAlign: 'center',
   },
   primaryCTA: {
-    width: width - 48,
+    width: width - 28,
     backgroundColor: '#ffffff',
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 12,
+    elevation: 8,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    marginBottom: 12,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    marginBottom: 6,
   },
   ctaText: {
     color: '#f59e0b',
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '900',
-    letterSpacing: 0.8,
+    letterSpacing: 0.5,
   },
   secondaryCTA: {
-    paddingVertical: 12,
+    paddingVertical: 6,
     alignItems: 'center',
+    marginBottom: 4,
   },
   ctaSecondary: {
     color: 'rgba(255, 255, 255, 0.75)',
-    fontSize: 14,
+    fontSize: 11,
     fontWeight: '600',
   },
 });

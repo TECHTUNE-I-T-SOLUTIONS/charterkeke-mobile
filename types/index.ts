@@ -227,3 +227,63 @@ export interface NetworkState {
   isInternetReachable: boolean;
   type: 'none' | 'wifi' | 'cellular' | 'other' | 'unknown';
 }
+
+// Chat Types
+export interface Chat {
+  id: string;
+  ride_id: string;
+  rider_id: string;
+  driver_id: string;
+  created_at: string;
+  updated_at: string;
+  last_message?: Message | null;
+  unread_count?: number;
+  ride?: {
+    id: string;
+    pickup_location?: string;
+    dropoff_location?: string;
+    status: RideStatus;
+  };
+  rider?: {
+    id: string;
+    name: string;
+    phone?: string;
+  };
+  driver?: {
+    id: string;
+    name: string;
+    phone?: string;
+  };
+}
+
+export type MessageType = 'text' | 'location';
+
+export interface Message {
+  id: string;
+  chat_id: string;
+  sender_id: string;
+  content?: string;
+  message_type: MessageType;
+  location_data?: {
+    latitude: number;
+    longitude: number;
+    accuracy?: number;
+    timestamp: number;
+  };
+  sent_at: string;
+  read_by_rider?: boolean;
+  read_by_driver?: boolean;
+  user?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+  };
+}
+
+export interface ChatParticipant {
+  id: string;
+  firstName: string;
+  lastName: string;
+  avatar?: string;
+  phone: string;
+}

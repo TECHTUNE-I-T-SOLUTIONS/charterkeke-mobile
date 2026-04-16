@@ -6,6 +6,9 @@ import * as Linking from 'expo-linking';
 import { Platform } from 'react-native';
 import {
   getCurrentAppVersion,
+  cacheCurrentVersion,
+  hasVersionChanged,
+  getVersionInfoDetailed,
   compareVersions,
   isUpdateAvailable,
   isValidVersion,
@@ -41,12 +44,41 @@ const CHECK_INTERVAL_HOURS = 24;
 
 export class UpdateService {
   /**
+   * Initialize version detection on app startup
+   * CALL THIS IN App.tsx on first load!
+   */
+  static async initializeVersionDetection(): Promise<void> {
+    try {
+      // Cache the current version on startup
+      await cacheCurrentVersion();
+      
+      // Check if version changed since last run
+      const versionChangeInfo = await hasVersionChanged();
+      if (versionChangeInfo.changed) {
+        console.log('[UpdateService] 🔄 App updated! Clearing caches...');
+        // Clear dismissed version on app update to show new release notes
+        await this.resetDismissedVersion();
+      }
+
+      // Log detailed version info for debugging
+      const versionInfo = await getVersionInfoDetailed();
+      console.log('[UpdateService] Version info:', {
+        version: versionInfo.version,
+        source: versionInfo.source,
+        buildInfo: versionInfo.buildInfo,
+      });
+    } catch (error) {
+      console.error('[UpdateService] Error initializing version detection:', error);
+    }
+  }
+
+  /**
    * Get the current app version from app.json or expo constants
-   * Uses the new version utility for reliability
+   * Uses reliable multi-source detection
    */
   static async getCurrentVersion(): Promise<string> {
     try {
-      const version = getCurrentAppVersion();
+      const version = await getCurrentAppVersion();
       console.log('[UpdateService] Current app version:', version);
       return version;
     } catch (error) {

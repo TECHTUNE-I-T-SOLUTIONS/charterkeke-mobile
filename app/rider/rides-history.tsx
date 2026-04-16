@@ -67,6 +67,7 @@ export default function RidesHistoryScreen() {
       case 'cancelled': return '#EF4444';
       case 'pending': return '#F59E0B';
       case 'in_progress': return '#3B82F6';
+      case 'dispatched' : return '#F509C2'
       default: return BRAND.primary;
     }
   };
@@ -84,7 +85,7 @@ export default function RidesHistoryScreen() {
 
         <View style={styles.tabsContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsContent}>
-            {['all', 'pending', 'in_progress', 'completed', 'cancelled'].map(status => (
+            {['all', 'pending', 'dispatched', 'in_progress', 'accepted', 'completed', 'cancelled'].map(status => (
               <TouchableOpacity
                 key={status}
                 onPress={() => setFilterStatus(status)}
@@ -143,6 +144,27 @@ export default function RidesHistoryScreen() {
                     <TouchableOpacity onPress={() => handleCancelRide(ride.id)} disabled={cancellingRideId === ride.id}>
                       <Text style={{ color: '#EF4444', fontWeight: '600', fontSize: 12 }}>
                         {cancellingRideId === ride.id ? 'Cancelling...' : 'Cancel'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  {ride.status === 'completed' && (
+                    <TouchableOpacity 
+                      onPress={() => router.push({ 
+                        pathname: '/rider/rating', 
+                        params: { 
+                          rideId: ride.id,
+                          driverId: ride.driver_id
+                        } 
+                      } as any)}
+                      style={{
+                        backgroundColor: BRAND.primary,
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: 6,
+                      }}
+                    >
+                      <Text style={{ color: '#000', fontWeight: '600', fontSize: 12 }}>
+                        Rate Driver
                       </Text>
                     </TouchableOpacity>
                   )}

@@ -10,7 +10,6 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Audio } from 'expo-av';
 
 const { width, height } = Dimensions.get('window');
 
@@ -20,35 +19,13 @@ interface AdVideoFourProps {
 }
 
 export function AdVideoFour({ onBookNowPress, onSkip }: AdVideoFourProps = {}) {
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
   const rotateAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
   const bounceAnim = useRef(new Animated.Value(0)).current;
 
-  // Play looping background audio
-  useEffect(() => {
-    const playBackgroundAudio = async () => {
-      try {
-        const audioFile = require('../assets/promotional-ads/ads-audio (4).mp3');
-        const { sound: newSound } = await Audio.Sound.createAsync(audioFile, {
-          isLooping: true,
-        });
-        setSound(newSound);
-        await newSound.playAsync();
-      } catch (error) {
-        console.log('Audio playback error:', error);
-      }
-    };
-
-    playBackgroundAudio();
-
-    return () => {
-      sound?.unloadAsync();
-    };
-  }, []);
-
+  // No audio - ads are now silent for session resumption flow
   // Animations
   useEffect(() => {
     Animated.sequence([
@@ -98,12 +75,12 @@ export function AdVideoFour({ onBookNowPress, onSkip }: AdVideoFourProps = {}) {
   }, [fadeAnim, slideAnim, scaleAnim, bounceAnim, rotateAnim]);
 
   const handleDismiss = async () => {
-    await sound?.stopAsync();
+    // await sound?.stopAsync();
     onSkip?.();
   };
 
   const handleBookNow = async () => {
-    await sound?.stopAsync();
+    // await sound?.stopAsync();
     onBookNowPress?.();
   };
 
@@ -205,11 +182,11 @@ export function AdVideoFour({ onBookNowPress, onSkip }: AdVideoFourProps = {}) {
             >
               {/* Uber/Bolt Card */}
               <View style={[styles.compCard, styles.expensiveCard]}>
-                <Text style={styles.cardLabel}>Uber/Bolt</Text>
+                <Text style={styles.cardLabel}>Other Rides</Text>
                 <View style={styles.priceTag}>
                   <Text style={styles.oldPrice}>₦2,500</Text>
                 </View>
-                <Text style={styles.cardDescSmall}>5km ride</Text>
+                <Text style={styles.cardDescSmall}>2km ride</Text>
               </View>
 
               {/* VS Badge */}
@@ -219,7 +196,7 @@ export function AdVideoFour({ onBookNowPress, onSkip }: AdVideoFourProps = {}) {
 
               {/* KEKE Card */}
               <View style={[styles.compCard, styles.affordableCard]}>
-                <Text style={styles.cardLabel}>KEKE</Text>
+                <Text style={styles.cardLabel}>CHARTER KEKE</Text>
                 <View style={styles.priceTagGreen}>
                   <Text style={styles.newPrice}>₦1,500</Text>
                 </View>
@@ -450,7 +427,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   closeButton: {
-    padding: 8,
+    padding: 25,
   },
   adLabel: {
     color: 'rgba(255, 255, 255, 0.7)',

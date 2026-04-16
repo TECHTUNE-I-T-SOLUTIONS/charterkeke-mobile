@@ -10,7 +10,9 @@ import {
   StyleSheet,
   StatusBar,
   Dimensions,
+  Pressable,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/context/ThemeContext';
 import { useAlert } from '@/context/AlertContext';
@@ -18,6 +20,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
 import { apiService } from '@/services/api';
 import { BRAND } from '@/utils/colors';
+import { verticalScale, scale } from 'react-native-size-matters';
 
 interface RideData {
   id: string;
@@ -82,6 +85,7 @@ export default function RideDetailsScreen() {
   const params = useLocalSearchParams();
   const { theme } = useTheme();
   const { showError, showSuccess } = useAlert();
+  const insets = useSafeAreaInsets();
   const isLight = theme.mode === 'light';
   
   const rideDataParam = Array.isArray(params.rideData) ? params.rideData[0] : params.rideData || '';
@@ -194,10 +198,10 @@ export default function RideDetailsScreen() {
           )}
         </MapboxMap>
         
-        <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: theme.colors.surface }]}>
+        <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: theme.colors.surface, top: Math.max(insets.top, verticalScale(12)) + verticalScale(8), left: scale(16) }]}>
           <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.textPrimary} />
         </TouchableOpacity>
-        <View style={[styles.statusTag, { backgroundColor: theme.colors.surface }]}>
+        <View style={[styles.statusTag, { backgroundColor: theme.colors.surface, top: Math.max(insets.top, verticalScale(12)) + verticalScale(8) + 52, right: scale(16) }]}>
           <View style={[styles.statusDot, { backgroundColor: rideDetails.status === 'completed' ? '#10B981' : BRAND.primary }]} />
           <Text style={[styles.statusText, { color: theme.colors.textPrimary }]}>{rideDetails.status.toUpperCase()}</Text>
         </View>
@@ -234,9 +238,17 @@ export default function RideDetailsScreen() {
                 )}
               </View>
               {(driverDetails?.phone_number || rideDetails.drivers?.users?.phone_number) && (
-                <TouchableOpacity onPress={handleCallDriver} style={styles.callBtn}>
-                  <MaterialCommunityIcons name="phone" size={24} color="#FFF" />
-                </TouchableOpacity>
+                <View style={styles.actionButtons}>
+                  <TouchableOpacity onPress={handleCallDriver} style={styles.callBtn}>
+                    <MaterialCommunityIcons name="phone" size={24} color="#FFF" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => router.push(`/rider/chat?rideId=${rideDetails.id}`)}
+                    style={[styles.chatBtn, { backgroundColor: theme.colors.primary }]}
+                  >
+                    <MaterialCommunityIcons name="message" size={20} color="#FFF" />
+                  </TouchableOpacity>
+                </View>
               )}
             </View>
           </View>
@@ -347,8 +359,8 @@ const styles = StyleSheet.create({
   mapContainer: { height: 480, width: '100%', position: 'relative' },
   map: { ...StyleSheet.absoluteFillObject },
   headerOverlay: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20, position: 'absolute', top: 0, left: 0, right: 0 },
-  backBtn: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, elevation: 4, marginTop: 60 },
-  statusTag: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 30, flexDirection: 'row', alignItems: 'center', gap: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, elevation: 4, marginTop: 4 },
+  backBtn: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, elevation: 4, position: 'absolute', top: scale(16), left: scale(16), zIndex: 10 },
+  statusTag: { paddingHorizontal: scale(14), paddingVertical: verticalScale(8), borderRadius: scale(30), flexDirection: 'row', alignItems: 'center', gap: scale(8), shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, elevation: 4, position: 'absolute', zIndex: 10 },
   statusDot: { width: 8, height: 8, borderRadius: 4 },
   statusText: { fontSize: 12, fontWeight: '700' },
   content: { flex: 1, padding: 20, marginTop: -40, borderTopLeftRadius: 30, borderTopRightRadius: 30 },
@@ -361,6 +373,8 @@ const styles = StyleSheet.create({
   driverName: { fontSize: 18, fontWeight: '700', marginBottom: 2 },
   carInfo: { fontSize: 13 },
   callBtn: { width: 50, height: 50, borderRadius: 25, backgroundColor: BRAND.primary, justifyContent: 'center', alignItems: 'center', shadowColor: BRAND.primary, shadowOffset: {width:0, height:4}, shadowOpacity: 0.3, elevation: 5 },
+  actionButtons: { flexDirection: 'row', gap: 12 },
+  chatBtn: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: {width:0, height:2}, shadowOpacity: 0.2, elevation: 3 },
   sectionTitle: { fontSize: 11, fontWeight: '700', marginBottom: 16, letterSpacing: 0.5 },
   routeContainer: { flexDirection: 'row' },
   timeline: { alignItems: 'center', marginRight: 16, paddingTop: 6 },

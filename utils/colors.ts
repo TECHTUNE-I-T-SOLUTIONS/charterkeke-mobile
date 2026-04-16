@@ -11,7 +11,7 @@ export const COLORS = {
     textPrimary: '#1f2937',  // Alias for primary text
     textSecondary: '#6b7280',
     textTertiary: '#9ca3af',
-    
+    emailtextPrimary: '#0B0C0C',
     // UI Elements
     border: '#e5e7eb',
     input: '#f5f5f5',
@@ -53,6 +53,7 @@ export const COLORS = {
     textPrimary: '#f3f4f6',  // Alias for primary text
     textSecondary: '#d1d5db',
     textTertiary: '#9ca3af',
+    emailtextPrimary: '#111010',
     
     // UI Elements
     border: '#374151',

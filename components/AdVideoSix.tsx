@@ -9,7 +9,6 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Audio } from 'expo-av';
 
 const { width, height } = Dimensions.get('window');
 
@@ -19,35 +18,13 @@ interface AdVideoSixProps {
 }
 
 export function AdVideoSix({ onBookNowPress, onSkip }: AdVideoSixProps = {}) {
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
   const rotateAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
   const shakeAnim = useRef(new Animated.Value(0)).current;
 
-  // Play looping background audio
-  useEffect(() => {
-    const playBackgroundAudio = async () => {
-      try {
-        const audioFile = require('../assets/promotional-ads/ads-audio (6).mp3');
-        const { sound: newSound } = await Audio.Sound.createAsync(audioFile, {
-          isLooping: true,
-        });
-        setSound(newSound);
-        await newSound.playAsync();
-      } catch (error) {
-        console.log('Audio playback error:', error);
-      }
-    };
-
-    playBackgroundAudio();
-
-    return () => {
-      sound?.unloadAsync();
-    };
-  }, []);
-
+  // No audio - ads are now silent for session resumption flow
   // Animations
   useEffect(() => {
     Animated.sequence([
@@ -103,12 +80,12 @@ export function AdVideoSix({ onBookNowPress, onSkip }: AdVideoSixProps = {}) {
   }, [fadeAnim, slideAnim, scaleAnim, shakeAnim, rotateAnim]);
 
   const handleDismiss = async () => {
-    await sound?.stopAsync();
+    // await sound?.stopAsync();
     onSkip?.();
   };
 
   const handleBookNow = async () => {
-    await sound?.stopAsync();
+    // await sound?.stopAsync();
     onBookNowPress?.();
   };
 

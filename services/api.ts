@@ -41,6 +41,23 @@ class APIService {
   private handleError = async (error: AxiosError): Promise<never> => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
+    // Handle network errors and timeouts (status 0)
+    if (!error.response || error.response.status === 0) {
+      console.error('[API] Network error or timeout:', {
+        message: error.message,
+        code: error.code,
+        url: originalRequest?.url,
+      });
+      
+      // Return a more informative error
+      const networkError = new Error(
+        error.code === 'ECONNABORTED' 
+          ? 'Request timeout. Please check your network connection.'
+          : 'Network error. Please check your connection and try again.'
+      );
+      return Promise.reject(networkError);
+    }
+
     if (error.response?.status === 401 && !originalRequest._retry) {
       if (this.isRefreshing) {
         return new Promise((resolve, reject) => {
@@ -93,13 +110,25 @@ class APIService {
   };
 
   async get<T>(url: string, config?: any): Promise<T> {
-    const response = await this.api.get<T>(url, config);
-    return response.data;
+    try {
+      console.log(`[API] GET ${this.api.defaults.baseURL}${url}`);
+      const response = await this.api.get<T>(url, config);
+      return response.data;
+    } catch (error: any) {
+      console.error(`[API] GET failed at ${this.api.defaults.baseURL}${url}:`, error.message);
+      throw error;
+    }
   }
 
   async post<T>(url: string, data?: any, config?: any): Promise<T> {
-    const response = await this.api.post<T>(url, data, config);
-    return response.data;
+    try {
+      console.log(`[API] POST ${this.api.defaults.baseURL}${url}`);
+      const response = await this.api.post<T>(url, data, config);
+      return response.data;
+    } catch (error: any) {
+      console.error(`[API] POST failed at ${this.api.defaults.baseURL}${url}:`, error.message);
+      throw error;
+    }
   }
 
   async put<T>(url: string, data?: any, config?: any): Promise<T> {
@@ -204,7 +233,7 @@ class APIService {
 
   // Rider endpoints
   async getRiderProfile(): Promise<any> {
-    return this.get('/riders/profile');
+    return this.get('/auth/me');
   }
 
   async updateRiderProfile(data: any): Promise<any> {
@@ -221,10 +250,6 @@ class APIService {
     const response = await this.post('/user/book-ride', rideData);
     console.log('📥 [API] Create ride response:', response);
     return response;
-  }
-
-  async getRide(rideId: string): Promise<any> {
-    return this.get(`/rides/${rideId}`);
   }
 
   async updateRide(rideId: string, updates: any): Promise<any> {
@@ -334,8 +359,13 @@ class APIService {
     }
   }
 
-  async getDriverProfile(): Promise<any> {
+  async getDriverProfile(driverId?: string): Promise<any> {
     try {
+      if (driverId) {
+        // Get a specific driver's profile by ID
+        return this.get(`/users/${driverId}`);
+      }
+      // Get current user's driver profile
       return this.get('/driver/details');
     } catch (error: any) {
       console.warn('⚠️  [API] Failed to fetch driver profile:', error?.message);
@@ -398,6 +428,75 @@ class APIService {
 
   async initiateDriverSettlementPayment(): Promise<any> {
     return this.get('/driver/initiate-payment');
+  }
+
+  // Chat endpoints
+  async getChat(rideId: string): Promise<any> {
+    return this.get('/chat', { params: { rideId } });
+  }
+
+  async createChat(rideId: string): Promise<any> {
+    return this.post('/chat', { rideId });
+  }
+
+  async getMessages(chatId: string, limit: number = 50, offset: number = 0): Promise<any> {
+    return this.get('/chat/messages', { params: { chatId, limit, offset } });
+  }
+
+  async sendMessage(chatId: string, content: string, messageType: 'text' | 'location' = 'text', locationData?: any): Promise<any> {
+    return this.post('/chat/messages', { chatId, content, messageType, locationData });
+  }
+
+  async getUserChats(): Promise<any> {
+    return this.get('/chat/user');
+  }
+
+  async getRiderChats(riderId: string): Promise<any> {
+    return this.get(`/chat/rider/${riderId}`);
+  }
+
+  async getDriverChats(driverId: string): Promise<any> {
+    return this.get(`/chat/driver/${driverId}`);
+  }
+
+  async getRide(rideId: string): Promise<any> {
+    return this.get(`/rides/${rideId}`);
+  }
+
+  async getChatDriverProfile(driverId: string): Promise<any> {
+    return this.get(`/chat/driver/${driverId}`);
+  }
+
+  async getChatRiderProfile(riderId: string): Promise<any> {
+    return this.get(`/chat/rider/${riderId}`);
+  }
+
+  // Ride Review and Rating endpoints
+  async getRideDetails(rideId: string): Promise<any> {
+    return this.get(`/rides/${rideId}`);
+  }
+
+  async submitRideReview(reviewData: {
+    ride_id: string;
+    reviewer_id: string;
+    rated_user_id: string;
+    rating: number;
+    review_text: string;
+    categories: any;
+  }): Promise<{ success: boolean; message?: string; data?: any }> {
+    try {
+      const response = await this.post('/ride-reviews', reviewData);
+      return {
+        success: true,
+        data: response,
+      };
+    } catch (error: any) {
+      console.error('[API] Failed to submit ride review:', error.message);
+      return {
+        success: false,
+        message: error.message || 'Failed to submit review',
+      };
+    }
   }
 
   async setAuthToken(token: string, refreshToken?: string): Promise<void> {

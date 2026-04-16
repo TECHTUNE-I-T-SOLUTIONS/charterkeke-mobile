@@ -24,6 +24,7 @@ import * as SecureStore from 'expo-secure-store';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { cacheService } from '@/services/cache';
 import { STORAGE_KEYS } from '@/utils/constants';
+import { AdVideoManager } from '@/components/AdVideoManager';
 
 type VerificationMethod = 'otp' | 'biometric' | 'password';
 
@@ -46,6 +47,10 @@ export default function ResumeSessionScreen() {
   const { user, isLoading: authLoading, userRole } = useAuth();
   const systemColorScheme = useColorScheme();
   const [isDark, setIsDark] = useState(systemColorScheme === 'dark');
+
+  // Ad display state - show once per session resumption
+  const [showAdOnMount, setShowAdOnMount] = useState(true);
+  const [adDismissed, setAdDismissed] = useState(false);
 
   // Get user email from params or stored session
   const email = Array.isArray(router.email) ? router.email[0] : router.email || '';
@@ -467,6 +472,25 @@ export default function ResumeSessionScreen() {
     return 'Biometric';
   };
 
+  // Handle ad dismissal - called when user skips the promotional ad
+  const handleAdSkipped = () => {
+    console.log('[ResumeSession] User skipped promotional ad, showing verification methods');
+    setAdDismissed(true);
+  };
+
+  // Handle logout - clear session and navigate to login
+  const handleLogout = async () => {
+    try {
+      await AsyncStorage.removeItem('sessionResumed');
+      await AsyncStorage.removeItem('userSession');
+      navigation.replace('/auth/login-new');
+    } catch (error) {
+      console.error('[ResumeSession] Error during logout:', error);
+      // Still navigate even if cleanup fails
+      navigation.replace('/auth/login-new');
+    }
+  };
+
   const renderOtpVerification = () => (
     <View>
       <Text style={{ fontSize: 24, fontWeight: '600', color: colors.text, marginBottom: 16 }}>
@@ -624,14 +648,27 @@ export default function ResumeSessionScreen() {
         size="large"
       />
 
-      {/* Forgot Password Link */}
+      {/* Logout Button - Replace password with a new account */}
       <TouchableOpacity
-        onPress={() => navigation.push('/auth/reset-password')}
+        onPress={() => {
+          Alert.alert(
+            'Log Out',
+            'Sign out of this account and log in with a different one?',
+            [
+              { text: 'Cancel', onPress: () => {} },
+              {
+                text: 'Log Out',
+                onPress: handleLogout,
+                style: 'destructive',
+              },
+            ]
+          );
+        }}
         style={{ marginTop: 16 }}
         disabled={isVerifying}
       >
-        <Text style={{ fontSize: 13, color: colors.primary, fontWeight: '600', textAlign: 'center' }}>
-          Forgot your password?
+        <Text style={{ fontSize: 13, color: '#FF6B6B', fontWeight: '600', textAlign: 'center' }}>
+          Use a Different Account
         </Text>
       </TouchableOpacity>
     </View>
@@ -960,6 +997,15 @@ export default function ResumeSessionScreen() {
           {selectedMethod === 'biometric' && renderBiometricVerification()}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Promotional Ad - Shows only once on first mount, before verification methods */}
+      {showAdOnMount && !adDismissed && (
+        <AdVideoManager
+          visible={true}
+          onClose={handleAdSkipped}
+          onNavigateToBooking={handleAdSkipped}
+        />
+      )}
     </SafeAreaView>
   );
 }

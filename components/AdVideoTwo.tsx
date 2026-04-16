@@ -10,43 +10,22 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Audio } from 'expo-av';
 
 const { width, height } = Dimensions.get('window');
 
 interface AdVideoTwoProps {
   onBookNowPress?: () => void;
+  onSkip?: () => void;
 }
 
-export function AdVideoTwo({ onBookNowPress }: AdVideoTwoProps = {}) {
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
+export function AdVideoTwo({ onBookNowPress, onSkip }: AdVideoTwoProps = {}) {
+  const [currentIndex, setCurrentIndex] = useState(0);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
 
-  // Play looping background audio throughout the video
-  useEffect(() => {
-    const playBackgroundAudio = async () => {
-      try {
-        const audioFile = require('../assets/promotional-ads/ads-audio (2).mp3');
-        const { sound: newSound } = await Audio.Sound.createAsync(audioFile, {
-          isLooping: true, // Loop audio throughout entire video
-        });
-        setSound(newSound);
-        await newSound.playAsync();
-      } catch (error) {
-        console.log('Audio playback error:', error);
-      }
-    };
-
-    playBackgroundAudio();
-
-    return () => {
-      sound?.unloadAsync();
-    };
-  }, []);
-
+  // No audio - ads are now silent for session resumption flow
   // Entrance animations
   useEffect(() => {
     Animated.sequence([
@@ -133,7 +112,7 @@ export function AdVideoTwo({ onBookNowPress }: AdVideoTwoProps = {}) {
             <View style={styles.topIconBadge}>
               <MaterialCommunityIcons
                 name="lightning-bolt"
-                size={56}
+                size={44}
                 color="#ffffff"
               />
             </View>
@@ -179,7 +158,7 @@ export function AdVideoTwo({ onBookNowPress }: AdVideoTwoProps = {}) {
             <View style={styles.statBox}>
               <MaterialCommunityIcons
                 name="clock-fast"
-                size={32}
+                size={24}
                 color="#ff6b6b"
               />
               <Text style={styles.statNumber}>8min</Text>
@@ -189,7 +168,7 @@ export function AdVideoTwo({ onBookNowPress }: AdVideoTwoProps = {}) {
             <View style={styles.statBox}>
               <MaterialCommunityIcons
                 name="cash-fast"
-                size={32}
+                size={24}
                 color="#10b981"
               />
               <Text style={styles.statNumber}>40%</Text>
@@ -199,7 +178,7 @@ export function AdVideoTwo({ onBookNowPress }: AdVideoTwoProps = {}) {
             <View style={styles.statBox}>
               <MaterialCommunityIcons
                 name="heart"
-                size={32}
+                size={24}
                 color="#ec4899"
               />
               <Text style={styles.statNumber}>98%</Text>
@@ -209,7 +188,7 @@ export function AdVideoTwo({ onBookNowPress }: AdVideoTwoProps = {}) {
             <View style={styles.statBox}>
               <MaterialCommunityIcons
                 name="map-marker"
-                size={32}
+                size={24}
                 color="#0ea5e9"
               />
               <Text style={styles.statNumber}>500+</Text>
@@ -237,7 +216,7 @@ export function AdVideoTwo({ onBookNowPress }: AdVideoTwoProps = {}) {
             <View style={styles.featurePill}>
               <MaterialCommunityIcons
                 name="check-circle"
-                size={20}
+                size={16}
                 color="white"
                 style={{ marginRight: 6 }}
               />
@@ -246,7 +225,7 @@ export function AdVideoTwo({ onBookNowPress }: AdVideoTwoProps = {}) {
             <View style={styles.featurePill}>
               <MaterialCommunityIcons
                 name="check-circle"
-                size={20}
+                size={16}
                 color="white"
                 style={{ marginRight: 6 }}
               />
@@ -255,7 +234,7 @@ export function AdVideoTwo({ onBookNowPress }: AdVideoTwoProps = {}) {
             <View style={styles.featurePill}>
               <MaterialCommunityIcons
                 name="check-circle"
-                size={20}
+                size={16}
                 color="white"
                 style={{ marginRight: 6 }}
               />
@@ -279,15 +258,21 @@ export function AdVideoTwo({ onBookNowPress }: AdVideoTwoProps = {}) {
           >
             <TouchableOpacity
               style={styles.mainCTA}
-              onPress={onBookNowPress}
+              onPress={async () => {
+                // if (sound) {
+                //   await sound.stopAsync().catch(() => {});
+                //   await sound.unloadAsync().catch(() => {});
+                // }
+                onBookNowPress?.();
+              }}
               activeOpacity={0.85}
             >
               <Text style={styles.ctaText}>BOOK NOW</Text>
               <MaterialCommunityIcons
                 name="arrow-right"
-                size={24}
+                size={20}
                 color="#f97316"
-                style={{ marginLeft: 8 }}
+                style={{ marginLeft: 6 }}
               />
             </TouchableOpacity>
 
@@ -296,6 +281,25 @@ export function AdVideoTwo({ onBookNowPress }: AdVideoTwoProps = {}) {
             </Text>
           </Animated.View>
         </Animated.View>
+
+        {/* Skip Button - Top Right */}
+        <TouchableOpacity
+          style={styles.closeButton}
+          onPress={async () => {
+            // if (sound) {
+            //   await sound.stopAsync().catch(() => {});
+            //   await sound.unloadAsync().catch(() => {});
+            // }
+            onSkip?.();
+          }}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <MaterialCommunityIcons
+            name="close"
+            size={28}
+            color="rgba(255, 255, 255, 0.9)"
+          />
+        </TouchableOpacity>
 
         {/* Floating decorative elements */}
         <View style={[styles.floatingElement, styles.float1]}>
@@ -320,6 +324,7 @@ export function AdVideoTwo({ onBookNowPress }: AdVideoTwoProps = {}) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    maxHeight: height * 0.95,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -358,41 +363,44 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
   },
   contentContainer: {
-    paddingHorizontal: 24,
-    paddingVertical: 40,
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    paddingTop: 48,
+    paddingBottom: 12,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     zIndex: 10,
+    flexShrink: 1,
   },
   iconSection: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 6,
   },
   topIconBadge: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 4,
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.4)',
   },
   topSubtitle: {
     color: 'rgba(255, 255, 255, 0.9)',
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '700',
-    letterSpacing: 1.5,
+    letterSpacing: 1.2,
     textTransform: 'uppercase',
   },
   headline: {
-    fontSize: 44,
+    fontSize: 36,
     fontWeight: '900',
     color: '#ffffff',
     textAlign: 'center',
-    lineHeight: 52,
-    marginBottom: 28,
+    lineHeight: 40,
+    marginBottom: 10,
     textShadowColor: 'rgba(0, 0, 0, 0.2)',
     textShadowOffset: { width: 2, height: 2 },
     textShadowRadius: 4,
@@ -405,61 +413,62 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-around',
-    marginBottom: 32,
+    marginBottom: 8,
     width: '100%',
+    gap: 4,
   },
   statBox: {
     width: '45%',
     backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    borderRadius: 16,
-    paddingVertical: 16,
-    paddingHorizontal: 12,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
     alignItems: 'center',
-    marginVertical: 8,
+    marginVertical: 0,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   statNumber: {
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: '900',
     color: '#ffffff',
-    marginTop: 8,
+    marginTop: 2,
   },
   statLabel: {
-    fontSize: 11,
+    fontSize: 8,
     color: 'rgba(255, 255, 255, 0.8)',
-    marginTop: 4,
+    marginTop: 1,
     fontWeight: '600',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.2,
   },
   featuresContainer: {
     width: '100%',
-    marginBottom: 28,
-    gap: 10,
+    marginBottom: 8,
+    gap: 5,
   },
   featurePill: {
     flexDirection: 'row',
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 24,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 18,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.25)',
   },
   featureText: {
     color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.3,
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 0.1,
   },
   mainCTA: {
-    width: width - 48,
+    width: width - 40,
     backgroundColor: '#ffffff',
-    paddingVertical: 18,
-    paddingHorizontal: 24,
-    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -468,19 +477,20 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.3,
     shadowRadius: 12,
-    marginBottom: 16,
+    marginBottom: 4,
   },
   ctaText: {
     color: '#f97316',
-    fontSize: 18,
+    fontSize: 14,
     fontWeight: '900',
-    letterSpacing: 1,
+    letterSpacing: 0.5,
   },
   trustText: {
-    color: 'rgba(255, 255, 255, 0.9)',
-    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 9,
     textAlign: 'center',
     fontWeight: '600',
+    marginTop: 4,
   },
   floatingElement: {
     position: 'absolute',
@@ -493,5 +503,17 @@ const styles = StyleSheet.create({
   float2: {
     bottom: '20%',
     left: '8%',
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 40,
+    right: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 20,
   },
 });

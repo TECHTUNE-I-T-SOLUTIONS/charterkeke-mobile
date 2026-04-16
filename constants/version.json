@@ -1,0 +1,6 @@
+{
+  "version": "2.1.3",
+  "buildNumber": 213,
+  "releaseDate": "2026-04-15",
+  "changelog": "TypeScript compilation fixes and type safety improvements. Fixed 42 TypeScript errors across multiple components including rating screens, notifications, messaging, and API service layer. Enhanced type definitions for notifications, drivers, and messages components. Improved error handling in RideContext and DataAPI interactions. Standardized duplicate API method implementations. Refined component type assertions for better IDE support and code reliability."
+}

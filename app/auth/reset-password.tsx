@@ -375,10 +375,10 @@ export default function ResetPasswordScreen() {
                     styles.stepCircle,
                     {
                       backgroundColor: isCompleted
-                        ? '#444444'
+                        ? '#C9C9C9'
                         : isActive
                         ? theme.colors.surface
-                        : 'rgba(179, 179, 179, 0.51)',
+                        : 'rgba(235, 230, 230, 0.77)',
                       borderWidth: isActive ? 2 : 0,
                       borderColor: isActive ? theme.colors.textPrimary : 'transparent',
                     },
@@ -390,7 +390,7 @@ export default function ResetPasswordScreen() {
                     <Text
                       style={[
                         styles.stepNumber,
-                        { opacity: isFuture ? 0.35 : 1, color: isFuture ? 'rgb(0, 0, 0)' : '#000000' },
+                        { opacity: isFuture ? 0.35 : 1, color: isFuture ? 'rgb(0, 0, 0)' : '#6D6A6ADA' },
                       ]}
                     >
                       {index + 1}
@@ -472,7 +472,7 @@ export default function ResetPasswordScreen() {
                 <MaterialCommunityIcons
                   name={currentConfig.icon}
                   size={moderateScale(28)}
-                  color={theme.colors.textPrimary}
+                  color={theme.colors.emailtextPrimary}
                 />
               </View>
             </Animated.View>
@@ -812,7 +812,7 @@ const styles = StyleSheet.create({
     width: scale(34),
     height: scale(34),
     borderRadius: scale(17),
-    backgroundColor: '#F5F5F5',
+    backgroundColor: '#F5F5F517',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,

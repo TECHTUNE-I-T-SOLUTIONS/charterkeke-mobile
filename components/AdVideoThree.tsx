@@ -9,7 +9,6 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Audio } from 'expo-av';
 
 const { width, height } = Dimensions.get('window');
 
@@ -19,47 +18,12 @@ interface AdVideoThreeProps {
 }
 
 export function AdVideoThree({ onBookNowPress, onSkip }: AdVideoThreeProps = {}) {
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const rotateAnim = useRef(new Animated.Value(0)).current;
   const bounceAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
 
-  // Play background audio throughout the video - RUNS ONLY ONCE on mount
-  useEffect(() => {
-    let isMounted = true;
-    const playBackgroundAudio = async () => {
-      try {
-        // Unload any previous sound before creating new one
-        if (sound) {
-          await sound.unloadAsync();
-        }
-        
-        const audioFile = require('../assets/promotional-ads/ads-audio (3).mp3');
-        const { sound: newSound } = await Audio.Sound.createAsync(
-          audioFile,
-          { shouldPlay: true, isLooping: true }
-        );
-        
-        if (isMounted) {
-          setSound(newSound);
-          console.log('[AdVideoThree] Audio playing with native loop enabled');
-        }
-      } catch (error) {
-        console.log('Audio playback error:', error);
-      }
-    };
-
-    playBackgroundAudio();
-
-    return () => {
-      isMounted = false;
-      sound?.unloadAsync().catch(err => {
-        console.log('Audio unload error:', err);
-      });
-    };
-  }, []); // Empty dependency array - runs ONLY on mount
-
+  // No audio - ads are now silent for session resumption flow
   // Entrance animations with bouncing effects
   useEffect(() => {
     Animated.sequence([

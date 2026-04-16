@@ -230,6 +230,8 @@ export default function ProfileScreen() {
              <MenuItem icon="account-outline" label="Edit Profile" onPress={() => router.push('/rider/edit-profile')} theme={theme} />
              <MenuItem icon="credit-card-outline" label="Payment Methods" onPress={() => router.push('/rider/payment-methods')} theme={theme} />
              <MenuItemWithSub icon="account-multiple-plus" label="Referrals" subLabel={referralCode} onPress={() => router.push('/rider/referrals')} theme={theme} />
+             <MenuItem icon="message-outline" label="Messages" onPress={() => router.push('/rider/messages')} theme={theme} />
+             <MenuItem icon="star-outline" label="My Reviews" onPress={() => router.push('/rider/my-reviews')} theme={theme} />
              
              <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary, marginTop: 24 }]}>PREFERENCES</Text>
              <View style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>

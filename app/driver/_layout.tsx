@@ -3,8 +3,6 @@ import { Stack, useRouter } from 'expo-router';
 import { View } from 'react-native';
 import { useTheme } from '@/context/ThemeContext';
 import RiderBottomNavigation from '@/components/RiderBottomNavigation';
-import { AdVideoManager } from '@/components/AdVideoManager';
-import { useIdleAdTracking } from '@/hooks/useIdleAdTracking';
 import { COLORS } from '@utils/colors';
 
 export default function DriverLayout() {
@@ -12,18 +10,6 @@ export default function DriverLayout() {
   const { mode } = useTheme();
   const isDark = mode === 'dark';
   const colors = isDark ? COLORS.dark : COLORS.light;
-  
-  // Track idle time and show ads periodically (time-based, not route-based)
-  const { shouldShowAd, dismissAd } = useIdleAdTracking({
-    enabled: true,
-    excludeRoutes: [],
-    currentRoute: 'home',
-  });
-
-  const handleAdCtaPress = () => {
-    console.log('[DriverLayout] Navigating to available rides from ad');
-    router.push('/driver/available-rides');
-  };
 
   return (
     <>
@@ -53,15 +39,6 @@ export default function DriverLayout() {
         {/* Bottom Navigation - Outside Stack to prevent re-renders */}
         <RiderBottomNavigation />
       </View>
-
-      {/* Ad Video Manager - True full-screen overlay (one ad per session) */}
-      {shouldShowAd && (
-        <AdVideoManager
-          visible={shouldShowAd}
-          onClose={dismissAd}
-          onNavigateToBooking={handleAdCtaPress}
-        />
-      )}
     </>
   );
 }

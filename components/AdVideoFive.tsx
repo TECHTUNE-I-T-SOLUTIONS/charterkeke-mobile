@@ -9,7 +9,6 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Audio } from 'expo-av';
 
 const { width, height } = Dimensions.get('window');
 
@@ -19,35 +18,13 @@ interface AdVideoFiveProps {
 }
 
 export function AdVideoFive({ onBookNowPress, onSkip }: AdVideoFiveProps = {}) {
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
   const floatAnim1 = useRef(new Animated.Value(0)).current;
   const floatAnim2 = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.85)).current;
 
-  // Play looping background audio
-  useEffect(() => {
-    const playBackgroundAudio = async () => {
-      try {
-        const audioFile = require('../assets/promotional-ads/ads-audio (5).mp3');
-        const { sound: newSound } = await Audio.Sound.createAsync(audioFile, {
-          isLooping: true,
-        });
-        setSound(newSound);
-        await newSound.playAsync();
-      } catch (error) {
-        console.log('Audio playback error:', error);
-      }
-    };
-
-    playBackgroundAudio();
-
-    return () => {
-      sound?.unloadAsync();
-    };
-  }, []);
-
+  // No audio - ads are now silent for session resumption flow
   // Animations
   useEffect(() => {
     Animated.sequence([
@@ -103,12 +80,12 @@ export function AdVideoFive({ onBookNowPress, onSkip }: AdVideoFiveProps = {}) {
   }, [fadeAnim, slideAnim, floatAnim1, floatAnim2, scaleAnim]);
 
   const handleDismiss = async () => {
-    await sound?.stopAsync();
+    // await sound?.stopAsync();
     onSkip?.();
   };
 
   const handleBookNow = async () => {
-    await sound?.stopAsync();
+    // await sound?.stopAsync();
     onBookNowPress?.();
   };
 
@@ -432,6 +409,7 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     padding: 8,
+    paddingTop: 34,
   },
   premiumBadge: {
     flexDirection: 'row',

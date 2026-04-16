@@ -24,8 +24,8 @@ interface Notification {
   title?: string;
   message: string;
   type?: string;
-  is_read?: boolean;
-  read?: boolean;
+  is_read?: boolean | null;
+  read?: boolean | null;
   created_at: string;
   action_url?: string;
 }
@@ -35,11 +35,10 @@ export default function NotificationsScreen() {
   const { theme } = useTheme();
   const { user, isLoading: authLoading } = useAuth();
   const [markingAsRead, setMarkingAsRead] = useState<string | null>(null);
-  const [localNotifications, setLocalNotifications] = useState<Notification[]>([]);
 
   // Use React Query caching hook for notifications (auto-refreshes every 30s)
   const { 
-    data: notificationsData = [], 
+    data: notificationsData = [] as Notification[], 
     isLoading: loading, 
     isFetching: refreshing, 
     error,
@@ -49,17 +48,9 @@ export default function NotificationsScreen() {
   const isDark = theme?.mode === 'dark';
   const colors = isDark ? COLORS.dark : COLORS.light;
 
-  // Sync hook data with local state for optimistic updates
-  // Ensure notificationsData is always an array
-  useEffect(() => {
-    const notificationsArray = Array.isArray(notificationsData) 
-      ? notificationsData 
-      : [];
-    setLocalNotifications(notificationsArray);
-  }, [notificationsData]);
-
-  // Note: useNotifications hook already auto-refreshes every 30s
-  // No need to manually refetch on user change since hook handles it
+  // Use notifications data directly from React Query - no need to sync to local state
+  // React Query already handles caching and memoization
+  const notifications = Array.isArray(notificationsData) ? notificationsData : [];
 
   const onRefresh = async () => {
     await refetch();
@@ -72,13 +63,9 @@ export default function NotificationsScreen() {
       
       await apiService.patch('/user/notifications', { notificationId });
       
-      // Optimistic update
-      setLocalNotifications(prev =>
-        prev.map(n =>
-          n.id === notificationId ? { ...n, is_read: true, read: true } : n
-        )
-      );
       console.log('✅ [NOTIFICATIONS] Notification marked as read');
+      // Refetch to sync with server state
+      await refetch();
     } catch (error) {
       console.error('❌ [NOTIFICATIONS] Failed to mark as read:', error);
       Alert.alert('Error', 'Failed to mark notification as read');
@@ -138,8 +125,8 @@ export default function NotificationsScreen() {
     }
   };
 
-  const unreadCount = Array.isArray(localNotifications) 
-    ? localNotifications.filter(n => !n.is_read && !n.read).length 
+  const unreadCount = Array.isArray(notifications) 
+    ? notifications.filter(n => !(n.is_read || n.read)).length 
     : 0;
 
   if (authLoading) {
@@ -265,12 +252,12 @@ export default function NotificationsScreen() {
               <Text
                 style={{
                   fontSize: 13,
-                  color: isDark ? '#666666' : '#CCCCCC',
+                  color: isDark ? '#0C0C0C' : '#CCCCCC',
                   fontWeight: '500',
                   marginTop: 4,
                 }}
               >
-                {localNotifications.length} total {unreadCount > 0 ? `(${unreadCount} new)` : ''}
+              {notifications.length} total {unreadCount > 0 ? `(${unreadCount} new)` : ''}
               </Text>
             </View>
             {unreadCount > 0 && (
@@ -298,7 +285,7 @@ export default function NotificationsScreen() {
 
         {/* Notifications List */}
         <View style={{ paddingHorizontal: 16, marginTop: 16 }}>
-          {localNotifications.length === 0 ? (
+          {notifications.length === 0 ? (
             <View
               style={{
                 alignItems: 'center',
@@ -334,7 +321,7 @@ export default function NotificationsScreen() {
             </View>
           ) : (
             <View style={{ gap: 12, marginBottom: 20 }}>
-              {localNotifications.map((notification) => (
+              {notifications.map((notification) => (
                 <View
                   key={notification.id}
                   style={{

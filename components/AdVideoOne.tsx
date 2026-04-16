@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Audio } from 'expo-av';
 
 const { width, height } = Dimensions.get('window');
 
@@ -148,44 +147,12 @@ interface AdVideoOneProps {
 
 export function AdVideoOne({ onBookNowPress, onSkip }: AdVideoOneProps = {}) {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const textAnim = useRef(new Animated.Value(0)).current;
   const iconAnim = useRef(new Animated.Value(0)).current;
   const benefitSlideAnim = useRef(new Animated.Value(0)).current;
 
-  // Play background audio throughout entire video
-  useEffect(() => {
-    const playBackgroundAudio = async () => {
-      try {
-        if (sound) {
-          await sound.unloadAsync();
-        }
-
-        // Use first audio file throughout the entire video
-        const audioFile = require('../assets/promotional-ads/ads-audio (1).mp3');
-        const { sound: newSound } = await Audio.Sound.createAsync(audioFile, {
-          isLooping: true,
-        });
-        setSound(newSound);
-        await newSound.playAsync();
-      } catch (error) {
-        console.log('Audio playback error:', error);
-      }
-    };
-
-    playBackgroundAudio();
-
-    return () => {
-      sound?.unloadAsync();
-    };
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      sound?.unloadAsync();
-    };
-  }, [sound]);
+  // No audio - ads are now silent for session resumption flow
 
   useEffect(() => {
     fadeAnim.setValue(0);
@@ -269,7 +236,13 @@ export function AdVideoOne({ onBookNowPress, onSkip }: AdVideoOneProps = {}) {
           {/* Close/Skip Button */}
           <TouchableOpacity
             style={styles.closeButton}
-            onPress={onSkip}
+            onPress={async () => {
+              // if (sound) {
+              //   await sound.stopAsync().catch(() => {});
+              //   await sound.unloadAsync().catch(() => {});
+              // }
+              onSkip?.();
+            }}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <MaterialCommunityIcons
@@ -438,7 +411,10 @@ export function AdVideoOne({ onBookNowPress, onSkip }: AdVideoOneProps = {}) {
                   { backgroundColor: currentAd.color },
                 ]}
                 onPress={async () => {
-                  await sound?.stopAsync();
+                  // if (sound) {
+                  //   await sound.stopAsync().catch(() => {});
+                  //   await sound.unloadAsync().catch(() => {});
+                  // }
                   onBookNowPress?.();
                 }}
               >
@@ -489,19 +465,24 @@ export function AdVideoOne({ onBookNowPress, onSkip }: AdVideoOneProps = {}) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    maxHeight: height * 1.75,
     justifyContent: 'flex-end',
     paddingBottom: 0,
     backgroundColor: 'transparent',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
   },
   closeButton: {
     position: 'absolute',
-    top: 16,
+    top: 30,
     right: 16,
     zIndex: 20,
     padding: 8,
   },
   adCard: {
     flex: 1,
+    maxHeight: height * 1.75,
     borderRadius: 0,
     overflow: 'hidden',
     elevation: 12,

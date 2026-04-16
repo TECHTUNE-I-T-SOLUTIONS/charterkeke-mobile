@@ -4,6 +4,7 @@ import { apiService } from '@/services/api';
 
 interface Ride {
   id: string;
+  driver_id?: string;
   pickup_zone: string;
   destination_zone: string;
   fare_amount: number;
@@ -29,6 +30,8 @@ interface Notification {
   type?: string;
   created_at: string;
   read: boolean;
+  is_read?: boolean;
+  title?: string;
 }
 
 interface UserProfile {
@@ -91,12 +94,14 @@ export function useNotifications() {
         throw error;
       }
     },
-    staleTime: 3 * 60 * 1000, // 3 minutes
+    staleTime: 30000, // 30 seconds - stay fresh to avoid stale notifications
     gcTime: 10 * 60 * 1000,
-    refetchOnWindowFocus: false,
-    refetchInterval: 30000, // Refresh every 30 seconds
+    refetchOnWindowFocus: 'always',
+    refetchOnReconnect: 'always',
+    refetchInterval: 30000, // Refresh every 30 seconds only if stale
     networkMode: 'always',
     retry: 1, // Only retry once to avoid infinite loops
+    retryDelay: 1000, // 1 second delay between retries
   });
 }
 
