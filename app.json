@@ -2,7 +2,7 @@
   "expo": {
     "name": "Charter Keke",
     "slug": "charter-keke-mobile",
-    "version": "2.1.3",
+    "version": "2.1.4",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -61,7 +61,7 @@
     ],
     "ios": {
       "bundleIdentifier": "com.charterkeke.mobile",
-      "buildNumber": "3",
+      "buildNumber": "4",
       "config": {
         "usesNonExemptEncryption": false
       },
@@ -78,7 +78,7 @@
         "backgroundColor": "#1a1a1a"
       },
       "package": "com.charterkeke.mobile",
-      "versionCode": 3,
+      "versionCode": 4,
       "permissions": [
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
