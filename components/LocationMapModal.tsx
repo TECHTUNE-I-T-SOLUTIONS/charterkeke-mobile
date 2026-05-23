@@ -94,6 +94,11 @@ export const LocationMapModal: React.FC<LocationMapModalProps> = ({
   // Determine center coordinates (use current user location if available and live tracking is on)
   const centerLat = isTrackingLive && currentUserLocation ? currentUserLocation.latitude : latitude;
   const centerLon = isTrackingLive && currentUserLocation ? currentUserLocation.longitude : longitude;
+  const fitCoordinates = [
+    [longitude, latitude] as [number, number],
+    ...(isTrackingLive && currentUserLocation ? ([[currentUserLocation.longitude, currentUserLocation.latitude]] as [number, number][]) : []),
+    ...(isTrackingLive && otherUserLocation ? ([[otherUserLocation.longitude, otherUserLocation.latitude]] as [number, number][]) : []),
+  ];
 
   return (
     <Modal
@@ -132,6 +137,10 @@ export const LocationMapModal: React.FC<LocationMapModalProps> = ({
             latitude={centerLat}
             longitude={centerLon}
             zoom={16}
+            mapStyle="navigation-day"
+            showCompass
+            showScaleBar
+            fitCoordinates={fitCoordinates}
             cameraCenterCoordinate={[centerLon, centerLat]}
             cameraZoom={16}
             cameraAnimationDuration={500}

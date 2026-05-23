@@ -24,6 +24,8 @@ import { apiService } from '@/services/api';
 import { ListScreenSkeleton } from '@/components/ListScreenSkeleton';
 import { BRAND, COLORS } from '@/utils/colors';
 import { verticalScale, scale } from 'react-native-size-matters';
+import { fetchMapboxRoute } from '@/utils/mapboxDirections';
+import { geocodeMapboxLocation } from '@/utils/mapboxGeocoding';
 
 const { width } = Dimensions.get('window');
 
@@ -35,6 +37,10 @@ export default function RideDetailsScreen() {
   const isLight = mode === 'light';
   const [ride, setRide] = useState<any>(null);
   const [updating, setUpdating] = useState(false);
+   const [routeCoordinates, setRouteCoordinates] = useState<[number, number][] | undefined>(undefined);
+   const [routeLoading, setRouteLoading] = useState(false);
+   const [routeDistanceKm, setRouteDistanceKm] = useState(0);
+   const [routeDurationMin, setRouteDurationMin] = useState(0);
 
   useEffect(() => {
     if (rideData) {
@@ -44,6 +50,61 @@ export default function RideDetailsScreen() {
       } catch (error) { setRide(null); }
     }
   }, [rideData]);
+
+   useEffect(() => {
+      let cancelled = false;
+
+      const loadRoute = async () => {
+         if (!ride) {
+            return;
+         }
+
+         setRouteLoading(true);
+
+         try {
+            const pickupQuery = ride.pickup_description || ride.pickup_zone || '';
+            const destinationQuery = ride.destination_description || ride.destination_zone || '';
+
+            const [pickupResult, destinationResult] = await Promise.all([
+               pickupQuery ? geocodeMapboxLocation(pickupQuery) : null,
+               destinationQuery ? geocodeMapboxLocation(destinationQuery) : null,
+            ]);
+
+            if (cancelled || !pickupResult || !destinationResult) {
+               return;
+            }
+
+            const route = await fetchMapboxRoute(pickupResult.coordinate, destinationResult.coordinate, {
+               profile: 'driving-traffic',
+            });
+
+            if (cancelled) {
+               return;
+            }
+
+            if (route) {
+               setRouteCoordinates(route.coordinates);
+               setRouteDistanceKm(parseFloat(route.distanceKm.toFixed(2)));
+               setRouteDurationMin(Math.max(1, Math.round(route.durationMin)));
+               return;
+            }
+
+            setRouteCoordinates([pickupResult.coordinate, destinationResult.coordinate]);
+         } catch (error) {
+            console.log('Failed to load Mapbox route for driver ride details:', error);
+         } finally {
+            if (!cancelled) {
+               setRouteLoading(false);
+            }
+         }
+      };
+
+      loadRoute();
+
+      return () => {
+         cancelled = true;
+      };
+   }, [ride]);
 
   const handleUpdate = async (status: string) => {
     try {
@@ -77,6 +138,8 @@ export default function RideDetailsScreen() {
       );
    }
 
+  const routeFitCoordinates = routeCoordinates || [[3.3792, 6.5244], [3.4292, 6.5844]];
+
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
@@ -87,10 +150,25 @@ export default function RideDetailsScreen() {
            style={styles.map}
            latitude={6.5244}
            longitude={3.3792}
+                mapStyle="navigation-day"
+                showCompass
+                showScaleBar
+                fitCoordinates={routeFitCoordinates}
+                routeCoordinates={routeCoordinates}
            zoom={12}
          >
-            <MapboxMarker id="pickup" coordinate={[3.3792, 6.5244]} title="Pickup" color={BRAND.primary} />
-            <MapboxMarker id="dropoff" coordinate={[3.4292, 6.5844]} title="Dropoff" color="black" />
+                  <MapboxMarker
+                     id="pickup"
+                     coordinate={routeCoordinates?.[0] || [3.3792, 6.5244]}
+                     title="Pickup"
+                     color={BRAND.primary}
+                  />
+                  <MapboxMarker
+                     id="dropoff"
+                     coordinate={routeCoordinates?.[routeCoordinates.length - 1] || [3.4292, 6.5844]}
+                     title="Dropoff"
+                     color="black"
+                  />
          </MapboxMap>
          <SafeAreaView style={[styles.headerSafe, { paddingTop: Math.max(0, verticalScale(8)) }]}>
             <View style={[styles.headerRow, { paddingHorizontal: scale(16), paddingVertical: verticalScale(8) }]}>
@@ -147,7 +225,7 @@ export default function RideDetailsScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                    <View style={{ height: 40, justifyContent: 'center' }}>
-                      <Text style={[styles.address, { color: theme.colors.textPrimary }]}>{ride.pickup_zone}</Text>
+                                 <Text style={[styles.address, { color: theme.colors.textPrimary }]}>{ride.pickup_zone}</Text>
                    </View>
                    <View style={{ height: 20 }} />
                    <View style={{ height: 40, justifyContent: 'center' }}>
@@ -155,6 +233,16 @@ export default function RideDetailsScreen() {
                    </View>
                 </View>
             </View>
+                  <View style={[styles.routeSummary, { borderTopColor: theme.colors.border }]}>
+                     <View>
+                        <Text style={[styles.routeSummaryLabel, { color: theme.colors.textSecondary }]}>Distance</Text>
+                        <Text style={[styles.routeSummaryValue, { color: theme.colors.textPrimary }]}>{routeLoading ? 'Calculating...' : `${routeDistanceKm || 0} km`}</Text>
+                     </View>
+                     <View style={{ alignItems: 'flex-end' }}>
+                        <Text style={[styles.routeSummaryLabel, { color: theme.colors.textSecondary }]}>ETA</Text>
+                        <Text style={[styles.routeSummaryValue, { color: theme.colors.textPrimary }]}>{routeLoading ? 'Calculating...' : `${routeDurationMin || 0} min`}</Text>
+                     </View>
+                  </View>
          </View>
 
          {/* Financials */}
@@ -214,6 +302,9 @@ const styles = StyleSheet.create({
   actionButtons: { flexDirection: 'row', gap: 8 },
   chatBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: {width:0, height:2}, shadowOpacity: 0.2, elevation: 3 },
   routeRow: { flexDirection: 'row' },
+   routeSummary: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12, paddingTop: 12, borderTopWidth: 1 },
+   routeSummaryLabel: { fontSize: 12, fontWeight: '600' },
+   routeSummaryValue: { fontSize: 16, fontWeight: '700', marginTop: 2 },
   dot: { width: 10, height: 10, borderRadius: 5 },
   line: { width: 2, flex: 1, marginVertical: 4 },
   square: { width: 10, height: 10, borderWidth: 2 },

@@ -213,7 +213,7 @@ STATE 3: Permission Denied
 **Test Steps:**
 ```bash
 # Build for real Android device with Google Play Services
-eas build --platform android --profile preview
+npx eas build --platform android --profile preview
 # Install APK from Google Play or sideload
 # Open app, grant notification permission
 # Check logs: Should see "Push token obtained"

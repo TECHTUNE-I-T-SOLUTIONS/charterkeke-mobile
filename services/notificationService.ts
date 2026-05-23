@@ -261,6 +261,7 @@ export const subscribeToPushNotifications = async (userId: string) => {
       'pushSubscription',
       JSON.stringify(subscription)
     );
+      await AsyncStorage.setItem('expo_push_token', pushToken);
 
     try {
       const subscriptionPayload: any = {
@@ -338,6 +339,7 @@ const scheduleTokenRetry = async (userId: string, attempt: number = 1) => {
           subscription.isPlaceholder = false;
           await AsyncStorage.setItem('pushSubscription', JSON.stringify(subscription));
         }
+          await AsyncStorage.setItem('expo_push_token', realToken.data);
 
         // Sync real token to backend
         try {
@@ -499,7 +501,9 @@ export const getPushSubscription = async () => {
 export const clearPushSubscription = async () => {
   try {
     // Get the current push token to remove from database
-    const pushToken = await AsyncStorage.getItem('expo_push_token');
+      const storedSubscription = await AsyncStorage.getItem('pushSubscription');
+      const legacyToken = await AsyncStorage.getItem('expo_push_token');
+      const pushToken = legacyToken || (storedSubscription ? JSON.parse(storedSubscription)?.pushToken : null);
     
     try {
       if (pushToken) {

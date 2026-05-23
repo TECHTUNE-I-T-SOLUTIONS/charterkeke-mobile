@@ -51,7 +51,19 @@ export default function RatingScreen() {
   const { user } = useAuth();
   const { theme } = useTheme();
 
-  const rideId = Array.isArray(params.rideId) ? params.rideId[0] : params.rideId || '';
+  const rideIdParam = Array.isArray(params.rideId) ? params.rideId[0] : params.rideId || '';
+  const rideDataParam = Array.isArray(params.rideData) ? params.rideData[0] : params.rideData || '';
+
+  let parsedRideData: any = null;
+  try {
+    if (rideDataParam) {
+      parsedRideData = JSON.parse(rideDataParam);
+    }
+  } catch {
+    parsedRideData = null;
+  }
+
+  const rideId = rideIdParam || parsedRideData?.id || '';
 
   const [rating, setRating] = useState(5);
   const [review, setReview] = useState('');
@@ -84,9 +96,25 @@ export default function RatingScreen() {
 
   // Fetch ride data and driver profile on mount
   useEffect(() => {
+    if (parsedRideData?.id) {
+      setRideData(parsedRideData);
+
+      if (parsedRideData?.drivers) {
+        setDriverProfile({
+          id: parsedRideData.drivers.id || parsedRideData.driver_id || parsedRideData.assigned_driver_id || '',
+          user_id: parsedRideData.drivers.user_id || '',
+          vehicle_type: parsedRideData.drivers.vehicle_type,
+          plate_number: parsedRideData.drivers.plate_number,
+          average_rating: parsedRideData.drivers.average_rating,
+          vehicle_picture_url: parsedRideData.drivers.vehicle_picture_url,
+          users: parsedRideData.drivers.users,
+        });
+      }
+    }
+
     const fetchData = async () => {
       try {
-        setLoading(true);
+        setLoading(!parsedRideData?.id);
         console.log('[RatingScreen] Fetching ride data for:', rideId);
 
         // Fetch ride details
@@ -146,7 +174,7 @@ export default function RatingScreen() {
       Alert.alert('Error', 'Invalid ride ID');
       router.back();
     }
-  }, [rideId]);
+  }, [rideId, rideDataParam]);
 
   const handleToggleTag = (tagId: string) => {
     if (tags.includes(tagId)) {

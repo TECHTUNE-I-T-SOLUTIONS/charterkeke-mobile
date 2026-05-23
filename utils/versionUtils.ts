@@ -94,7 +94,7 @@ export async function getVersionInfoDetailed(): Promise<{
     // 3. Fallback
     console.log('[VersionUtils] ✗ No version sources available, using fallback');
     return {
-      version: '2.0.0',
+      version: '2.1.5',
       source: 'fallback',
       buildInfo,
       timestamp: Date.now(),
@@ -102,7 +102,7 @@ export async function getVersionInfoDetailed(): Promise<{
   } catch (error) {
     console.error('[VersionUtils] Error getting version info:', error);
     return {
-      version: '2.0.0',
+      version: '2.1.5',
       source: 'fallback',
       buildInfo: { error: String(error) },
       timestamp: Date.now(),
@@ -112,7 +112,7 @@ export async function getVersionInfoDetailed(): Promise<{
 
 /**
  * Get the current app version from app.json or Constants
- * Format: "2.0.0" (semver)
+ * Format: "2.1.5" (semver)
  * 
  * IMPORTANT: Call getVersionInfoDetailed() in app init to cache the version
  */
@@ -173,13 +173,13 @@ export async function hasVersionChanged(): Promise<{
     return { changed: false, currentVersion };
   } catch (error) {
     console.error('[VersionUtils] Error checking version change:', error);
-    return { changed: false, currentVersion: '2.0.0' };
+    return { changed: false, currentVersion: '2.1.5' };
   }
 }
 
 /**
  * Parse version string into parts for comparison
- * Input: "2.0.0" → Output: { major: 2, minor: 0, patch: 0 }
+ * Input: "2.1.5" → Output: { major: 2, minor: 1, patch: 5 }
  */
 export function parseVersion(versionString: string): {
   major: number;
@@ -203,9 +203,9 @@ export function parseVersion(versionString: string): {
  * Returns: 1 if a > b, -1 if a < b, 0 if equal
  * 
  * Example:
- * compareVersions("2.0.0", "1.5.0") → 1 (2.0.0 is newer)
- * compareVersions("1.5.0", "2.0.0") → -1 (1.5.0 is older)
- * compareVersions("2.0.0", "2.0.0") → 0 (same version)
+ * compareVersions("2.1.5", "1.5.0") → 1 (2.1.5 is newer)
+ * compareVersions("1.5.0", "2.1.5") → -1 (1.5.0 is older)
+ * compareVersions("2.1.5", "2.1.5") → 0 (same version)
  */
 export function compareVersions(versionA: string, versionB: string): number {
   const a = parseVersion(versionA);
@@ -270,7 +270,7 @@ export function isValidVersion(versionString: string): boolean {
  * Use this when you need the version synchronously
  */
 export function getConstantVersion(): string {
-  return versionConfig?.version || '2.0.0';
+  return versionConfig?.version || '2.1.5';
 }
 
 /**

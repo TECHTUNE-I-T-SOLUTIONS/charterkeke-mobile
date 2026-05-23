@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -34,6 +34,7 @@ import {
   getNearbyOperationalAreas,
   getOperationalAreaByLocation,
 } from '@/utils/geofencing';
+import { fetchMapboxRoute } from '@/utils/mapboxDirections';
 
 // Fare calculation constants
 const BASE_FARE_PER_KM = 600;
@@ -287,7 +288,10 @@ export default function BookingScreen() {
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [recentLocations, setRecentLocations] = useState<RecentLocation[]>([]);
   const [estimatedDistance, setEstimatedDistance] = useState(0);
+  const [estimatedDuration, setEstimatedDuration] = useState(0);
   const [estimatedFare, setEstimatedFare] = useState(0);
+  const [routeCoordinates, setRouteCoordinates] = useState<[number, number][] | undefined>(undefined);
+  const [routeLoading, setRouteLoading] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
   const [bookingSuccessVisible, setBookingSuccessVisible] = useState(false);
   const [lastBookedRideId, setLastBookedRideId] = useState<string | null>(null);
@@ -338,15 +342,73 @@ export default function BookingScreen() {
   };
 
   useEffect(() => {
-    if (pickupLocation && dropoffLocation) {
-      const distance = calculateDistance(pickupLocation.lat, pickupLocation.lng, dropoffLocation.lat, dropoffLocation.lng);
-      const displayDistance = distance < 1 ? 1 : parseFloat(distance.toFixed(2));
-      const rawFare = (distance < 1 ? 1 : distance) * BASE_FARE_PER_KM;
+    let isCancelled = false;
+
+    const loadRoute = async () => {
+      if (!pickupLocation || !dropoffLocation) {
+        setEstimatedDistance(0);
+        setEstimatedDuration(0);
+        setEstimatedFare(0);
+        setRouteCoordinates(undefined);
+        return;
+      }
+
+      setRouteLoading(true);
+
+      try {
+        const route = await fetchMapboxRoute(
+          [pickupLocation.lng, pickupLocation.lat],
+          [dropoffLocation.lng, dropoffLocation.lat],
+          { profile: 'driving-traffic' }
+        );
+
+        if (isCancelled) return;
+
+        if (route) {
+          const routeKm = Math.max(1, route.distanceKm || 0);
+          const rawFare = routeKm * BASE_FARE_PER_KM;
+          const roundedFare = rawFare < 600 ? Math.ceil(rawFare / 100) * 100 : Math.ceil(rawFare / 10) * 10;
+
+          setRouteCoordinates(route.coordinates);
+          setEstimatedDistance(parseFloat(routeKm.toFixed(2)));
+          setEstimatedDuration(Math.max(1, Math.round(route.durationMin)));
+          setEstimatedFare(roundedFare);
+          return;
+        }
+      } catch (error) {
+        console.log('Mapbox route fetch failed, falling back to straight-line estimate:', error);
+      }
+
+      const fallbackDistance = calculateDistance(
+        pickupLocation.lat,
+        pickupLocation.lng,
+        dropoffLocation.lat,
+        dropoffLocation.lng
+      );
+      const displayDistance = fallbackDistance < 1 ? 1 : parseFloat(fallbackDistance.toFixed(2));
+      const rawFare = displayDistance * BASE_FARE_PER_KM;
       const roundedFare = rawFare < 600 ? Math.ceil(rawFare / 100) * 100 : Math.ceil(rawFare / 10) * 10;
-      
-      setEstimatedDistance(displayDistance);
-      setEstimatedFare(roundedFare);
-    }
+
+      if (!isCancelled) {
+        setRouteCoordinates([
+          [pickupLocation.lng, pickupLocation.lat],
+          [dropoffLocation.lng, dropoffLocation.lat],
+        ]);
+        setEstimatedDistance(displayDistance);
+        setEstimatedDuration(Math.max(1, Math.round((displayDistance / 22) * 60)));
+        setEstimatedFare(roundedFare);
+      }
+    };
+
+    loadRoute().finally(() => {
+      if (!isCancelled) {
+        setRouteLoading(false);
+      }
+    });
+
+    return () => {
+      isCancelled = true;
+    };
   }, [pickupLocation, dropoffLocation]);
 
   useEffect(() => {
@@ -584,6 +646,22 @@ export default function BookingScreen() {
     return greetings[Math.floor(Math.random() * greetings.length)];
   };
 
+  const bookingMapFocusCoordinates = useMemo<[number, number][]>(() => {
+    const coordinates: [number, number][] = [];
+
+    if (currentLocation) {
+      coordinates.push([currentLocation.longitude, currentLocation.latitude]);
+    }
+    if (pickupLocation) {
+      coordinates.push([pickupLocation.lng, pickupLocation.lat]);
+    }
+    if (dropoffLocation) {
+      coordinates.push([dropoffLocation.lng, dropoffLocation.lat]);
+    }
+
+    return coordinates;
+  }, [currentLocation, pickupLocation, dropoffLocation]);
+
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -595,6 +673,12 @@ export default function BookingScreen() {
         latitude={currentLocation?.latitude || 6.5}
         longitude={currentLocation?.longitude || 3.3}
         zoom={12}
+        mapStyle="navigation-day"
+        showUserLocation
+        showCompass
+        showScaleBar
+        fitCoordinates={routeCoordinates || bookingMapFocusCoordinates}
+        routeCoordinates={routeCoordinates}
         cameraCenterCoordinate={cameraCenter}
         cameraZoom={cameraZoom}
         onPressCoordinate={handleMapLocationPick}
@@ -723,13 +807,17 @@ export default function BookingScreen() {
             <View style={[styles.fareCard, { backgroundColor: isLight ? '#FFF5E5' : '#2A1800', borderColor: BRAND.primary }]}>
               <View style={styles.fareRow}>
                  <View>
-                   <Text style={[styles.fareLabel, { color: theme.colors.textSecondary }]}>Estimated Fare</Text>
+                   <Text style={[styles.fareLabel, { color: theme.colors.textSecondary }]}>{routeLoading ? 'Calculating route...' : 'Estimated Fare'}</Text>
                    <Text style={[styles.fareValue, { color: BRAND.primary }]}>₦{estimatedFare.toLocaleString()}</Text>
                  </View>
                  <View style={{ alignItems: 'flex-end' }}>
                    <Text style={[styles.fareLabel, { color: theme.colors.textSecondary }]}>Distance</Text>
                    <Text style={[styles.fareValueSmall, { color: theme.colors.textPrimary }]}>{estimatedDistance} km</Text>
                  </View>
+              </View>
+              <View style={[styles.fareMetaRow, { marginTop: 8 }]}>
+                <Text style={[styles.fareMetaText, { color: theme.colors.textSecondary }]}>ETA</Text>
+                <Text style={[styles.fareMetaText, { color: theme.colors.textPrimary }]}>{estimatedDuration > 0 ? `${estimatedDuration} min` : '—'}</Text>
               </View>
             </View>
           )}
@@ -949,6 +1037,8 @@ const styles = StyleSheet.create({
   fareLabel: { fontSize: 12, fontWeight: '500' },
   fareValue: { fontSize: 24, fontWeight: '700', marginTop: 2 },
   fareValueSmall: { fontSize: 16, fontWeight: '600', marginTop: 2 },
+  fareMetaRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  fareMetaText: { fontSize: 12, fontWeight: '500' },
   bookBtn: {
     marginTop: 24,
     height: 56,

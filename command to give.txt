@@ -1,0 +1,9 @@
+okay, so eas handles everything,
+also, how about these "Name:CK
+Key ID:MQC86B9QG5
+Services:Apple Push Notifications service (APNs), Sign in with Apple
+Sign in with Apple was enabled for this key. If you havent done so already, visit Services to complete configuration of this feature for your team."
+and here:
+"D:\Codes\ck\auth_keys\AuthKey_MQC86B9QG5.p8" for push notificatons and all, apple's notifications key is "D:\Codes\ck\auth_keys\GoogleService-Info.plist" the rest were gotten from google firebase console.
+
+so, I'll connect everything later when i have access to the 2fa code

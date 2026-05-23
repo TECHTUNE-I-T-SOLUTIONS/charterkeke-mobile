@@ -284,6 +284,38 @@ export default function DriverHomeScreen() {
     return source.slice(0, 5);
   }, [activeRides, recentRides]);
 
+  const mapFocusCoordinates = useMemo<[number, number][]>(() => {
+    const coordinates: [number, number][] = [];
+
+    if (currentLocation) {
+      coordinates.push([currentLocation.longitude, currentLocation.latitude]);
+    }
+
+    mapRides.forEach((ride) => {
+      const pickupLng = parseFloat(String(
+        ride.pickup_longitude ?? ride.pickup_location?.longitude ?? ride.pickup_location?.lng
+      ));
+      const pickupLat = parseFloat(String(
+        ride.pickup_latitude ?? ride.pickup_location?.latitude ?? ride.pickup_location?.lat
+      ));
+      const dropoffLng = parseFloat(String(
+        ride.dropoff_longitude ?? ride.dropoff_location?.longitude ?? ride.dropoff_location?.lng
+      ));
+      const dropoffLat = parseFloat(String(
+        ride.dropoff_latitude ?? ride.dropoff_location?.latitude ?? ride.dropoff_location?.lat
+      ));
+
+      if (Number.isFinite(pickupLat) && Number.isFinite(pickupLng)) {
+        coordinates.push([pickupLng, pickupLat]);
+      }
+      if (Number.isFinite(dropoffLat) && Number.isFinite(dropoffLng)) {
+        coordinates.push([dropoffLng, dropoffLat]);
+      }
+    });
+
+    return coordinates;
+  }, [currentLocation, mapRides]);
+
   return (
     <View style={[styles.container, { backgroundColor: isLight ? COLORS.light.background : COLORS.dark.background }]}>
       <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
@@ -402,6 +434,11 @@ export default function DriverHomeScreen() {
                 latitude={currentLocation?.latitude || 6.5244}
                 longitude={currentLocation?.longitude || 3.3792}
                 zoom={13}
+               mapStyle="standard"
+               showUserLocation
+               showCompass
+               showScaleBar
+               fitCoordinates={mapFocusCoordinates}
                 onTouchStart={() => setScrollEnabled(false)}
                 onTouchEnd={() => setScrollEnabled(true)}
               >

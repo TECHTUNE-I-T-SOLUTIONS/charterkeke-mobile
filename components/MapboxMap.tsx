@@ -1,18 +1,136 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { View, StyleSheet, Text } from 'react-native';
+
+let isExpoGo = false;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const expoConstantsModule = require('expo-constants');
+  const Constants = expoConstantsModule?.default || expoConstantsModule;
+  const appOwnership = Constants?.appOwnership;
+  const executionEnvironment = Constants?.executionEnvironment;
+  isExpoGo = appOwnership === 'expo' || executionEnvironment === 'storeClient';
+} catch {
+  isExpoGo = false;
+}
+
 let Mapbox: any = null;
 try {
-  // Try to require native Mapbox module. In Expo Go this will fail — provide a safe fallback.
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  Mapbox = require('@rnmapbox/maps');
-} catch (err) {
+  if (!isExpoGo) {
+    // Try to require native Mapbox module. In Expo Go fallback should be forced.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    Mapbox = require('@rnmapbox/maps');
+  }
+} catch {
   console.warn('⚠️ [MapboxMap] Native @rnmapbox/maps not available, falling back to placeholder map.');
   Mapbox = null;
 }
+
+let ReactNativeMaps: any = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  ReactNativeMaps = require('react-native-maps');
+} catch {
+  ReactNativeMaps = null;
+}
+
 import { useTheme } from '@/context/ThemeContext';
 
+const canUseNativeMapbox = Boolean(Mapbox) && !isExpoGo;
+const canUseFallbackMap = Boolean(ReactNativeMaps?.default);
+
+type Coordinate = [number, number];
+type MapStyleVariant = 'auto' | 'standard' | 'standard-satellite' | 'navigation-day' | 'navigation-night' | 'light' | 'dark' | 'outdoors';
+type RouteFeature = {
+  type: 'Feature';
+  properties: Record<string, never>;
+  geometry: {
+    type: 'LineString';
+    coordinates: Coordinate[];
+  };
+};
+
+const DEFAULT_CENTER: Coordinate = [3.3792, 6.5244];
+
+const isValidCoordinate = (coordinate: unknown): coordinate is Coordinate =>
+  Array.isArray(coordinate) &&
+  coordinate.length === 2 &&
+  Number.isFinite(Number(coordinate[0])) &&
+  Number.isFinite(Number(coordinate[1]));
+
+const normalizeCoordinates = (coordinates?: Coordinate[]) =>
+  (coordinates || [])
+    .filter(isValidCoordinate)
+    .map((coordinate) => [Number(coordinate[0]), Number(coordinate[1])] as Coordinate);
+
+const zoomToLatitudeDelta = (zoomLevel: number) => {
+  const safeZoom = Number.isFinite(zoomLevel) ? zoomLevel : 14;
+  return Math.max(0.002, 360 / Math.pow(2, safeZoom));
+};
+
+const toLatLng = (coordinate: Coordinate) => ({
+  latitude: coordinate[1],
+  longitude: coordinate[0],
+});
+
+const deriveCameraTarget = (coordinates: Coordinate[]) => {
+  if (!coordinates.length) {
+    return null;
+  }
+
+  if (coordinates.length === 1) {
+    return { center: coordinates[0], zoom: 15 };
+  }
+
+  const longitudes = coordinates.map(([longitude]) => longitude);
+  const latitudes = coordinates.map(([, latitude]) => latitude);
+  const minLongitude = Math.min(...longitudes);
+  const maxLongitude = Math.max(...longitudes);
+  const minLatitude = Math.min(...latitudes);
+  const maxLatitude = Math.max(...latitudes);
+
+  const center: Coordinate = [
+    (minLongitude + maxLongitude) / 2,
+    (minLatitude + maxLatitude) / 2,
+  ];
+
+  const span = Math.max(maxLongitude - minLongitude, maxLatitude - minLatitude);
+  const zoom =
+    span < 0.002 ? 16 :
+    span < 0.01 ? 15 :
+    span < 0.05 ? 13 :
+    span < 0.15 ? 11 :
+    span < 0.5 ? 9 :
+    7;
+
+  return { center, zoom };
+};
+
+const resolveStyleURL = (themeMode: 'light' | 'dark', mapStyle: MapStyleVariant) => {
+  switch (mapStyle) {
+    case 'standard':
+      return 'mapbox://styles/mapbox/standard';
+    case 'standard-satellite':
+      return 'mapbox://styles/mapbox/standard-satellite';
+    case 'navigation-day':
+      return 'mapbox://styles/mapbox/navigation-day-v1';
+    case 'navigation-night':
+      return 'mapbox://styles/mapbox/navigation-night-v1';
+    case 'light':
+      return Mapbox?.StyleURL?.Light || 'mapbox://styles/mapbox/light-v11';
+    case 'dark':
+      return Mapbox?.StyleURL?.Dark || 'mapbox://styles/mapbox/dark-v11';
+    case 'outdoors':
+      return 'mapbox://styles/mapbox/outdoors-v12';
+    case 'auto':
+    default:
+      return themeMode === 'light'
+        ? Mapbox?.StyleURL?.Light || 'mapbox://styles/mapbox/light-v11'
+        : Mapbox?.StyleURL?.Dark || 'mapbox://styles/mapbox/dark-v11';
+  }
+};
+
 // Set Mapbox access token when module is available
-if (Mapbox && typeof Mapbox.setAccessToken === 'function') {
+if (canUseNativeMapbox && typeof Mapbox.setAccessToken === 'function') {
   Mapbox.setAccessToken(process.env.EXPO_PUBLIC_MAPBOX_PUBLIC_TOKEN || '');
 }
 
@@ -25,6 +143,16 @@ interface MapboxMapProps {
   cameraCenterCoordinate?: [number, number];
   cameraZoom?: number;
   cameraAnimationDuration?: number;
+  fitCoordinates?: [number, number][];
+  routeCoordinates?: [number, number][];
+  mapStyle?: MapStyleVariant;
+  showUserLocation?: boolean;
+  showCompass?: boolean;
+  showScaleBar?: boolean;
+  showAttribution?: boolean;
+  showLogo?: boolean;
+  routeColor?: string;
+  routeWidth?: number;
   onRegionChange?: (region: any) => void;
   onPressCoordinate?: (coordinate: { latitude: number; longitude: number }) => void;
   onTouchStart?: () => void;
@@ -44,6 +172,16 @@ export const MapboxMap = React.forwardRef<any, MapboxMapProps>(
       cameraCenterCoordinate,
       cameraZoom,
       cameraAnimationDuration = 700,
+      fitCoordinates,
+      routeCoordinates,
+      mapStyle = 'auto',
+      showUserLocation = false,
+      showCompass = true,
+      showScaleBar = false,
+      showAttribution = true,
+      showLogo = true,
+      routeColor = '#2563EB',
+      routeWidth = 4,
       onRegionChange,
       onPressCoordinate,
       onTouchStart,
@@ -56,17 +194,64 @@ export const MapboxMap = React.forwardRef<any, MapboxMapProps>(
     const { theme } = useTheme();
     const isLight = theme.mode === 'light';
     const cameraRef = useRef<any>(null);
+    const focusCoordinates = useMemo(
+      () => normalizeCoordinates(fitCoordinates?.length ? fitCoordinates : routeCoordinates),
+      [fitCoordinates, routeCoordinates]
+    );
+
+    const derivedCameraTarget = useMemo(
+      () => deriveCameraTarget(focusCoordinates),
+      [focusCoordinates]
+    );
+
+    const fallbackCenterFromProps: Coordinate = [Number(longitude), Number(latitude)];
+    const resolvedCameraCenter =
+      derivedCameraTarget?.center ||
+      (isValidCoordinate(cameraCenterCoordinate) ? cameraCenterCoordinate : null) ||
+      (isValidCoordinate(fallbackCenterFromProps) ? fallbackCenterFromProps : null) ||
+      DEFAULT_CENTER;
+    const resolvedCameraZoom = derivedCameraTarget?.zoom ?? cameraZoom ?? zoom;
+    const fallbackRegion = useMemo(() => {
+      const latitudeDelta = zoomToLatitudeDelta(resolvedCameraZoom);
+      return {
+        latitude: resolvedCameraCenter[1],
+        longitude: resolvedCameraCenter[0],
+        latitudeDelta,
+        longitudeDelta: latitudeDelta,
+      };
+    }, [resolvedCameraCenter, resolvedCameraZoom]);
+    const fallbackRouteCoordinates = useMemo(
+      () => normalizeCoordinates(routeCoordinates).map(toLatLng),
+      [routeCoordinates]
+    );
 
     useEffect(() => {
-      if (!cameraCenterCoordinate || !cameraRef.current) return;
+      if (!cameraRef.current) return;
 
       cameraRef.current.setCamera({
-        centerCoordinate: cameraCenterCoordinate,
-        zoomLevel: cameraZoom ?? zoom,
+        centerCoordinate: resolvedCameraCenter,
+        zoomLevel: resolvedCameraZoom,
+        pitch,
+        heading: bearing,
         animationMode: 'flyTo',
         animationDuration: cameraAnimationDuration,
       });
-    }, [cameraCenterCoordinate, cameraZoom, zoom, cameraAnimationDuration]);
+    }, [resolvedCameraCenter, resolvedCameraZoom, pitch, bearing, cameraAnimationDuration]);
+
+    const routeFeature = useMemo(() => {
+      if (!routeCoordinates || routeCoordinates.length < 2) return null;
+      const validRoute = normalizeCoordinates(routeCoordinates);
+      if (validRoute.length < 2) return null;
+
+      return {
+        type: 'Feature',
+        properties: {},
+        geometry: {
+          type: 'LineString',
+          coordinates: validRoute,
+        },
+      } as RouteFeature;
+    }, [routeCoordinates]);
 
     const handleMapPress = (event: any) => {
       const coordinates = event?.geometry?.coordinates;
@@ -78,13 +263,53 @@ export const MapboxMap = React.forwardRef<any, MapboxMapProps>(
       });
     };
 
-    if (!Mapbox) {
-      // Fallback view for environments without native Mapbox (Expo Go)
+    if (!canUseNativeMapbox && canUseFallbackMap) {
+      const FallbackMapView = ReactNativeMaps.default;
+      const FallbackPolyline = ReactNativeMaps.Polyline;
+
+      return (
+        <View style={[styles.container, style]}>
+          <FallbackMapView
+            ref={ref}
+            style={styles.map}
+            initialRegion={fallbackRegion}
+            showsUserLocation={showUserLocation}
+            showsCompass={showCompass}
+            showsScale={showScaleBar}
+            showsPointsOfInterest={true}
+            showsBuildings={true}
+            onRegionChangeComplete={(region: any) => onRegionChange?.(region)}
+            onPress={(event: any) => {
+              const coordinate = event?.nativeEvent?.coordinate;
+              if (!coordinate) return;
+              onPressCoordinate?.({
+                latitude: Number(coordinate.latitude),
+                longitude: Number(coordinate.longitude),
+              });
+            }}
+            onTouchStart={onTouchStart}
+            onTouchEnd={onTouchEnd}
+          >
+            {fallbackRouteCoordinates.length >= 2 && FallbackPolyline ? (
+              <FallbackPolyline
+                coordinates={fallbackRouteCoordinates}
+                strokeColor={routeColor}
+                strokeWidth={routeWidth}
+              />
+            ) : null}
+            {children}
+          </FallbackMapView>
+        </View>
+      );
+    }
+
+    if (!canUseNativeMapbox) {
       return (
         <View style={[styles.container, style, { justifyContent: 'center', alignItems: 'center' }]}> 
-          {/* Minimal placeholder so route renders without crashing */}
           <View style={{ padding: 12 }}>
-            <Text style={{ color: isLight ? '#111' : '#fff' }}>Map unavailable in this build.</Text>
+            <Text style={{ color: isLight ? '#111' : '#fff' }}>
+              {isExpoGo ? 'Map unavailable. Install react-native-maps for Expo Go fallback.' : 'Map unavailable in this build.'}
+            </Text>
           </View>
           {children}
         </View>
@@ -96,11 +321,15 @@ export const MapboxMap = React.forwardRef<any, MapboxMapProps>(
         <Mapbox.MapView
           ref={ref}
           style={styles.map}
-          styleURL={isLight ? Mapbox.StyleURL.Light : Mapbox.StyleURL.Dark}
+          styleURL={resolveStyleURL(isLight ? 'light' : 'dark', mapStyle)}
           zoomEnabled={true}
           scrollEnabled={true}
           rotateEnabled={true}
           pitchEnabled={true}
+          compassEnabled={showCompass}
+          scaleBarEnabled={showScaleBar}
+          attributionEnabled={showAttribution}
+          logoEnabled={showLogo}
           onPress={handleMapPress}
           onTouchStart={onTouchStart}
           onTouchEnd={onTouchEnd}
@@ -108,12 +337,33 @@ export const MapboxMap = React.forwardRef<any, MapboxMapProps>(
           <Mapbox.Camera
             ref={cameraRef}
             defaultSettings={{
-              zoomLevel: zoom,
-              centerCoordinate: [longitude, latitude],
+              zoomLevel: resolvedCameraZoom,
+              centerCoordinate: resolvedCameraCenter,
               pitch,
               heading: bearing,
             }}
           />
+          {showUserLocation && (
+            <Mapbox.UserLocation
+              visible
+              animated
+              showsUserHeadingIndicator
+              androidRenderMode="gps"
+            />
+          )}
+          {routeFeature && (
+            <Mapbox.ShapeSource id="route-source" shape={routeFeature}>
+              <Mapbox.LineLayer
+                id="route-line"
+                style={{
+                  lineColor: routeColor,
+                  lineWidth: routeWidth,
+                  lineCap: 'round',
+                  lineJoin: 'round',
+                }}
+              />
+            </Mapbox.ShapeSource>
+          )}
           {children}
         </Mapbox.MapView>
       </View>
@@ -140,13 +390,27 @@ export const MapboxMarker: React.FC<MarkerProps> = ({
   color = '#3B82F6',
   onPress,
 }) => {
-  // If native Mapbox isn't available (Expo Go), avoid accessing Mapbox.PointAnnotation
-  if (!Mapbox) {
-    return (
-      <View style={{ padding: 6, alignItems: 'center' }}>
-        <Text style={{ fontSize: 12, color: '#888' }}>{title}</Text>
-      </View>
-    );
+  if (!canUseNativeMapbox && canUseFallbackMap) {
+    const FallbackMarker = ReactNativeMaps.Marker;
+    if (FallbackMarker) {
+      return (
+        <FallbackMarker
+          identifier={id}
+          coordinate={{
+            latitude: Number(coordinate[1]),
+            longitude: Number(coordinate[0]),
+          }}
+          title={title}
+          description={description}
+          pinColor={color}
+          onPress={onPress}
+        />
+      );
+    }
+  }
+
+  if (!canUseNativeMapbox) {
+    return null;
   }
 
   return (

@@ -276,6 +276,16 @@ export default function RiderHomeScreen() {
       .filter((m) => Number.isFinite(m.latitude) && Number.isFinite(m.longitude));
   }, [recentRides]);
 
+  const mapboxFocusCoordinates = useMemo<[number, number][]>(() => {
+    const coordinates: [number, number][] = mapboxMarkers.map((marker) => [marker.longitude, marker.latitude]);
+
+    if (currentLocation) {
+      coordinates.unshift([currentLocation.longitude, currentLocation.latitude]);
+    }
+
+    return coordinates;
+  }, [mapboxMarkers, currentLocation]);
+
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
@@ -395,6 +405,11 @@ export default function RiderHomeScreen() {
                <MapboxMap
                  latitude={currentLocation?.latitude || 6.5244}
                  longitude={currentLocation?.longitude || 3.3792}
+                 mapStyle="standard"
+                 showUserLocation
+                 showCompass
+                 showScaleBar
+                 fitCoordinates={mapboxFocusCoordinates}
                  onTouchStart={() => setScrollEnabled(false)}
                  onTouchEnd={() => setScrollEnabled(true)}
                >

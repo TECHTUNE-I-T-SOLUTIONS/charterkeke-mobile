@@ -21,6 +21,8 @@ import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
 import { apiService } from '@/services/api';
 import { BRAND } from '@/utils/colors';
 import { verticalScale, scale } from 'react-native-size-matters';
+import { fetchMapboxRoute } from '@/utils/mapboxDirections';
+import { geocodeMapboxLocation } from '@/utils/mapboxGeocoding';
 
 interface RideData {
   id: string;
@@ -93,7 +95,10 @@ export default function RideDetailsScreen() {
   const [driverDetails, setDriverDetails] = useState<DriverDetails | null>(null);
   const [pickupCoords, setPickupCoords] = useState<any>(null);
   const [destCoords, setDestCoords] = useState<any>(null);
-  const [userRating, setUserRating] = useState(0);
+  const [routeCoordinates, setRouteCoordinates] = useState<[number, number][] | undefined>(undefined);
+  const [routeLoading, setRouteLoading] = useState(false);
+  const [routeDistanceKm, setRouteDistanceKm] = useState(0);
+  const [routeDurationMin, setRouteDurationMin] = useState(0);
 
   useEffect(() => {
     if (rideDataParam) {
@@ -102,7 +107,6 @@ export default function RideDetailsScreen() {
         setRideDetails(parsed);
         setPickupCoords(parseCoordinates(parsed.pickup_description || ''));
         setDestCoords(parseCoordinates(parsed.destination_description || ''));
-        if (parsed.rating) setUserRating(parsed.rating);
 
         // Map driver details from the ride data structure
         if (parsed.drivers?.users) {
@@ -120,6 +124,80 @@ export default function RideDetailsScreen() {
       } catch (e) { console.error(e); }
     }
   }, [rideDataParam]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadRoute = async () => {
+      if (!rideDetails) {
+        return;
+      }
+
+      setRouteLoading(true);
+
+      try {
+        const resolvedPickup = pickupCoords
+          ? { coordinate: [pickupCoords.longitude, pickupCoords.latitude] as [number, number] }
+          : rideDetails.pickup_zone
+            ? await geocodeMapboxLocation(rideDetails.pickup_zone)
+            : null;
+        const resolvedDestination = destCoords
+          ? { coordinate: [destCoords.longitude, destCoords.latitude] as [number, number] }
+          : rideDetails.destination_zone
+            ? await geocodeMapboxLocation(rideDetails.destination_zone)
+            : null;
+
+        if (cancelled || !resolvedPickup || !resolvedDestination) {
+          return;
+        }
+
+        const route = await fetchMapboxRoute(resolvedPickup.coordinate, resolvedDestination.coordinate, {
+          profile: 'driving-traffic',
+        });
+
+        if (cancelled) {
+          return;
+        }
+
+        if (route) {
+          setRouteCoordinates(route.coordinates);
+          setRouteDistanceKm(parseFloat(route.distanceKm.toFixed(2)));
+          setRouteDurationMin(Math.max(1, Math.round(route.durationMin)));
+          return;
+        }
+
+        setRouteCoordinates([resolvedPickup.coordinate, resolvedDestination.coordinate]);
+      } catch (error) {
+        console.log('Failed to load Mapbox route for rider ride details:', error);
+        if (pickupCoords && destCoords) {
+          setRouteCoordinates([
+            [pickupCoords.longitude, pickupCoords.latitude],
+            [destCoords.longitude, destCoords.latitude],
+          ]);
+        }
+      } finally {
+        if (!cancelled) {
+          setRouteLoading(false);
+        }
+      }
+    };
+
+    loadRoute();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rideDetails, pickupCoords, destCoords]);
+
+  const routeFitCoordinates = routeCoordinates || (pickupCoords && destCoords
+    ? [
+        [pickupCoords.longitude, pickupCoords.latitude] as [number, number],
+        [destCoords.longitude, destCoords.latitude] as [number, number],
+      ]
+    : undefined);
+
+  const displayDistanceKm = routeDistanceKm || rideDetails?.distance_km || 0;
+  const displayDurationMin = routeDurationMin || rideDetails?.duration_minutes || 0;
 
   const handleCallDriver = async () => {
     const phoneNumber = driverDetails?.phone_number || rideDetails?.drivers?.users?.phone_number;
@@ -153,17 +231,35 @@ export default function RideDetailsScreen() {
     }
   };
 
-  const handleSubmitRating = async () => {
-    if (!userRating || !rideDetails) {
-      showError('Error', 'Please select a rating');
+  const handleGoToRatingScreen = () => {
+    if (!rideDetails?.id) {
+      showError('Error', 'Ride details are unavailable.');
       return;
     }
-    try {
-      await apiService.post(`/rides/${rideDetails.id}/rate`, { rating: userRating });
-      showSuccess('Success', 'Rating submitted successfully!');
-    } catch (e) {
-      showError('Error', 'Failed to submit rating. Please try again.');
+
+    const alreadyRated = Number(rideDetails.rating || 0) > 0;
+    if (alreadyRated) {
+      showSuccess('Already rated', 'You have already submitted a rating for this ride.');
+      return;
     }
+
+    const resolvedDriverId =
+      rideDetails.driver_id ||
+      rideDetails.assigned_driver_id ||
+      rideDetails.drivers?.id ||
+      '';
+
+    router.push({
+      pathname: '/rider/rating',
+      params: {
+        rideId: rideDetails.id,
+        driverId: resolvedDriverId,
+        rideData: JSON.stringify({
+          ...rideDetails,
+          driver_id: resolvedDriverId,
+        }),
+      },
+    } as any);
   };
 
   if (!rideDetails) return <View style={[styles.container, { backgroundColor: theme.colors.background }]}><ActivityIndicator size="large" color={BRAND.primary} style={{marginTop: 50}} /></View>;
@@ -178,6 +274,11 @@ export default function RideDetailsScreen() {
           style={styles.map}
           latitude={pickupCoords?.latitude || 6.5244}
           longitude={pickupCoords?.longitude || 3.3792}
+          mapStyle="navigation-day"
+          showCompass
+          showScaleBar
+          fitCoordinates={routeFitCoordinates}
+          routeCoordinates={routeCoordinates}
           zoom={12}
         >
           {pickupCoords && (
@@ -288,12 +389,12 @@ export default function RideDetailsScreen() {
         <View style={styles.statsRow}>
           <View style={[styles.statItem, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
             <MaterialCommunityIcons name="map-marker-distance" size={20} color={BRAND.primary} style={{marginBottom: 4}} />
-            <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{rideDetails.distance_km?.toFixed(1) || '-'} km</Text>
+            <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{routeLoading ? 'Calculating...' : (displayDistanceKm ? `${displayDistanceKm.toFixed(1)} km` : '-')}</Text>
             <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Distance</Text>
           </View>
           <View style={[styles.statItem, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
             <MaterialCommunityIcons name="clock-outline" size={20} color={BRAND.primary} style={{marginBottom: 4}} />
-            <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{rideDetails.duration_minutes || '-'} min</Text>
+            <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{routeLoading ? 'Calculating...' : (displayDurationMin ? `${Math.round(displayDurationMin)} min` : '-')}</Text>
             <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Duration</Text>
           </View>
         </View>
@@ -334,17 +435,34 @@ export default function RideDetailsScreen() {
         {rideDetails.status === 'completed' && (
           <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
             <Text style={[styles.sectionTitle, { color: theme.colors.textSecondary, marginBottom: 8 }]}>RATE YOUR EXPERIENCE</Text>
-            <View style={styles.starRow}>
-              {[1, 2, 3, 4, 5].map((star) => (
-                <TouchableOpacity key={star} onPress={() => setUserRating(star)}>
-                  <MaterialCommunityIcons name={star <= userRating ? "star" : "star-outline"} size={36} color="#F59E0B" />
+            {Number(rideDetails.rating || 0) > 0 ? (
+              <>
+                <View style={styles.starRow}>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <MaterialCommunityIcons
+                      key={star}
+                      name={star <= Number(rideDetails.rating || 0) ? 'star' : 'star-outline'}
+                      size={32}
+                      color="#F59E0B"
+                    />
+                  ))}
+                </View>
+                <Text style={[styles.ratingSubmittedText, { color: theme.colors.textSecondary }]}>
+                  You already submitted {Number(rideDetails.rating || 0)} star{Number(rideDetails.rating || 0) > 1 ? 's' : ''} for this ride.
+                </Text>
+                <TouchableOpacity onPress={handleGoToRatingScreen} style={[styles.rateBtn, styles.rateBtnDisabled]}>
+                  <Text style={styles.rateBtnText}>Rating Submitted</Text>
                 </TouchableOpacity>
-              ))}
-            </View>
-            {userRating > 0 && (
-              <TouchableOpacity onPress={handleSubmitRating} style={styles.rateBtn}>
-                <Text style={styles.rateBtnText}>Submit Rating</Text>
-              </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={[styles.ratingPendingText, { color: theme.colors.textSecondary }]}>
+                  You have not rated this ride yet. Tap below to continue to the rating screen.
+                </Text>
+                <TouchableOpacity onPress={handleGoToRatingScreen} style={styles.rateBtn}>
+                  <Text style={styles.rateBtnText}>Go To Rating Screen</Text>
+                </TouchableOpacity>
+              </>
             )}
           </View>
         )}
@@ -399,7 +517,10 @@ const styles = StyleSheet.create({
   paymentMethod: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   methodText: { fontSize: 11, fontWeight: '600', textTransform: 'uppercase' },
   starRow: { flexDirection: 'row', justifyContent: 'center', gap: 12, marginVertical: 8 },
+  ratingSubmittedText: { textAlign: 'center', fontSize: 13, marginBottom: 8 },
+  ratingPendingText: { textAlign: 'center', fontSize: 13, marginBottom: 12 },
   rateBtn: { backgroundColor: BRAND.primary, padding: 16, borderRadius: 16, alignItems: 'center', marginTop: 12 },
+  rateBtnDisabled: { opacity: 0.75 },
   rateBtnText: { color: '#000', fontWeight: '700', fontSize: 16 },
 });
 

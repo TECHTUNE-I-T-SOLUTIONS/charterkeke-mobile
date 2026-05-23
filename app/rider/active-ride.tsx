@@ -17,6 +17,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useLocation } from '@/context/LocationContext';
 import { useTheme } from '@/context/ThemeContext';
 import { COLORS } from '@/utils/colors';
+import { fetchMapboxRoute } from '@/utils/mapboxDirections';
 
 const { width, height } = Dimensions.get('window');
 
@@ -49,6 +50,10 @@ export default function ActiveRideScreen() {
   const [driverLocation, setDriverLocation] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [routeCoordinates, setRouteCoordinates] = useState<[number, number][] | undefined>(undefined);
+  const [routeDistanceKm, setRouteDistanceKm] = useState(0);
+  const [routeDurationMin, setRouteDurationMin] = useState(0);
+  const [routeLoading, setRouteLoading] = useState(false);
 
   const isDark = theme?.mode === 'dark';
   const colors = isDark ? COLORS.dark : COLORS.light;
@@ -131,6 +136,67 @@ export default function ActiveRideScreen() {
       });
     }
     return markers;
+  }, [currentLocation, driverLocation]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadRoute = async () => {
+      if (!currentLocation || !driverLocation) {
+        return;
+      }
+
+      setRouteLoading(true);
+
+      try {
+        const route = await fetchMapboxRoute(
+          [currentLocation.longitude, currentLocation.latitude],
+          [driverLocation.longitude, driverLocation.latitude],
+          { profile: 'driving-traffic' }
+        );
+
+        if (cancelled) {
+          return;
+        }
+
+        if (route) {
+          setRouteCoordinates(route.coordinates);
+          setRouteDistanceKm(parseFloat(route.distanceKm.toFixed(2)));
+          setRouteDurationMin(Math.max(1, Math.round(route.durationMin)));
+          return;
+        }
+
+        setRouteCoordinates([
+          [currentLocation.longitude, currentLocation.latitude],
+          [driverLocation.longitude, driverLocation.latitude],
+        ]);
+      } catch (error) {
+        console.log('Failed to load live Mapbox route:', error);
+      } finally {
+        if (!cancelled) {
+          setRouteLoading(false);
+        }
+      }
+    };
+
+    loadRoute();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentLocation, driverLocation]);
+
+  const mapFocusCoordinates = useMemo<[number, number][]>(() => {
+    const coordinates: [number, number][] = [];
+
+    if (currentLocation) {
+      coordinates.push([currentLocation.longitude, currentLocation.latitude]);
+    }
+    if (driverLocation) {
+      coordinates.push([driverLocation.longitude, driverLocation.latitude]);
+    }
+
+    return coordinates;
   }, [currentLocation, driverLocation]);
 
   if (loading) {
@@ -246,6 +312,12 @@ export default function ActiveRideScreen() {
             latitude={currentLocation?.latitude || 6.5244}
             longitude={currentLocation?.longitude || 3.3792}
             zoom={14}
+            mapStyle="navigation-day"
+            showUserLocation
+            showCompass
+            showScaleBar
+            fitCoordinates={routeCoordinates || mapFocusCoordinates}
+            routeCoordinates={routeCoordinates}
           >
             {mapMarkers.map((marker) => (
               <MapboxMarker
@@ -257,6 +329,34 @@ export default function ActiveRideScreen() {
               />
             ))}
           </MapboxMap>
+        </View>
+
+        <View
+          style={{
+            marginHorizontal: 16,
+            marginTop: 16,
+            paddingHorizontal: 16,
+            paddingVertical: 12,
+            borderRadius: 16,
+            backgroundColor: colors.card,
+            borderWidth: 1,
+            borderColor: colors.border,
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+          }}
+        >
+          <View>
+            <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: '600' }}>Distance</Text>
+            <Text style={{ fontSize: 16, color: colors.text, fontWeight: '700' }}>
+              {routeLoading ? 'Calculating...' : `${routeDistanceKm || 0} km`}
+            </Text>
+          </View>
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: '600' }}>ETA</Text>
+            <Text style={{ fontSize: 16, color: colors.text, fontWeight: '700' }}>
+              {routeLoading ? 'Calculating...' : `${routeDurationMin || 0} min`}
+            </Text>
+          </View>
         </View>
 
         {/* Driver Info Card */}
