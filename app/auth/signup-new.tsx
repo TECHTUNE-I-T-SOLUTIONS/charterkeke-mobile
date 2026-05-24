@@ -15,6 +15,7 @@ import {
   Image,
   Alert,
   Modal,
+  Pressable,
   Animated,
   Easing,
   StatusBar,
@@ -100,6 +101,10 @@ export default function SignupMultiStepScreen() {
   const [verifyingAccount, setVerifyingAccount] = useState(false);
   const [accountVerified, setAccountVerified] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [signupErrorVisible, setSignupErrorVisible] = useState(false);
+  const [signupErrorTitle, setSignupErrorTitle] = useState('Signup Error');
+  const [signupErrorMessage, setSignupErrorMessage] = useState('');
+  const [signupErrorDetails, setSignupErrorDetails] = useState('');
 
   // Memoized handler to prevent keyboard focus loss
   const handleFieldChange = useCallback((field: string, value: string) => {
@@ -686,6 +691,40 @@ export default function SignupMultiStepScreen() {
       });
   };
 
+  const showSignupError = (error: any) => {
+    const rawMessage =
+      error?.response?.data?.message ||
+      error?.response?.data?.error ||
+      error?.message ||
+      'Signup failed';
+
+    const normalized = String(rawMessage).toLowerCase();
+    let title = 'Signup Error';
+    let message = 'We could not complete your signup.';
+
+    if (normalized.includes('already exists') || normalized.includes('already registered') || normalized.includes('duplicate') || normalized.includes('taken')) {
+      title = 'Email Already Exists';
+      message = 'That email already has an account. Try signing in instead.';
+    } else if (normalized.includes('password') && (normalized.includes('weak') || normalized.includes('short') || normalized.includes('invalid'))) {
+      title = 'Password Too Weak';
+      message = 'Please choose a stronger password and try again.';
+    } else if (normalized.includes('phone') || normalized.includes('mobile')) {
+      title = 'Phone Number Issue';
+      message = 'Please check the phone number and try again.';
+    } else if (normalized.includes('network') || normalized.includes('timeout')) {
+      title = 'Connection Problem';
+      message = 'We could not reach the server. Check your internet connection and try again.';
+    } else if (normalized.includes('server') || normalized.includes('internal')) {
+      title = 'Server Error';
+      message = 'The server had a problem creating your account. Please try again shortly.';
+    }
+
+    setSignupErrorTitle(title);
+    setSignupErrorMessage(message);
+    setSignupErrorDetails(String(rawMessage));
+    setSignupErrorVisible(true);
+  };
+
   const handleSignup = async () => {
     if (!validateStep('security')) return;
 
@@ -765,7 +804,7 @@ export default function SignupMultiStepScreen() {
       const targetRoute = role === 'driver' ? '/driver/home' : '/rider/home';
       router.replace(targetRoute);
     } catch (error) {
-      Alert.alert('Error', error instanceof Error ? error.message : 'Signup failed');
+      showSignupError(error);
     }
   };
 
@@ -1008,7 +1047,7 @@ export default function SignupMultiStepScreen() {
                           color={theme.colors.primary}
                         />
                       </View>
-                      <Text style={[styles.roleTitle, { color: theme.colors.textPrimary }]}>Rider</Text>
+                      <Text style={[styles.roleTitle, { color: theme.colors.textPrimary }]}>Passenger</Text>
                       <Text style={[styles.roleDesc, { color: theme.colors.textSecondary }]}>
                         Book and ride with Charter Keke
                       </Text>
@@ -1893,6 +1932,39 @@ export default function SignupMultiStepScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={signupErrorVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSignupErrorVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.errorModalCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+            <View style={styles.errorModalHeader}>
+              <View style={[styles.errorIconBubble, { backgroundColor: 'rgba(239, 68, 68, 0.12)' }]}>
+                <MaterialCommunityIcons name="alert-circle-outline" size={30} color={theme.colors.error} />
+              </View>
+              <TouchableOpacity onPress={() => setSignupErrorVisible(false)} style={styles.errorCloseButton}>
+                <MaterialCommunityIcons name="close" size={22} color={theme.colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <Text style={[styles.errorModalTitle, { color: theme.colors.textPrimary }]}>{signupErrorTitle}</Text>
+            <Text style={[styles.errorModalMessage, { color: theme.colors.textSecondary }]}>{signupErrorMessage}</Text>
+            {!!signupErrorDetails && (
+              <Text style={[styles.errorModalDetails, { color: theme.colors.textTertiary }]} numberOfLines={4}>
+                {signupErrorDetails}
+              </Text>
+            )}
+            <Pressable
+              onPress={() => setSignupErrorVisible(false)}
+              style={[styles.errorModalButton, { backgroundColor: BRAND.primary }]}
+            >
+              <Text style={styles.errorModalButtonText}>Okay</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -2448,5 +2520,57 @@ const styles = StyleSheet.create({
   datePickerButton: {
     fontSize: moderateScale(17),
     fontWeight: '600',
+  },
+  errorModalCard: {
+    width: '88%',
+    borderRadius: scale(20),
+    borderWidth: 1,
+    padding: scale(18),
+    elevation: 8,
+  },
+  errorModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: verticalScale(14),
+  },
+  errorIconBubble: {
+    width: scale(48),
+    height: scale(48),
+    borderRadius: scale(24),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorCloseButton: {
+    width: scale(36),
+    height: scale(36),
+    borderRadius: scale(18),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorModalTitle: {
+    fontSize: moderateScale(18),
+    fontWeight: '800',
+    marginBottom: verticalScale(8),
+  },
+  errorModalMessage: {
+    fontSize: moderateScale(13),
+    lineHeight: moderateScale(20),
+    marginBottom: verticalScale(8),
+  },
+  errorModalDetails: {
+    fontSize: moderateScale(11),
+    lineHeight: moderateScale(16),
+    marginBottom: verticalScale(16),
+  },
+  errorModalButton: {
+    borderRadius: scale(14),
+    paddingVertical: verticalScale(12),
+    alignItems: 'center',
+  },
+  errorModalButtonText: {
+    color: '#000',
+    fontWeight: '800',
+    fontSize: moderateScale(13),
   },
 });

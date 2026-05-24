@@ -35,6 +35,7 @@ import {
   getOperationalAreaByLocation,
 } from '@/utils/geofencing';
 import { fetchMapboxRoute } from '@/utils/mapboxDirections';
+import { geocodeMapboxLocation } from '@/utils/mapboxGeocoding';
 
 // Fare calculation constants
 const BASE_FARE_PER_KM = 600;
@@ -200,6 +201,16 @@ function searchLocations(query: string, locations: typeof MOCK_LOCATIONS, recent
   return scoredResults.filter(r => r._score > 100).sort((a, b) => b._score - a._score).slice(0, 8).map(({ _score, ...rest }) => rest);
 }
 
+function dedupeSearchResults(results: SearchResult[]): SearchResult[] {
+  const seen = new Set<string>();
+  return results.filter((item) => {
+    const key = `${item.address.toLowerCase()}-${item.lat.toFixed(5)}-${item.lng.toFixed(5)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 async function saveRecentSearch(query: string): Promise<void> {
   try {
     if (!query || query.length < 2) return;
@@ -272,7 +283,7 @@ export default function BookingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
-  const { currentLocation } = useLocation();
+  const { currentLocation, reverseGeocodeLocation } = useLocation();
   // State
   const [pickupLocation, setPickupLocation] = useState<Location | null>(null);
   const [dropoffLocation, setDropoffLocation] = useState<Location | null>(null);
@@ -330,6 +341,44 @@ export default function BookingScreen() {
       setRecentSearches(searches);
       setRecentLocations(locations);
     } catch (error) { console.error('Error loading recent data:', error); }
+  };
+
+  const promptForCurrentLocation = (type: 'pickup' | 'dropoff') => {
+    if (!currentLocation) {
+      Alert.alert('Location unavailable', 'We could not read your current location yet.');
+      return;
+    }
+
+    Alert.alert(
+      'Use current location?',
+      `Use your current location for ${type === 'pickup' ? 'pickup' : 'dropoff'}?`,
+      [
+        { text: 'Not now', style: 'cancel' },
+        {
+          text: 'Use current location',
+          onPress: async () => {
+            const resolvedAddress = await reverseGeocodeLocation(currentLocation).catch(() => null);
+            const location: Location = {
+              lat: currentLocation.latitude,
+              lng: currentLocation.longitude,
+              address: resolvedAddress || 'Current location',
+            };
+            if (type === 'pickup') {
+              setPickupLocation(location);
+              setPickupSearch(location.address);
+              setShowPickupResults(false);
+            } else {
+              setDropoffLocation(location);
+              setDropoffSearch(location.address);
+              setShowDropoffResults(false);
+            }
+            setCameraCenter([location.lng, location.lat]);
+            setCameraZoom(14);
+            await saveRecentLocation(location);
+          },
+        },
+      ]
+    );
   };
 
   const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number) => {
@@ -435,7 +484,23 @@ export default function BookingScreen() {
       else { setDropoffSearchResults([]); setShowDropoffResults(true); }
       return;
     }
-    const results = searchLocations(query, MOCK_LOCATIONS, recentLocations);
+    const localResults = searchLocations(query, MOCK_LOCATIONS, recentLocations);
+    let apiResults: SearchResult[] = [];
+
+    try {
+      const geocoded = await geocodeMapboxLocation(query);
+      if (geocoded) {
+        apiResults = [{
+          address: geocoded.placeName,
+          lat: geocoded.coordinate[1],
+          lng: geocoded.coordinate[0],
+        }];
+      }
+    } catch (error) {
+      console.log('Mapbox geocoding failed for booking search:', error);
+    }
+
+    const results = dedupeSearchResults([...localResults, ...apiResults]);
     if (type === 'pickup') { setPickupSearchResults(results); setShowPickupResults(true); }
     else { setDropoffSearchResults(results); setShowDropoffResults(true); }
     await saveRecentSearch(query);
@@ -755,7 +820,10 @@ export default function BookingScreen() {
                   placeholderTextColor={theme.colors.textTertiary}
                   value={pickupSearch}
                   onChangeText={(t) => { setPickupSearch(t); handleSearch(t, 'pickup'); }}
-                  onFocus={() => setShowPickupResults(true)}
+                  onFocus={() => {
+                    setShowPickupResults(true);
+                    if (!pickupLocation) promptForCurrentLocation('pickup');
+                  }}
                 />
               )}
             </View>
@@ -789,7 +857,10 @@ export default function BookingScreen() {
                   placeholderTextColor={theme.colors.textTertiary}
                   value={dropoffSearch}
                   onChangeText={(t) => { setDropoffSearch(t); handleSearch(t, 'dropoff'); }}
-                  onFocus={() => setShowDropoffResults(true)}
+                  onFocus={() => {
+                    setShowDropoffResults(true);
+                    if (!dropoffLocation) promptForCurrentLocation('dropoff');
+                  }}
                 />
               )}
             </View>

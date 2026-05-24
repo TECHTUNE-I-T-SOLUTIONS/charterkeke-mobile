@@ -276,9 +276,9 @@ export default function ResetPasswordScreen() {
 
     setIsLoading(true);
     try {
-      // Call password reset endpoint
+      // Call OTP-based password reset endpoint
       const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'https://charterkeke.vercel.app/api';
-      const response = await fetch(`${API_BASE}/auth/reset-password`, {
+      const response = await fetch(`${API_BASE}/auth/reset-password-otp`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -286,6 +286,7 @@ export default function ResetPasswordScreen() {
         body: JSON.stringify({
           email: email.trim().toLowerCase(),
           newPassword: password,
+          method: 'sms',
         }),
       });
 

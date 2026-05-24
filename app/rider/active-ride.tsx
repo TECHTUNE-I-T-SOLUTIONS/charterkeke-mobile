@@ -12,6 +12,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
+import { RideMapFullscreenModal } from '@/components/RideMapFullscreenModal';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useAuth } from '@/context/AuthContext';
 import { useLocation } from '@/context/LocationContext';
@@ -54,6 +55,8 @@ export default function ActiveRideScreen() {
   const [routeDistanceKm, setRouteDistanceKm] = useState(0);
   const [routeDurationMin, setRouteDurationMin] = useState(0);
   const [routeLoading, setRouteLoading] = useState(false);
+  const [showFullMap, setShowFullMap] = useState(false);
+  const [lastMapTap, setLastMapTap] = useState(0);
 
   const isDark = theme?.mode === 'dark';
   const colors = isDark ? COLORS.dark : COLORS.light;
@@ -199,6 +202,14 @@ export default function ActiveRideScreen() {
     return coordinates;
   }, [currentLocation, driverLocation]);
 
+  const handleMapTap = () => {
+    const now = Date.now();
+    if (now - lastMapTap < 300) {
+      setShowFullMap(true);
+    }
+    setLastMapTap(now);
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
@@ -318,6 +329,7 @@ export default function ActiveRideScreen() {
             showScaleBar
             fitCoordinates={routeCoordinates || mapFocusCoordinates}
             routeCoordinates={routeCoordinates}
+            onPressCoordinate={handleMapTap}
           >
             {mapMarkers.map((marker) => (
               <MapboxMarker
@@ -643,6 +655,16 @@ export default function ActiveRideScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+      <RideMapFullscreenModal
+        visible={showFullMap}
+        title="Active Ride Map"
+        routeCoordinates={routeCoordinates}
+        focusCoordinates={routeCoordinates || mapFocusCoordinates}
+        riderLocation={currentLocation ? [currentLocation.longitude, currentLocation.latitude] : null}
+        driverLocation={driverLocation ? [driverLocation.longitude, driverLocation.latitude] : null}
+        speedText={routeLoading ? 'Loading route...' : `ETA ${routeDurationMin || 0} min | ${routeDistanceKm || 0} km`}
+        onClose={() => setShowFullMap(false)}
+      />
     </SafeAreaView>
   );
 }

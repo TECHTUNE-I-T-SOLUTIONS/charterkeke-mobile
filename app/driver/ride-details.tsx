@@ -19,6 +19,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
+import { RideMapFullscreenModal } from '@/components/RideMapFullscreenModal';
 import { useTheme } from '@/context/ThemeContext';
 import { apiService } from '@/services/api';
 import { ListScreenSkeleton } from '@/components/ListScreenSkeleton';
@@ -38,9 +39,11 @@ export default function RideDetailsScreen() {
   const [ride, setRide] = useState<any>(null);
   const [updating, setUpdating] = useState(false);
    const [routeCoordinates, setRouteCoordinates] = useState<[number, number][] | undefined>(undefined);
-   const [routeLoading, setRouteLoading] = useState(false);
-   const [routeDistanceKm, setRouteDistanceKm] = useState(0);
-   const [routeDurationMin, setRouteDurationMin] = useState(0);
+  const [routeLoading, setRouteLoading] = useState(false);
+  const [routeDistanceKm, setRouteDistanceKm] = useState(0);
+  const [routeDurationMin, setRouteDurationMin] = useState(0);
+  const [showFullMap, setShowFullMap] = useState(false);
+  const [lastMapTap, setLastMapTap] = useState(0);
 
   useEffect(() => {
     if (rideData) {
@@ -139,6 +142,13 @@ export default function RideDetailsScreen() {
    }
 
   const routeFitCoordinates = routeCoordinates || [[3.3792, 6.5244], [3.4292, 6.5844]];
+  const handleMapTap = () => {
+    const now = Date.now();
+    if (now - lastMapTap < 300) {
+      setShowFullMap(true);
+    }
+    setLastMapTap(now);
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -156,6 +166,7 @@ export default function RideDetailsScreen() {
                 fitCoordinates={routeFitCoordinates}
                 routeCoordinates={routeCoordinates}
            zoom={12}
+           onPressCoordinate={handleMapTap}
          >
                   <MapboxMarker
                      id="pickup"
@@ -275,6 +286,16 @@ export default function RideDetailsScreen() {
          )}
 
       </ScrollView>
+      <RideMapFullscreenModal
+        visible={showFullMap}
+        title="Ride Map"
+        routeCoordinates={routeCoordinates}
+        focusCoordinates={routeFitCoordinates}
+        pickup={routeCoordinates?.[0] || [3.3792, 6.5244]}
+        dropoff={routeCoordinates?.[routeCoordinates.length - 1] || [3.4292, 6.5844]}
+        speedText={routeLoading ? 'Loading route...' : `ETA ${routeDurationMin || 0} min | ${routeDistanceKm || 0} km`}
+        onClose={() => setShowFullMap(false)}
+      />
     </View>
   );
 }

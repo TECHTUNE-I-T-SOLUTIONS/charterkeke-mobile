@@ -1,6 +1,6 @@
 {
-  "version": "2.1.5",
-  "buildNumber": 215,
+  "version": "2.1.6",
+  "buildNumber": 216,
   "releaseDate": "2026-05-23",
-  "changelog": "Fixed serverless push notification token caching bug to ensure reliable push notifications for drivers upon ride bookings and for riders upon ride acceptances. Added targeted driver dispatch push notifications alongside SMS."
+  "changelog": "Added richer signup error handling, improved booking search and Lagos-only location validation, and enhanced ride map fullscreen UX."
 }
