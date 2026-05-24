@@ -29,6 +29,18 @@ interface RideData {
   duration_minutes?: number;
   pickup_time?: string;
   dropoff_time?: string;
+  rating?: number | null;
+  review?: string | null;
+  completed_at?: string;
+}
+
+interface RideReview {
+  id?: string;
+  ride_id?: string;
+  rating?: number;
+  review_text?: string;
+  review?: string;
+  categories?: { tags?: string[] };
 }
 
 interface DriverProfile {
@@ -138,6 +150,33 @@ export default function RatingScreen() {
         console.log('[RatingScreen] Extracted ride data:', JSON.stringify(ride, null, 2));
         setRideData(ride);
 
+        if (user?.id) {
+          try {
+            const reviewResponse = await apiService.get(`/ride-reviews?reviewer_id=${user.id}`);
+            const reviews = (reviewResponse as any)?.reviews || (Array.isArray(reviewResponse) ? reviewResponse : []);
+            const rideReview = Array.isArray(reviews)
+              ? reviews.find((item: RideReview) => item?.ride_id === ride.id)
+              : null;
+
+            if (rideReview) {
+              setRating(Number(rideReview.rating || ride.rating || 5));
+              setReview(String(rideReview.review_text || rideReview.review || ride.review || ''));
+              setTags(Array.isArray(rideReview.categories?.tags) ? rideReview.categories.tags : []);
+              setRideData((current) =>
+                current
+                  ? {
+                      ...current,
+                      rating: Number(rideReview.rating || current.rating || 0),
+                      review: String(rideReview.review_text || rideReview.review || current.review || ''),
+                    }
+                  : current
+              );
+            }
+          } catch (reviewError) {
+            console.warn('[RatingScreen] Could not fetch existing ride review:', reviewError);
+          }
+        }
+
         // Extract driver ID from ride data
         const driverId = ride.driver_id;
         console.log('[RatingScreen] Extracted driver ID:', driverId);
@@ -242,6 +281,9 @@ export default function RatingScreen() {
   const vehicleType = driver?.vehicle_type || 'Vehicle';
   const plateNumber = driver?.plate_number || 'N/A';
   const driverRating = driver?.average_rating ?? 4.5;
+  const existingRatingValue = Number(rideData?.rating || 0);
+  const existingReviewText = typeof rideData?.review === 'string' ? rideData.review.trim() : '';
+  const hasExistingReview = Boolean(existingRatingValue > 0 || existingReviewText);
 
   // Ride details from the ride data
   const pickupZone = rideData?.pickup_zone || 'Unknown';
@@ -300,6 +342,125 @@ export default function RatingScreen() {
           />
         </TouchableOpacity>
       ))}
+    </View>
+  );
+
+  const renderCompactReviewSummary = () => (
+    <View style={{ paddingHorizontal: scale(20), marginTop: verticalScale(16) }}>
+      <View
+        style={{
+          backgroundColor: colors.card,
+          borderRadius: 16,
+          padding: scale(16),
+          borderWidth: 1,
+          borderColor: colors.border,
+        }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <View style={{ flex: 1, paddingRight: scale(12) }}>
+            <Text
+              style={{
+                fontSize: moderateScale(12),
+                color: colors.primary,
+                fontWeight: '700',
+                letterSpacing: 0.8,
+                marginBottom: verticalScale(6),
+              }}
+            >
+              REVIEW SUBMITTED
+            </Text>
+            <Text
+              style={{
+                fontSize: moderateScale(18),
+                fontWeight: '700',
+                color: colors.text,
+              }}
+            >
+              Thanks for riding with us
+            </Text>
+            <Text
+              style={{
+                fontSize: moderateScale(13),
+                color: colors.textSecondary,
+                marginTop: verticalScale(4),
+                lineHeight: moderateScale(18),
+              }}
+            >
+              Your feedback for {driverName} has been saved.
+            </Text>
+          </View>
+          <View
+            style={{
+              width: scale(48),
+              height: scale(48),
+              borderRadius: scale(24),
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: colors.primary + '18',
+            }}
+          >
+            <MaterialCommunityIcons name="check" size={moderateScale(26)} color={colors.primary} />
+          </View>
+        </View>
+
+        <View
+          style={{
+            marginTop: verticalScale(14),
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: scale(8),
+          }}
+        >
+          {[1, 2, 3, 4, 5].map((star) => (
+            <MaterialCommunityIcons
+              key={star}
+              name={star <= (existingRatingValue || rating) ? 'star' : 'star-outline'}
+              size={moderateScale(20)}
+              color={star <= (existingRatingValue || rating) ? colors.primary : colors.textTertiary}
+            />
+          ))}
+          <Text style={{ marginLeft: scale(6), color: colors.textSecondary, fontSize: moderateScale(13), fontWeight: '600' }}>
+            {existingRatingValue || rating}/5
+          </Text>
+        </View>
+
+        {!!existingReviewText && (
+          <View
+            style={{
+              marginTop: verticalScale(14),
+              padding: scale(12),
+              borderRadius: 12,
+              backgroundColor: isLight ? '#FAFAFA' : '#121212',
+              borderWidth: 1,
+              borderColor: colors.border,
+            }}
+          >
+            <Text style={{ color: colors.textSecondary, fontSize: moderateScale(12), marginBottom: verticalScale(6), fontWeight: '700' }}>
+              YOUR COMMENT
+            </Text>
+            <Text style={{ color: colors.text, fontSize: moderateScale(13), lineHeight: moderateScale(19) }}>
+              {existingReviewText}
+            </Text>
+          </View>
+        )}
+
+        <TouchableOpacity
+          onPress={() => router.replace('/rider/home')}
+          activeOpacity={0.8}
+          style={{
+            marginTop: verticalScale(16),
+            alignSelf: 'flex-start',
+            paddingVertical: verticalScale(10),
+            paddingHorizontal: scale(14),
+            borderRadius: 10,
+            backgroundColor: colors.primary,
+          }}
+        >
+          <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: moderateScale(13) }}>
+            Back to Home
+          </Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -663,157 +824,163 @@ export default function RatingScreen() {
           </View>
         </View>
 
-        {/* Rating Question */}
-        <View style={{ paddingHorizontal: scale(20), marginTop: verticalScale(16) }}>
-          <Text style={{
-            fontSize: moderateScale(14),
-            color: colors.textSecondary,
-            marginBottom: verticalScale(12),
-            letterSpacing: 0.3,
-            fontWeight: '500',
-          }}>
-            HOW WAS YOUR EXPERIENCE?
-          </Text>
-        </View>
+        {hasExistingReview ? (
+          renderCompactReviewSummary()
+        ) : (
+          <>
+            {/* Rating Question */}
+            <View style={{ paddingHorizontal: scale(20), marginTop: verticalScale(16) }}>
+              <Text style={{
+                fontSize: moderateScale(14),
+                color: colors.textSecondary,
+                marginBottom: verticalScale(12),
+                letterSpacing: 0.3,
+                fontWeight: '500',
+              }}>
+                HOW WAS YOUR EXPERIENCE?
+              </Text>
+            </View>
 
-        {/* Star Rating */}
-        {renderStarRating()}
+            {/* Star Rating */}
+            {renderStarRating()}
 
-        {/* Rating Feedback */}
-        <View style={{ paddingHorizontal: scale(20), marginTop: verticalScale(8) }}>
-          <Text style={{
-            fontSize: moderateScale(16),
-            fontWeight: '700',
-            color: colors.primary,
-            textAlign: 'center',
-            letterSpacing: 0.5,
-          }}>
-            {ratingDescriptions[rating - 1]}
-          </Text>
-        </View>
+            {/* Rating Feedback */}
+            <View style={{ paddingHorizontal: scale(20), marginTop: verticalScale(8) }}>
+              <Text style={{
+                fontSize: moderateScale(16),
+                fontWeight: '700',
+                color: colors.primary,
+                textAlign: 'center',
+                letterSpacing: 0.5,
+              }}>
+                {ratingDescriptions[rating - 1]}
+              </Text>
+            </View>
 
-        {/* Feedback Tags */}
-        <View style={{ paddingHorizontal: scale(20), marginTop: verticalScale(20) }}>
-          <Text style={{
-            fontSize: moderateScale(14),
-            color: colors.textSecondary,
-            marginBottom: verticalScale(12),
-            letterSpacing: 0.3,
-            fontWeight: '500',
-          }}>
-            WHAT DID YOU LIKE?
-          </Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: scale(8) }}>
-            {feedbackTags.map((tag) => (
-              <TouchableOpacity
-                key={tag.id}
-                onPress={() => handleToggleTag(tag.id)}
-                activeOpacity={0.7}
+            {/* Feedback Tags */}
+            <View style={{ paddingHorizontal: scale(20), marginTop: verticalScale(20) }}>
+              <Text style={{
+                fontSize: moderateScale(14),
+                color: colors.textSecondary,
+                marginBottom: verticalScale(12),
+                letterSpacing: 0.3,
+                fontWeight: '500',
+              }}>
+                WHAT DID YOU LIKE?
+              </Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: scale(8) }}>
+                {feedbackTags.map((tag) => (
+                  <TouchableOpacity
+                    key={tag.id}
+                    onPress={() => handleToggleTag(tag.id)}
+                    activeOpacity={0.7}
+                    style={{
+                      paddingHorizontal: scale(12),
+                      paddingVertical: verticalScale(8),
+                      borderRadius: 6,
+                      borderWidth: 2,
+                      borderColor: tags.includes(tag.id) ? colors.primary : colors.border,
+                      backgroundColor: tags.includes(tag.id) ? colors.primary + '15' : 'transparent',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: moderateScale(12),
+                        color: tags.includes(tag.id) ? colors.primary : colors.textSecondary,
+                        fontWeight: tags.includes(tag.id) ? '700' : '500',
+                        letterSpacing: 0.3,
+                      }}
+                    >
+                      {tag.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Comment Section */}
+            <View style={{ paddingHorizontal: scale(20), marginTop: verticalScale(20) }}>
+              <Text style={{
+                fontSize: moderateScale(14),
+                color: colors.textSecondary,
+                marginBottom: verticalScale(12),
+                letterSpacing: 0.3,
+                fontWeight: '500',
+              }}>
+                ADDITIONAL COMMENTS (OPTIONAL)
+              </Text>
+              <TextInput
+                placeholder="Share any additional feedback..."
+                placeholderTextColor={colors.textTertiary}
+                value={review}
+                onChangeText={setReview}
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+                editable={!submitting}
                 style={{
                   paddingHorizontal: scale(12),
-                  paddingVertical: verticalScale(8),
-                  borderRadius: 6,
-                  borderWidth: 2,
-                  borderColor: tags.includes(tag.id) ? colors.primary : colors.border,
-                  backgroundColor: tags.includes(tag.id) ? colors.primary + '15' : 'transparent',
+                  paddingVertical: verticalScale(12),
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  color: colors.text,
+                  backgroundColor: colors.card,
+                  fontSize: moderateScale(14),
+                  fontFamily: 'System',
+                }}
+              />
+            </View>
+
+            {/* Action Buttons */}
+            <View style={{ paddingHorizontal: scale(20), marginTop: verticalScale(24), gap: verticalScale(12) }}>
+              <TouchableOpacity
+                onPress={handleSubmitRating}
+                disabled={submitting}
+                activeOpacity={0.8}
+                style={{
+                  backgroundColor: colors.primary,
+                  paddingVertical: verticalScale(14),
+                  borderRadius: 8,
+                  alignItems: 'center',
+                  opacity: submitting ? 0.6 : 1,
                 }}
               >
-                <Text
-                  style={{
-                    fontSize: moderateScale(12),
-                    color: tags.includes(tag.id) ? colors.primary : colors.textSecondary,
-                    fontWeight: tags.includes(tag.id) ? '700' : '500',
-                    letterSpacing: 0.3,
-                  }}
-                >
-                  {tag.label}
+                <Text style={{
+                  color: '#FFFFFF',
+                  fontWeight: '700',
+                  fontSize: moderateScale(15),
+                  letterSpacing: 0.5,
+                }}>
+                  {submitting ? 'SUBMITTING...' : 'SUBMIT RATING'}
                 </Text>
               </TouchableOpacity>
-            ))}
-          </View>
-        </View>
 
-        {/* Comment Section */}
-        <View style={{ paddingHorizontal: scale(20), marginTop: verticalScale(20) }}>
-          <Text style={{
-            fontSize: moderateScale(14),
-            color: colors.textSecondary,
-            marginBottom: verticalScale(12),
-            letterSpacing: 0.3,
-            fontWeight: '500',
-          }}>
-            ADDITIONAL COMMENTS (OPTIONAL)
-          </Text>
-          <TextInput
-            placeholder="Share any additional feedback..."
-            placeholderTextColor={colors.textTertiary}
-            value={review}
-            onChangeText={setReview}
-            multiline
-            numberOfLines={4}
-            textAlignVertical="top"
-            editable={!submitting}
-            style={{
-              paddingHorizontal: scale(12),
-              paddingVertical: verticalScale(12),
-              borderRadius: 8,
-              borderWidth: 1,
-              borderColor: colors.border,
-              color: colors.text,
-              backgroundColor: colors.card,
-              fontSize: moderateScale(14),
-              fontFamily: 'System',
-            }}
-          />
-        </View>
-
-        {/* Action Buttons */}
-        <View style={{ paddingHorizontal: scale(20), marginTop: verticalScale(24), gap: verticalScale(12) }}>
-          <TouchableOpacity
-            onPress={handleSubmitRating}
-            disabled={submitting}
-            activeOpacity={0.8}
-            style={{
-              backgroundColor: colors.primary,
-              paddingVertical: verticalScale(14),
-              borderRadius: 8,
-              alignItems: 'center',
-              opacity: submitting ? 0.6 : 1,
-            }}
-          >
-            <Text style={{
-              color: '#FFFFFF',
-              fontWeight: '700',
-              fontSize: moderateScale(15),
-              letterSpacing: 0.5,
-            }}>
-              {submitting ? 'SUBMITTING...' : 'SUBMIT RATING'}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={() => router.replace('/rider/home')}
-            disabled={submitting}
-            activeOpacity={0.8}
-            style={{
-              paddingVertical: verticalScale(12),
-              borderRadius: 8,
-              borderWidth: 1.5,
-              borderColor: colors.border,
-              alignItems: 'center',
-              opacity: submitting ? 0.5 : 1,
-            }}
-          >
-            <Text style={{
-              color: colors.textSecondary,
-              fontWeight: '600',
-              fontSize: moderateScale(14),
-              letterSpacing: 0.3,
-            }}>
-              SKIP FOR NOW
-            </Text>
-          </TouchableOpacity>
-        </View>
+              <TouchableOpacity
+                onPress={() => router.replace('/rider/home')}
+                disabled={submitting}
+                activeOpacity={0.8}
+                style={{
+                  paddingVertical: verticalScale(12),
+                  borderRadius: 8,
+                  borderWidth: 1.5,
+                  borderColor: colors.border,
+                  alignItems: 'center',
+                  opacity: submitting ? 0.5 : 1,
+                }}
+              >
+                <Text style={{
+                  color: colors.textSecondary,
+                  fontWeight: '600',
+                  fontSize: moderateScale(14),
+                  letterSpacing: 0.3,
+                }}>
+                  SKIP FOR NOW
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );

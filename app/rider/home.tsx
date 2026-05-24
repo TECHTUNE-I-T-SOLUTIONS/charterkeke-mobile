@@ -409,6 +409,7 @@ export default function RiderHomeScreen() {
                  showUserLocation
                  showCompass
                  showScaleBar
+                 autoCenter={false}
                  fitCoordinates={mapboxFocusCoordinates}
                  onTouchStart={() => setScrollEnabled(false)}
                  onTouchEnd={() => setScrollEnabled(true)}

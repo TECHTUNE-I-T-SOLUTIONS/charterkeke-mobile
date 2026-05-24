@@ -6,6 +6,7 @@ import { apiService } from '@services/api';
 import { navigate } from '@services/navigationService';
 
 const IS_DEV = process.env.EXPO_PUBLIC_DEVELOPMENT_MODE === 'true';
+const PENDING_PUSH_KEY = 'pending_push_subscription';
 
 // Callbacks for navigation and unread count management
 let onIncrementUnread: (() => void) | null = null;
@@ -102,14 +103,15 @@ export const requestNotificationPermissions = async () => {
 
     console.log('✅ [NOTIFICATIONS] Permissions granted');
 
-    // Step 2: Try to get push token (separate from permission request)
-    // This prevents Firebase/FCM errors from blocking the permission grant
+    // Step 2: Try to get a native device push token first on real builds.
+    // Expo Go may still require Expo push tokens, so we fall back gracefully.
     try {
-      const expoPushToken = await Notifications.getExpoPushTokenAsync({
-        projectId: process.env.EXPO_PUBLIC_PROJECT_ID,
-      });
-
-      const tokenValue = expoPushToken.data;
+      const isNativeBuild = Platform.OS === 'ios' || Platform.OS === 'android';
+      const tokenValue = isNativeBuild && !IS_DEV
+        ? (await Notifications.getDevicePushTokenAsync()).data
+        : (await Notifications.getExpoPushTokenAsync({
+            projectId: process.env.EXPO_PUBLIC_PROJECT_ID,
+          })).data;
       devLog('Got push token:', tokenValue.slice(0, 30) + '...');
       
       console.log('✅ [NOTIFICATIONS] Push token obtained:', tokenValue.slice(0, 20) + '...');
@@ -127,9 +129,7 @@ export const requestNotificationPermissions = async () => {
         console.log('💡 [NOTIFICATIONS] On real devices, ensure Google Play Services is installed');
         devLog('Firebase unavailable, permissions still granted');
         
-        // Return a placeholder token so subscription can continue
-        // The backend can retry when device is available
-        return `placeholder_${Date.now()}`;
+        return `placeholder_${Date.now()}_${Platform.OS}`;
       }
 
       // For other token errors, still allow subscription with placeholder
@@ -137,7 +137,7 @@ export const requestNotificationPermissions = async () => {
       console.warn('💡 [NOTIFICATIONS] Will retry token retrieval later');
       devLog('Token retrieval failed, using placeholder');
       
-      return `placeholder_${Date.now()}`;
+      return `placeholder_${Date.now()}_${Platform.OS}`;
     }
   } catch (error: any) {
     const errorMessage = error?.message || String(error);
@@ -146,7 +146,7 @@ export const requestNotificationPermissions = async () => {
     // Don't fail completely - permission might still be granted
     if (errorMessage.includes('MISSING_INSTANCEID_SERVICE')) {
       console.warn('⚠️ [NOTIFICATIONS] Permissions granted but token unavailable (Firebase issue)');
-      return `placeholder_${Date.now()}`;
+      return `placeholder_${Date.now()}_${Platform.OS}`;
     }
     
     devLog('Permission request error:', error);
@@ -233,8 +233,11 @@ export const subscribeToPushNotifications = async (userId: string) => {
       try {
         await apiService.post('/notifications/subscribe', {
           pushToken: null,
+          push_token: null,
           platform: Platform.OS,
           status: 'permission_denied',
+          action: 'subscribe',
+          source: IS_DEV ? 'expo-go-or-dev-client' : 'production-build',
         });
       } catch (err) {
         // Ignore if backend call fails
@@ -257,16 +260,22 @@ export const subscribeToPushNotifications = async (userId: string) => {
       isPlaceholder,
     };
 
-    await AsyncStorage.setItem(
-      'pushSubscription',
-      JSON.stringify(subscription)
-    );
-      await AsyncStorage.setItem('expo_push_token', pushToken);
+    await AsyncStorage.setItem('pushSubscription', JSON.stringify(subscription));
+    await AsyncStorage.setItem('expo_push_token', pushToken);
+
+    if (!userId) {
+      await AsyncStorage.setItem(PENDING_PUSH_KEY, JSON.stringify(subscription));
+      console.log('⏳ [NOTIFICATIONS] Stored pending push subscription until user ID is available');
+    }
 
     try {
       const subscriptionPayload: any = {
         pushToken,
+        push_token: pushToken,
         platform: Platform.OS,
+        userId,
+        action: 'subscribe',
+        source: IS_DEV ? 'expo-go-or-dev-client' : 'production-build',
       };
 
       // Include status indicators for backend to understand token state
@@ -277,8 +286,10 @@ export const subscribeToPushNotifications = async (userId: string) => {
         subscriptionPayload.status = 'token_ready';
       }
 
-      await apiService.post('/notifications/subscribe', subscriptionPayload);
+      const backendResponse = await apiService.post('/notifications/subscribe', subscriptionPayload);
       console.log('✅ [NOTIFICATIONS] Push subscription synced to backend');
+      console.log('📡 [NOTIFICATIONS] Subscribe response:', JSON.stringify(backendResponse));
+      await AsyncStorage.removeItem(PENDING_PUSH_KEY);
     } catch (backendError) {
       console.error('❌ [NOTIFICATIONS] Failed syncing push subscription to backend:', backendError);
       // Don't fail - permission is still granted
@@ -343,12 +354,16 @@ const scheduleTokenRetry = async (userId: string, attempt: number = 1) => {
 
         // Sync real token to backend
         try {
-          await apiService.post('/notifications/subscribe', {
-            pushToken: realToken.data,
-            platform: Platform.OS,
-            status: 'token_ready',
-          });
-          console.log('✅ [NOTIFICATIONS] Real token synced to backend');
+        const backendResponse = await apiService.post('/notifications/subscribe', {
+          pushToken: realToken.data,
+          push_token: realToken.data,
+          platform: Platform.OS,
+          status: 'token_ready',
+          action: 'subscribe',
+          source: IS_DEV ? 'expo-go-or-dev-client' : 'production-build',
+        });
+        console.log('📡 [NOTIFICATIONS] Retry response:', JSON.stringify(backendResponse));
+        console.log('✅ [NOTIFICATIONS] Real token synced to backend');
         } catch (err) {
           console.error('❌ [NOTIFICATIONS] Failed to sync real token to backend:', err);
         }
@@ -562,12 +577,16 @@ export const manuallyRetryPushToken = async (userId: string) => {
 
     // Sync to backend
     try {
-      await apiService.post('/notifications/subscribe', {
-        pushToken: realToken.data,
-        platform: Platform.OS,
-        status: 'token_ready',
-      });
-      console.log('✅ [NOTIFICATIONS] Real token synced to backend');
+    const backendResponse = await apiService.post('/notifications/subscribe', {
+      pushToken: realToken.data,
+      push_token: realToken.data,
+      platform: Platform.OS,
+      status: 'token_ready',
+      action: 'subscribe',
+      source: IS_DEV ? 'expo-go-or-dev-client' : 'production-build',
+    });
+    console.log('📡 [NOTIFICATIONS] Manual retry response:', JSON.stringify(backendResponse));
+    console.log('✅ [NOTIFICATIONS] Real token synced to backend');
       return { success: true, message: 'Push token updated successfully!', token: realToken.data };
     } catch (err) {
       console.error('❌ [NOTIFICATIONS] Failed to sync real token to backend:', err);
@@ -585,6 +604,38 @@ export const manuallyRetryPushToken = async (userId: string) => {
     }
     
     return { success: false, message: errorMessage };
+  }
+};
+
+export const flushPendingPushSubscription = async (userId: string) => {
+  try {
+    if (!userId) return false;
+
+    const pending = await AsyncStorage.getItem(PENDING_PUSH_KEY);
+    const stored = await AsyncStorage.getItem('pushSubscription');
+    const raw = pending || stored;
+    if (!raw) return false;
+
+    const subscription = JSON.parse(raw);
+    if (!subscription?.pushToken) return false;
+
+    const backendResponse = await apiService.post('/notifications/subscribe', {
+      pushToken: subscription.pushToken,
+      push_token: subscription.pushToken,
+      platform: subscription.platform || Platform.OS,
+      status: subscription.isPlaceholder ? 'permission_granted_token_pending' : 'token_ready',
+      userId,
+      action: 'subscribe',
+      source: IS_DEV ? 'expo-go-or-dev-client' : 'production-build',
+    });
+    console.log('📡 [NOTIFICATIONS] Flush response:', JSON.stringify(backendResponse));
+
+    await AsyncStorage.removeItem(PENDING_PUSH_KEY);
+    console.log('✅ [NOTIFICATIONS] Pending push subscription flushed to backend');
+    return true;
+  } catch (error) {
+    console.error('❌ [NOTIFICATIONS] Failed to flush pending push subscription:', error);
+    return false;
   }
 };
 

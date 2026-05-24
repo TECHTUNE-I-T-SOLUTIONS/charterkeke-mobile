@@ -55,17 +55,18 @@ export const usePushNotificationToggle = () => {
       // Query API to check if this token is subscribed
       try {
         const response = (await apiService.get('/notifications/subscribe')) as any;
+        const payload = response?.data ?? response;
         
-        if (response?.data && Array.isArray(response.data)) {
+        if (Array.isArray(payload)) {
           // If we get an array of subscriptions
-          const isActive = response.data.some(
+          const isActive = payload.some(
             (sub: any) => sub.push_token === currentToken && sub.is_active
           );
           setIsSubscribed(isActive);
-        } else if (response?.data?.isSubscribed !== undefined) {
+        } else if (payload?.isSubscribed !== undefined) {
           // If API returns isSubscribed flag directly
-          setIsSubscribed(response?.data?.isSubscribed);
-        } else if (response?.data?.count > 0) {
+          setIsSubscribed(Boolean(payload?.isSubscribed));
+        } else if (payload?.count > 0) {
           // If API returns count of subscriptions
           setIsSubscribed(true);
         } else {
@@ -126,9 +127,14 @@ export const usePushNotificationToggle = () => {
         // UNSUBSCRIBE
         try {
           await apiService.delete('/notifications/subscribe', {
-            data: { push_token: currentToken },
+            data: {
+              push_token: currentToken,
+              pushToken: currentToken,
+              action: 'unsubscribe',
+            },
           });
           setIsSubscribed(false);
+          await checkSubscriptionStatus();
         } catch (deleteError: any) {
           console.error('[PUSH] Error unsubscribing:', deleteError?.message);
           if (deleteError?.response?.status === 404) {
@@ -143,11 +149,16 @@ export const usePushNotificationToggle = () => {
         // SUBSCRIBE
         const platform = getPlatform();
         try {
-          await apiService.post('/notifications/subscribe', {
+          const response = await apiService.post('/notifications/subscribe', {
             push_token: currentToken,
+            pushToken: currentToken,
             platform,
+            status: 'active',
+            action: 'subscribe',
           });
+          console.log('[PUSH] Subscribe response:', JSON.stringify(response));
           setIsSubscribed(true);
+          await checkSubscriptionStatus();
         } catch (postError: any) {
           console.error('[PUSH] Error subscribing:', postError?.message);
           if (postError?.response?.status === 404) {

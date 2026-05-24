@@ -18,6 +18,7 @@ import { useTheme } from '@/context/ThemeContext';
 import { useAlert } from '@/context/AlertContext';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
+import { RideMapFullscreenModal } from '@/components/RideMapFullscreenModal';
 import { apiService } from '@/services/api';
 import { BRAND } from '@/utils/colors';
 import { verticalScale, scale } from 'react-native-size-matters';
@@ -99,6 +100,16 @@ export default function RideDetailsScreen() {
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeDistanceKm, setRouteDistanceKm] = useState(0);
   const [routeDurationMin, setRouteDurationMin] = useState(0);
+  const [showFullMap, setShowFullMap] = useState(false);
+  const parseMapCoordinate = (value: any): [number, number] | null => {
+    if (Array.isArray(value) && value.length === 2 && Number.isFinite(Number(value[0])) && Number.isFinite(Number(value[1]))) {
+      return [Number(value[0]), Number(value[1])];
+    }
+    if (value && Number.isFinite(Number(value.longitude)) && Number.isFinite(Number(value.latitude))) {
+      return [Number(value.longitude), Number(value.latitude)];
+    }
+    return null;
+  };
 
   useEffect(() => {
     if (rideDataParam) {
@@ -196,6 +207,17 @@ export default function RideDetailsScreen() {
       ]
     : undefined);
 
+  const rideAny = rideDetails as any;
+  const riderCurrentLocation =
+    parseMapCoordinate(rideAny?.rider_current_location) ||
+    parseMapCoordinate(rideAny?.rider_location) ||
+    parseMapCoordinate(rideAny?.current_location) ||
+    null;
+  const driverCurrentLocation =
+    parseMapCoordinate(rideAny?.driver_current_location) ||
+    parseMapCoordinate(rideAny?.driver_location) ||
+    null;
+
   const displayDistanceKm = routeDistanceKm || rideDetails?.distance_km || 0;
   const displayDurationMin = routeDurationMin || rideDetails?.duration_minutes || 0;
 
@@ -234,12 +256,6 @@ export default function RideDetailsScreen() {
   const handleGoToRatingScreen = () => {
     if (!rideDetails?.id) {
       showError('Error', 'Ride details are unavailable.');
-      return;
-    }
-
-    const alreadyRated = Number(rideDetails.rating || 0) > 0;
-    if (alreadyRated) {
-      showSuccess('Already rated', 'You have already submitted a rating for this ride.');
       return;
     }
 
@@ -298,6 +314,10 @@ export default function RideDetailsScreen() {
             />
           )}
         </MapboxMap>
+        <TouchableOpacity onPress={() => setShowFullMap(true)} style={styles.fullMapBtn}>
+          <MaterialCommunityIcons name="fullscreen" size={18} color="#000" />
+          <Text style={styles.fullMapBtnText}>Full Map</Text>
+        </TouchableOpacity>
         
         <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: theme.colors.surface, top: Math.max(insets.top, verticalScale(12)) + verticalScale(8), left: scale(16) }]}>
           <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.textPrimary} />
@@ -468,6 +488,18 @@ export default function RideDetailsScreen() {
         )}
 
       </ScrollView>
+      <RideMapFullscreenModal
+        visible={showFullMap}
+        title="Ride Map"
+        routeCoordinates={routeCoordinates}
+        focusCoordinates={routeFitCoordinates}
+        pickup={pickupCoords ? [pickupCoords.longitude, pickupCoords.latitude] : [3.3792, 6.5244]}
+        dropoff={destCoords ? [destCoords.longitude, destCoords.latitude] : [3.4292, 6.5844]}
+        riderLocation={riderCurrentLocation}
+        driverLocation={driverCurrentLocation}
+        speedText={routeLoading ? 'Loading route...' : `${displayDistanceKm || 0} km • ${displayDurationMin || 0} min`}
+        onClose={() => setShowFullMap(false)}
+      />
     </View>
   );
 }
@@ -481,6 +513,8 @@ const styles = StyleSheet.create({
   statusTag: { paddingHorizontal: scale(14), paddingVertical: verticalScale(8), borderRadius: scale(30), flexDirection: 'row', alignItems: 'center', gap: scale(8), shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, elevation: 4, position: 'absolute', zIndex: 10 },
   statusDot: { width: 8, height: 8, borderRadius: 4 },
   statusText: { fontSize: 12, fontWeight: '700' },
+  fullMapBtn: { position: 'absolute', right: 16, bottom: 16, zIndex: 20, backgroundColor: '#FFF', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 6, elevation: 4 },
+  fullMapBtnText: { fontSize: 12, fontWeight: '800', color: '#000' },
   content: { flex: 1, padding: 20, marginTop: -40, borderTopLeftRadius: 30, borderTopRightRadius: 30 },
   card: { padding: 20, borderRadius: 20, borderWidth: 1, marginBottom: 16, shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.03, elevation: 2 },
   driverRow: { flexDirection: 'row', alignItems: 'center' },

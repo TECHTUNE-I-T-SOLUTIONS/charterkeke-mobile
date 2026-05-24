@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -35,7 +35,7 @@ import {
   getOperationalAreaByLocation,
 } from '@/utils/geofencing';
 import { fetchMapboxRoute } from '@/utils/mapboxDirections';
-import { geocodeMapboxLocation } from '@/utils/mapboxGeocoding';
+import { searchBestLocations } from '@/utils/mapboxGeocoding';
 
 // Fare calculation constants
 const BASE_FARE_PER_KM = 600;
@@ -71,6 +71,12 @@ const MOCK_LOCATIONS = [
   { address: 'Surulere, Lagos', lat: 6.4989, lng: 3.3532 },
   { address: 'Ojuelegba, Surulere', lat: 6.5057, lng: 3.3640 },
   { address: 'Shitta, Surulere', lat: 6.4943, lng: 3.3522 },
+  { address: 'Debari, Lagos', lat: 6.543230934056443, lng: 3.370394035179976 },
+  { address: 'Debari Junction, Lagos', lat: 6.5441, lng: 3.3698 },
+  { address: 'Debari Street, Lagos', lat: 6.5425, lng: 3.3712 },
+  { address: 'Debari Axis, Lagos', lat: 6.5452, lng: 3.3721 },
+  { address: 'Debari Market, Lagos', lat: 6.5419, lng: 3.3692 },
+  { address: 'Debari Surroundings, Lagos', lat: 6.5438, lng: 3.3679 },
   { address: 'Mushin, Lagos', lat: 6.5291, lng: 3.3433 },
   { address: 'Idi Araba, Mushin', lat: 6.5366, lng: 3.3494 },
   { address: 'Oshodi, Lagos', lat: 6.5485, lng: 3.3293 },
@@ -182,23 +188,25 @@ function levenshteinDistance(str1: string, str2: string): number {
 
 function searchLocations(query: string, locations: typeof MOCK_LOCATIONS, recentLocations: RecentLocation[] = []): SearchResult[] {
   if (!query || query.length < 1) return [];
-  const queryLower = query.toLowerCase().trim();
+  const queryLower = query.toLowerCase().trim().replace(/[^\w\s]/g, '');
   const queryWords = queryLower.split(/\s+/).filter(w => w.length > 0);
 
   const scoredResults = locations.map(loc => {
-    const addressLower = loc.address.toLowerCase();
+    const addressLower = loc.address.toLowerCase().replace(/[^\w\s]/g, '');
     let score = 0;
     if (addressLower === queryLower) score += 10000;
     if (addressLower.startsWith(queryLower)) score += 5000;
+    if (addressLower.includes(queryLower)) score += 2500;
     const levenDistance = levenshteinDistance(addressLower, queryLower);
-    score += Math.max(0, 1000 - levenDistance * 50);
+    score += Math.max(0, 2000 - levenDistance * 45);
     for (const word of queryWords) {
       if (addressLower.includes(word)) score += 500;
     }
+    if (queryWords.every((word) => addressLower.includes(word))) score += 800;
     return { ...loc, _score: score };
   });
 
-  return scoredResults.filter(r => r._score > 100).sort((a, b) => b._score - a._score).slice(0, 8).map(({ _score, ...rest }) => rest);
+  return scoredResults.filter(r => r._score > 50).sort((a, b) => b._score - a._score).slice(0, 12).map(({ _score, ...rest }) => rest);
 }
 
 function dedupeSearchResults(results: SearchResult[]): SearchResult[] {
@@ -296,6 +304,9 @@ export default function BookingScreen() {
   const [dropoffSearchResults, setDropoffSearchResults] = useState<SearchResult[]>([]);
   const [showPickupResults, setShowPickupResults] = useState(false);
   const [showDropoffResults, setShowDropoffResults] = useState(false);
+  const pickupBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dropoffBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [locationWarningVisible, setLocationWarningVisible] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [recentLocations, setRecentLocations] = useState<RecentLocation[]>([]);
   const [estimatedDistance, setEstimatedDistance] = useState(0);
@@ -341,6 +352,20 @@ export default function BookingScreen() {
       setRecentSearches(searches);
       setRecentLocations(locations);
     } catch (error) { console.error('Error loading recent data:', error); }
+  };
+
+  const openPickupSearch = () => {
+    setActiveLocationPicker('pickup');
+    setShowDropoffResults(false);
+    if (dropoffBlurTimer.current) clearTimeout(dropoffBlurTimer.current);
+    setShowPickupResults(true);
+  };
+
+  const openDropoffSearch = () => {
+    setActiveLocationPicker('dropoff');
+    setShowPickupResults(false);
+    if (pickupBlurTimer.current) clearTimeout(pickupBlurTimer.current);
+    setShowDropoffResults(true);
   };
 
   const promptForCurrentLocation = (type: 'pickup' | 'dropoff') => {
@@ -480,63 +505,84 @@ export default function BookingScreen() {
 
   const handleSearch = async (query: string, type: 'pickup' | 'dropoff') => {
     if (!query || query.length < 1) {
-      if (type === 'pickup') { setPickupSearchResults([]); setShowPickupResults(true); }
-      else { setDropoffSearchResults([]); setShowDropoffResults(true); }
+      if (type === 'pickup') { setPickupSearchResults([]); setShowPickupResults(false); }
+      else { setDropoffSearchResults([]); setShowDropoffResults(false); }
       return;
     }
     const localResults = searchLocations(query, MOCK_LOCATIONS, recentLocations);
     let apiResults: SearchResult[] = [];
 
     try {
-      const geocoded = await geocodeMapboxLocation(query);
-      if (geocoded) {
-        apiResults = [{
-          address: geocoded.placeName,
-          lat: geocoded.coordinate[1],
-          lng: geocoded.coordinate[0],
-        }];
-      }
+      const results = await searchBestLocations(query);
+      apiResults = results.map((item) => ({
+        address: item.placeName,
+        lat: item.coordinate[1],
+        lng: item.coordinate[0],
+      }));
     } catch (error) {
-      console.log('Mapbox geocoding failed for booking search:', error);
+      console.log('Mapbox/Google search failed for booking search:', error);
     }
 
-    const results = dedupeSearchResults([...localResults, ...apiResults]);
-    if (type === 'pickup') { setPickupSearchResults(results); setShowPickupResults(true); }
-    else { setDropoffSearchResults(results); setShowDropoffResults(true); }
+    const results = dedupeSearchResults([...apiResults, ...localResults]);
+    if (type === 'pickup') {
+      setDropoffSearchResults([]);
+      setShowDropoffResults(false);
+      setPickupSearchResults(results);
+      setShowPickupResults(true);
+      setActiveLocationPicker('pickup');
+    } else {
+      setPickupSearchResults([]);
+      setShowPickupResults(false);
+      setDropoffSearchResults(results);
+      setShowDropoffResults(true);
+      setActiveLocationPicker('dropoff');
+    }
     await saveRecentSearch(query);
+  };
+
+  const clearPickupSearch = () => {
+    setPickupSearch('');
+    setPickupSearchResults([]);
+    setShowPickupResults(false);
+    if (pickupBlurTimer.current) clearTimeout(pickupBlurTimer.current);
+  };
+
+  const clearDropoffSearch = () => {
+    setDropoffSearch('');
+    setDropoffSearchResults([]);
+    setShowDropoffResults(false);
+    if (dropoffBlurTimer.current) clearTimeout(dropoffBlurTimer.current);
+  };
+
+  const scheduleClosePickupResults = () => {
+    if (pickupBlurTimer.current) clearTimeout(pickupBlurTimer.current);
+    pickupBlurTimer.current = setTimeout(() => setShowPickupResults(false), 180);
+  };
+
+  const scheduleCloseDropoffResults = () => {
+    if (dropoffBlurTimer.current) clearTimeout(dropoffBlurTimer.current);
+    dropoffBlurTimer.current = setTimeout(() => setShowDropoffResults(false), 180);
   };
 
   const selectSearchResult = async (result: SearchResult, type: 'pickup' | 'dropoff') => {
     const location: Location = { lat: result.lat, lng: result.lng, address: sanitizeAddress(result.address) };
     
-    // Validate location is in operational area
-    const validation = validateLocationInOperationalArea({
-      latitude: location.lat,
-      longitude: location.lng,
-    });
-
-    if (!validation.isValid) {
-      setOutOfServiceAreaInfo({
-        closestArea: validation.areaName,
-        distance: validation.distance,
-        locationType: type,
-      });
-      setShowOutOfServiceAreaModal(true);
-      return;
-    }
-
     if (type === 'pickup') {
       setPickupLocation(location);
       setPickupSearch('');
       setPickupSearchResults([]);
       setShowPickupResults(false);
       setActiveLocationPicker(null);
+      setDropoffSearchResults([]);
+      setShowDropoffResults(false);
     } else {
       setDropoffLocation(location);
       setDropoffSearch('');
       setDropoffSearchResults([]);
       setShowDropoffResults(false);
       setActiveLocationPicker(null);
+      setPickupSearchResults([]);
+      setShowPickupResults(false);
     }
     setCameraCenter([location.lng, location.lat]);
     setCameraZoom(14);
@@ -546,23 +592,6 @@ export default function BookingScreen() {
 
   const handleMapLocationPick = async (coordinate: { latitude: number; longitude: number }) => {
     if (!activeLocationPicker) return;
-
-    // Validate location is in operational area
-    const validation = validateLocationInOperationalArea({
-      latitude: coordinate.latitude,
-      longitude: coordinate.longitude,
-    });
-
-    if (!validation.isValid) {
-      setOutOfServiceAreaInfo({
-        closestArea: validation.areaName,
-        distance: validation.distance,
-        locationType: activeLocationPicker,
-      });
-      setShowOutOfServiceAreaModal(true);
-      setActiveLocationPicker(null);
-      return;
-    }
 
     const nearest = findNearestLocation(coordinate.latitude, coordinate.longitude);
     const location: Location = {
@@ -578,11 +607,15 @@ export default function BookingScreen() {
       setPickupSearch('');
       setPickupSearchResults([]);
       setShowPickupResults(false);
+      setDropoffSearchResults([]);
+      setShowDropoffResults(false);
     } else {
       setDropoffLocation(location);
       setDropoffSearch('');
       setDropoffSearchResults([]);
       setShowDropoffResults(false);
+      setPickupSearchResults([]);
+      setShowPickupResults(false);
     }
 
     setActiveLocationPicker(null);
@@ -814,17 +847,25 @@ export default function BookingScreen() {
                    </TouchableOpacity>
                 </View>
               ) : (
-                <TextInput
-                  style={[styles.input, { color: theme.colors.textPrimary }]}
-                  placeholder="Where are you?"
-                  placeholderTextColor={theme.colors.textTertiary}
-                  value={pickupSearch}
-                  onChangeText={(t) => { setPickupSearch(t); handleSearch(t, 'pickup'); }}
-                  onFocus={() => {
-                    setShowPickupResults(true);
-                    if (!pickupLocation) promptForCurrentLocation('pickup');
-                  }}
-                />
+                <View style={styles.searchInputWrap}>
+                  <TextInput
+                    style={[styles.input, { color: theme.colors.textPrimary }]}
+                    placeholder="Where are you?"
+                    placeholderTextColor={theme.colors.textTertiary}
+                    value={pickupSearch}
+                    onChangeText={(t) => { setPickupSearch(t); handleSearch(t, 'pickup'); }}
+                    onFocus={() => {
+                      openPickupSearch();
+                      if (!pickupLocation) promptForCurrentLocation('pickup');
+                    }}
+                    onBlur={scheduleClosePickupResults}
+                  />
+                  {!!pickupSearch && (
+                    <TouchableOpacity onPress={clearPickupSearch} style={styles.clearButton}>
+                      <MaterialCommunityIcons name="close-circle" size={18} color={theme.colors.textTertiary} />
+                    </TouchableOpacity>
+                  )}
+                </View>
               )}
             </View>
             <TouchableOpacity onPress={() => setActiveLocationPicker('pickup')} style={styles.mapIconBtn}>
@@ -832,7 +873,7 @@ export default function BookingScreen() {
             </TouchableOpacity>
           </View>
 
-          {showPickupResults && !pickupLocation && (
+          {showPickupResults && activeLocationPicker === 'pickup' && !pickupLocation && (
              <SearchResultsList results={pickupSearch ? pickupSearchResults : recentLocations} onSelect={(r: SearchResult) => selectSearchResult(r, 'pickup')} theme={theme} title={pickupSearch ? "Search Results" : "Recent Locations"} />
           )}
 
@@ -851,17 +892,25 @@ export default function BookingScreen() {
                    </TouchableOpacity>
                 </View>
               ) : (
-                <TextInput
-                  style={[styles.input, { color: theme.colors.textPrimary }]}
-                  placeholder="Where to?"
-                  placeholderTextColor={theme.colors.textTertiary}
-                  value={dropoffSearch}
-                  onChangeText={(t) => { setDropoffSearch(t); handleSearch(t, 'dropoff'); }}
-                  onFocus={() => {
-                    setShowDropoffResults(true);
-                    if (!dropoffLocation) promptForCurrentLocation('dropoff');
-                  }}
-                />
+                <View style={styles.searchInputWrap}>
+                  <TextInput
+                    style={[styles.input, { color: theme.colors.textPrimary }]}
+                    placeholder="Where to?"
+                    placeholderTextColor={theme.colors.textTertiary}
+                    value={dropoffSearch}
+                    onChangeText={(t) => { setDropoffSearch(t); handleSearch(t, 'dropoff'); }}
+                    onFocus={() => {
+                      openDropoffSearch();
+                      if (!dropoffLocation) promptForCurrentLocation('dropoff');
+                    }}
+                    onBlur={scheduleCloseDropoffResults}
+                  />
+                  {!!dropoffSearch && (
+                    <TouchableOpacity onPress={clearDropoffSearch} style={styles.clearButton}>
+                      <MaterialCommunityIcons name="close-circle" size={18} color={theme.colors.textTertiary} />
+                    </TouchableOpacity>
+                  )}
+                </View>
               )}
             </View>
             <TouchableOpacity onPress={() => setActiveLocationPicker('dropoff')} style={styles.mapIconBtn}>
@@ -869,7 +918,7 @@ export default function BookingScreen() {
             </TouchableOpacity>
           </View>
 
-          {showDropoffResults && !dropoffLocation && (
+          {showDropoffResults && activeLocationPicker === 'dropoff' && !dropoffLocation && (
              <SearchResultsList results={dropoffSearch ? dropoffSearchResults : recentLocations} onSelect={(r: SearchResult) => selectSearchResult(r, 'dropoff')} theme={theme} title={dropoffSearch ? "Search Results" : "Recent Locations"} />
           )}
 
@@ -958,6 +1007,27 @@ export default function BookingScreen() {
         }}
         onAutoSelectNearestArea={handleAutoSelectNearestArea}
       />
+
+      <Modal
+        visible={locationWarningVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLocationWarningVisible(false)}
+      >
+        <View style={styles.warningOverlay}>
+          <View style={[styles.warningCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+            <MaterialCommunityIcons name="information-outline" size={30} color={BRAND.primary} />
+            <Text style={[styles.warningTitle, { color: theme.colors.textPrimary }]}>Location notice</Text>
+            <Text style={[styles.warningText, { color: theme.colors.textSecondary }]}>
+              If no driver accepts this location within about an hour, it may not be actively served yet.
+              You can still try other nearby Lagos locations for faster matching.
+            </Text>
+            <TouchableOpacity onPress={() => setLocationWarningVisible(false)} style={[styles.warningButton, { backgroundColor: BRAND.primary }]}>
+              <Text style={styles.warningButtonText}>Okay</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Pickup Time Selection Modal */}
       <PickupTimeModal
@@ -1080,6 +1150,8 @@ const styles = StyleSheet.create({
     padding: 0,
     height: 24,
   },
+  searchInputWrap: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  clearButton: { paddingLeft: 8, paddingVertical: 4 },
   selectedRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingTop: 2 },
   selectedText: { fontSize: 15, fontWeight: '600', flex: 1, marginRight: 8, lineHeight: 20 },
   mapIconBtn: { padding: 8 },
@@ -1166,7 +1238,45 @@ const styles = StyleSheet.create({
   guideText: { fontSize: 12, flex: 1, lineHeight: 18 },
   greetingSection: { marginBottom: 20 },
   greetingText: { fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5, marginLeft: 10 },
-  promptText: { fontSize: 24, fontWeight: '700', marginTop: 4, marginLeft: 10},});
+  promptText: { fontSize: 24, fontWeight: '700', marginTop: 4, marginLeft: 10},
+  warningOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  warningCard: {
+    width: '100%',
+    borderRadius: 18,
+    padding: 18,
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  warningTitle: {
+    marginTop: 10,
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  warningText: {
+    marginTop: 8,
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+  },
+  warningButton: {
+    marginTop: 16,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    width: '100%',
+    alignItems: 'center',
+  },
+  warningButtonText: {
+    color: '#000',
+    fontWeight: '800',
+  },
+});
 
 const mapDarkStyle = [
   { "elementType": "geometry", "stylers": [{ "color": "#242f3e" }] },

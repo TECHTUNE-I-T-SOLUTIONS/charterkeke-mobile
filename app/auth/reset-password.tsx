@@ -1,6 +1,4 @@
-// 'use client';
-
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -10,11 +8,11 @@ import {
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
-  Dimensions,
   Animated,
   Alert,
   ScrollView,
   StatusBar,
+  useColorScheme,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,17 +20,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '@context/ThemeContext';
 import { ThemeToggle } from '@components/ThemeToggle';
-import { BRAND } from '@utils/colors';
-
-const { width, height } = Dimensions.get('window');
-
-// Responsive scaling
-const guidelineBaseWidth = 375;
-const guidelineBaseHeight = 812;
-const scale = (size: number) => (width / guidelineBaseWidth) * size;
-const verticalScale = (size: number) => (height / guidelineBaseHeight) * size;
-const moderateScale = (size: number, factor = 0.5) =>
-  size + (scale(size) - size) * factor;
+import { BRAND, COLORS } from '@utils/colors';
 
 type ResetStep = 'email' | 'otp' | 'password';
 
@@ -45,7 +33,7 @@ const STEP_CONFIG = {
   otp: {
     icon: 'shield-key-outline' as const,
     title: 'Verify OTP',
-    description: '',
+    description: 'Enter the 6-digit code sent to your email',
   },
   password: {
     icon: 'lock-reset' as const,
@@ -57,64 +45,45 @@ const STEP_CONFIG = {
 export default function ResetPasswordScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const scheme = useColorScheme();
   const { theme } = useTheme();
+
+  const colors = theme?.colors
+    ? theme.colors
+    : scheme === 'dark'
+      ? COLORS.dark
+      : COLORS.light;
 
   const [currentStep, setCurrentStep] = useState<ResetStep>('email');
   const [isLoading, setIsLoading] = useState(false);
-
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [resendTimer, setResendTimer] = useState(0);
-
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Memoized handlers to prevent keyboard focus loss
-  const handleEmailChange = useCallback((text: string) => {
-    setEmail(text);
-    if (text.trim()) setErrors((prev) => ({ ...prev, email: '' }));
-  }, []);
-
-  const handleOtpChange = useCallback((text: string) => {
-    const numericText = text.replace(/[^0-9]/g, '');
-    setOtp(numericText);
-    if (numericText.trim()) setErrors((prev) => ({ ...prev, otp: '' }));
-  }, []);
-
-  const handlePasswordChange = useCallback((text: string) => {
-    setPassword(text);
-    if (text.trim()) setErrors((prev) => ({ ...prev, password: '' }));
-  }, []);
-
-  const handleConfirmPasswordChange = useCallback((text: string) => {
-    setConfirmPassword(text);
-    if (text.trim()) setErrors((prev) => ({ ...prev, confirmPassword: '' }));
-  }, []);
-
-  // Animation refs
   const slideAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.95)).current;
+  const scaleAnim = useRef(new Animated.Value(0.96)).current;
 
   const triggerAnimation = () => {
     slideAnim.setValue(0);
     fadeAnim.setValue(0);
-    scaleAnim.setValue(0.95);
+    scaleAnim.setValue(0.96);
 
     Animated.parallel([
       Animated.spring(slideAnim, {
         toValue: 1,
-        tension: 50,
+        tension: 55,
         friction: 9,
         useNativeDriver: true,
       }),
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 400,
+        duration: 250,
         useNativeDriver: true,
       }),
       Animated.spring(scaleAnim, {
@@ -126,66 +95,39 @@ export default function ResetPasswordScreen() {
     ]).start();
   };
 
-  React.useEffect(() => {
+  useEffect(() => {
     triggerAnimation();
   }, []);
 
-  const validateEmail = (email: string): boolean => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
-  };
+  useEffect(() => {
+    if (resendTimer <= 0) return;
+    const timer = setTimeout(() => setResendTimer((prev) => prev - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [resendTimer]);
+
+  const validateEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
   const handleSendOtp = async () => {
     const newErrors: Record<string, string> = {};
-
     if (!email.trim()) newErrors.email = 'Email is required';
     else if (!validateEmail(email)) newErrors.email = 'Enter a valid email';
-
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
-      return;
-    }
+    if (Object.keys(newErrors).length > 0) return setErrors(newErrors);
 
     setIsLoading(true);
     try {
-      // Call OTP request endpoint
       const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'https://charterkeke.vercel.app/api';
-      console.log('[ResetPassword] Requesting OTP from:', `${API_BASE}/otp/request`);
-
       const response = await fetch(`${API_BASE}/otp/request`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: email.trim().toLowerCase(),
           type: 'forgot_password',
         }),
       });
 
-      console.log('[ResetPassword] OTP request response status:', response.status);
-
-      // Check content type first to avoid double reading
-      const contentType = response.headers.get('content-type');
-      let data;
-
-      if (contentType && contentType.includes('application/json')) {
-        try {
-          data = await response.json();
-        } catch (parseError) {
-          console.error('[ResetPassword] Failed to parse response as JSON:', parseError);
-          setErrors({ email: 'Server error. Please check your connection and try again.' });
-          return;
-        }
-      } else {
-        console.error('[ResetPassword] Response is not JSON, status:', response.status);
-        setErrors({ email: `Server error (${response.status}). Please try again.` });
-        return;
-      }
-
+      const data = await response.json().catch(() => null);
       if (!response.ok) {
         setErrors({ email: data?.message || data?.error || 'Failed to send OTP' });
-        console.error('[ResetPassword] OTP request failed:', data);
         return;
       }
 
@@ -194,7 +136,6 @@ export default function ResetPasswordScreen() {
       setErrors({});
       setTimeout(triggerAnimation, 100);
     } catch (error: any) {
-      console.error('Error sending OTP:', error);
       Alert.alert('Error', `Failed to send OTP: ${error?.message || 'Network error'}`);
     } finally {
       setIsLoading(false);
@@ -203,24 +144,16 @@ export default function ResetPasswordScreen() {
 
   const handleVerifyOtp = async () => {
     const newErrors: Record<string, string> = {};
-
     if (!otp.trim()) newErrors.otp = 'OTP is required';
     else if (otp.length !== 6) newErrors.otp = 'OTP must be 6 digits';
-
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
-      return;
-    }
+    if (Object.keys(newErrors).length > 0) return setErrors(newErrors);
 
     setIsLoading(true);
     try {
-      // Call OTP verify endpoint
       const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'https://charterkeke.vercel.app/api';
       const response = await fetch(`${API_BASE}/otp/verify`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: email.trim().toLowerCase(),
           code: otp.trim(),
@@ -228,25 +161,8 @@ export default function ResetPasswordScreen() {
         }),
       });
 
-      // Check content type first to avoid double reading
-      const contentType = response.headers.get('content-type');
-      let data;
-
-      if (contentType && contentType.includes('application/json')) {
-        try {
-          data = await response.json();
-        } catch (parseError) {
-          console.error('[ResetPassword] Failed to parse verify response:', parseError);
-          setErrors({ otp: 'Server error. Please try again.' });
-          return;
-        }
-      } else {
-        console.error('[ResetPassword] Response is not JSON, status:', response.status);
-        setErrors({ otp: `Server error (${response.status}). Please try again.` });
-        return;
-      }
-
-      if (!response.ok || !data.success) {
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.success) {
         setErrors({ otp: data?.error || 'Invalid OTP' });
         return;
       }
@@ -255,7 +171,6 @@ export default function ResetPasswordScreen() {
       setErrors({});
       setTimeout(triggerAnimation, 100);
     } catch (error: any) {
-      console.error('Error verifying OTP:', error);
       Alert.alert('Error', `Failed to verify OTP: ${error?.message || 'Invalid OTP'}`);
     } finally {
       setIsLoading(false);
@@ -264,25 +179,17 @@ export default function ResetPasswordScreen() {
 
   const handleResetPassword = async () => {
     const newErrors: Record<string, string> = {};
-
     if (!password.trim()) newErrors.password = 'Password is required';
     else if (password.length < 8) newErrors.password = 'Minimum 8 characters required';
     if (password !== confirmPassword) newErrors.confirmPassword = 'Passwords do not match';
-
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
-      return;
-    }
+    if (Object.keys(newErrors).length > 0) return setErrors(newErrors);
 
     setIsLoading(true);
     try {
-      // Call OTP-based password reset endpoint
       const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'https://charterkeke.vercel.app/api';
       const response = await fetch(`${API_BASE}/auth/reset-password-otp`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: email.trim().toLowerCase(),
           newPassword: password,
@@ -290,491 +197,279 @@ export default function ResetPasswordScreen() {
         }),
       });
 
-      // Check content type first to avoid double reading
-      const contentType = response.headers.get('content-type');
-      let data;
-
-      if (contentType && contentType.includes('application/json')) {
-        try {
-          data = await response.json();
-        } catch (parseError) {
-          console.error('[ResetPassword] Failed to parse reset response:', parseError);
-          Alert.alert('Error', 'Server error. Please try again.');
-          return;
-        }
-      } else {
-        console.error('[ResetPassword] Response is not JSON, status:', response.status);
-        Alert.alert('Error', `Server error (${response.status}). Please try again.`);
-        return;
-      }
-
+      const data = await response.json().catch(() => null);
       if (!response.ok) {
         Alert.alert('Error', data?.error || data?.message || 'Failed to reset password');
         return;
       }
 
       Alert.alert('Success', 'Password reset successfully!', [
-        {
-          text: 'OK',
-          onPress: () => router.push('/auth/login-new'),
-        },
+        { text: 'OK', onPress: () => router.push('/auth/login-new') },
       ]);
     } catch (error) {
-      console.error('Error resetting password:', error);
       Alert.alert('Error', 'Failed to reset password');
     } finally {
       setIsLoading(false);
     }
   };
 
-  React.useEffect(() => {
-    if (resendTimer > 0) {
-      const timer = setTimeout(() => setResendTimer(resendTimer - 1), 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [resendTimer]);
-
-  const PasswordRequirements = () => (
-    <View style={styles.requirementsContainer}>
-      {[
-        { text: 'At least 8 characters', met: password.length >= 8 },
-        { text: 'Contains uppercase letter', met: /[A-Z]/.test(password) },
-        { text: 'Contains number', met: /[0-9]/.test(password) },
-        { text: 'Contains special character', met: /[!@#$%^&*]/.test(password) },
-      ].map((req, idx) => (
-        <View key={idx} style={styles.requirement}>
-          <View
-            style={[
-              styles.requirementDot,
-              { backgroundColor: req.met ? '#10B981' : theme.colors.surface },
-            ]}
-          />
-          <Text style={[styles.requirementText, req.met && styles.requirementMet]}>
-            {req.text}
-          </Text>
-        </View>
-      ))}
-    </View>
+  const passwordRequirements = useMemo(
+    () => [
+      { text: 'At least 8 characters', met: password.length >= 8 },
+      { text: 'Contains uppercase letter', met: /[A-Z]/.test(password) },
+      { text: 'Contains number', met: /[0-9]/.test(password) },
+      { text: 'Contains special character', met: /[!@#$%^&*]/.test(password) },
+    ],
+    [password]
   );
 
-  const StepIndicator = () => {
-    const steps: ResetStep[] = ['email', 'otp', 'password'];
-
-    return (
-      <View style={styles.stepIndicator}>
-        {steps.map((step, index) => {
-          const isActive = step === currentStep;
-          const isCompleted =
-            steps.indexOf(step) < steps.indexOf(currentStep);
-          const isFuture = !isActive && !isCompleted;
-
-          return (
-            <React.Fragment key={step}>
-              <View style={styles.stepItem}>
-                <View
-                  style={[
-                    styles.stepCircle,
-                    {
-                      backgroundColor: isCompleted
-                        ? '#C9C9C9'
-                        : isActive
-                        ? theme.colors.surface
-                        : 'rgba(235, 230, 230, 0.77)',
-                      borderWidth: isActive ? 2 : 0,
-                      borderColor: isActive ? theme.colors.textPrimary : 'transparent',
-                    },
-                  ]}
-                >
-                  {isCompleted ? (
-                    <MaterialCommunityIcons name="check" size={moderateScale(14)} color="#fff" />
-                  ) : (
-                    <Text
-                      style={[
-                        styles.stepNumber,
-                        { opacity: isFuture ? 0.35 : 1, color: isFuture ? 'rgb(0, 0, 0)' : '#6D6A6ADA' },
-                      ]}
-                    >
-                      {index + 1}
-                    </Text>
-                  )}
-                </View>
-              </View>
-              {index < steps.length - 1 && (
-                <View
-                  style={[
-                    styles.stepLine,
-                    {
-                      backgroundColor: isCompleted
-                        ? '#5E5E5E'
-                        : theme.colors.border,
-                    },
-                  ]}
-                />
-              )}
-            </React.Fragment>
-          );
-        })}
-      </View>
-    );
-  };
-
   const currentConfig = STEP_CONFIG[currentStep];
+  const isDark = colors.background === COLORS.dark.background;
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <StatusBar barStyle={theme.mode === 'light' ? 'dark-content' : 'light-content'} />
-      {/* Theme Toggle */}
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <ThemeToggle top={insets.top + 16} right={16} />
-
       <SafeAreaView style={styles.safeArea}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.keyboardView}
-        >
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
           <ScrollView
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
             bounces={false}
           >
-            {/* Header */}
             <View style={styles.header}>
               <TouchableOpacity
                 onPress={() => router.back()}
-                style={styles.backButton}
-                activeOpacity={0.8}
+                style={[styles.backButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+                activeOpacity={0.85}
               >
-                <View style={styles.backCircle}>
-                  <MaterialCommunityIcons
-                    name="arrow-left"
-                    size={moderateScale(18)}
-                    color={theme.colors.textPrimary}
-                  />
-                </View>
+                <MaterialCommunityIcons name="arrow-left" size={20} color={colors.textPrimary} />
               </TouchableOpacity>
-              <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>Reset Password</Text>
-              <View style={{ width: scale(34) }} />
+              <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Reset Password</Text>
+              <View style={{ width: 44 }} />
             </View>
 
-            {/* Progress Indicator */}
-            <StepIndicator />
+            <View style={styles.stepIndicator}>
+              {(['email', 'otp', 'password'] as ResetStep[]).map((step, index, arr) => {
+                const isActive = step === currentStep;
+                const isCompleted = arr.indexOf(step) < arr.indexOf(currentStep);
+                return (
+                  <React.Fragment key={step}>
+                    <View
+                      style={[
+                        styles.stepCircle,
+                        {
+                          backgroundColor: isCompleted ? BRAND.primary : isActive ? `${BRAND.primary}20` : colors.surface,
+                          borderColor: isCompleted || isActive ? BRAND.primary : colors.border,
+                        },
+                      ]}
+                    >
+                      {isCompleted ? (
+                        <MaterialCommunityIcons name="check" size={14} color={colors.primaryForeground} />
+                      ) : (
+                        <Text style={[styles.stepNumber, { color: isActive ? BRAND.primary : colors.textSecondary }]}>
+                          {index + 1}
+                        </Text>
+                      )}
+                    </View>
+                    {index < arr.length - 1 && (
+                      <View style={[styles.stepLine, { backgroundColor: isCompleted ? BRAND.primary : colors.border }]} />
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </View>
 
-            {/* Step Icon Header */}
             <Animated.View
               style={[
-                styles.stepIconHeader,
+                styles.hero,
                 {
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                  opacity: fadeAnim,
+                  transform: [{ scale: scaleAnim }, { translateY: slideAnim.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) }],
+                },
+              ]}
+            >
+              <View style={[styles.heroIcon, { backgroundColor: `${BRAND.primary}18`, borderColor: `${BRAND.primary}40` }]}>
+                <MaterialCommunityIcons name={currentConfig.icon} size={28} color={BRAND.primary} />
+              </View>
+              <Text style={[styles.heroTitle, { color: colors.textPrimary }]}>{currentConfig.title}</Text>
+              <Text style={[styles.heroDesc, { color: colors.textSecondary }]}>{currentConfig.description}</Text>
+            </Animated.View>
+
+            <Animated.View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
                   opacity: fadeAnim,
                   transform: [{ scale: scaleAnim }],
                 },
               ]}
             >
-              <View style={styles.stepIconCircle}>
-                <MaterialCommunityIcons
-                  name={currentConfig.icon}
-                  size={moderateScale(28)}
-                  color={theme.colors.emailtextPrimary}
-                />
-              </View>
-            </Animated.View>
-
-            {/* Content Section */}
-            <Animated.View
-              style={[
-                styles.contentContainer,
-                {
-                  transform: [
-                    {
-                      translateY: slideAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [40, 0],
-                      }),
-                    },
-                    { scale: scaleAnim },
-                  ],
-                  opacity: fadeAnim,
-                },
-              ]}
-            >
-              {/* Step 1: Email */}
               {currentStep === 'email' && (
-                <View>
-                  <Text style={[styles.stepTitle, { color: theme.colors.textPrimary }]}>{currentConfig.title}</Text>
-                  <Text style={[styles.stepDescription, { color: theme.colors.textSecondary }]}>
-                    {currentConfig.description}
-                  </Text>
-
-                  <View style={styles.form}>
-                    <View>
-                      <Text style={[styles.label, { color: theme.colors.textSecondary }]}>Email Address</Text>
-                      <View style={[styles.inputContainer, errors.email ? styles.inputContainerError : null]}>
-                        <MaterialCommunityIcons
-                          name="email-outline"
-                          size={moderateScale(18)}
-                          color={theme.colors.textSecondary}
-                          style={styles.inputIcon}
-                        />
-                        <TextInput
-                          style={styles.input}
-                          placeholder="john@example.com"
-                          placeholderTextColor={theme.colors.border}
-                          keyboardType="email-address"
-                          editable={!isLoading}
-                          value={email}
-                          onChangeText={handleEmailChange}
-                        />
-                      </View>
-                      {errors.email && (
-                        <Text style={styles.errorText}>{errors.email}</Text>
-                      )}
-                    </View>
-
-                    <TouchableOpacity
-                      onPress={handleSendOtp}
-                      disabled={isLoading}
-                      style={styles.button}
-                      activeOpacity={0.85}
-                    >
-                      <LinearGradient
-                        colors={[BRAND.primary, '#E68200']}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
-                        style={styles.buttonGradient}
-                      >
-                        {isLoading ? (
-                          <ActivityIndicator size="small" color="#000" />
-                        ) : (
-                          <>
-                            <Text style={styles.buttonText}>Send OTP</Text>
-                            <View style={styles.btnArrowBg}>
-                              <MaterialCommunityIcons
-                                name="send"
-                                size={moderateScale(14)}
-                                color="#000"
-                              />
-                            </View>
-                          </>
-                        )}
-                      </LinearGradient>
-                    </TouchableOpacity>
+                <View style={styles.section}>
+                  <Text style={[styles.label, { color: colors.textSecondary }]}>Email Address</Text>
+                  <View style={[styles.inputContainer, { backgroundColor: colors.inputBackground, borderColor: errors.email ? colors.error : colors.border }]}>
+                    <MaterialCommunityIcons name="email-outline" size={18} color={colors.textSecondary} style={styles.inputIcon} />
+                    <TextInput
+                      style={[styles.input, { color: colors.textPrimary }]}
+                      placeholder="john@example.com"
+                      placeholderTextColor={colors.textTertiary}
+                      keyboardType="email-address"
+                      editable={!isLoading}
+                      value={email}
+                      onChangeText={(text) => {
+                        setEmail(text);
+                        if (text.trim()) setErrors((prev) => ({ ...prev, email: '' }));
+                      }}
+                      autoCapitalize="none"
+                    />
                   </View>
-                </View>
-              )}
+                  {errors.email ? <Text style={[styles.errorText, { color: colors.error }]}>{errors.email}</Text> : null}
 
-              {/* Step 2: OTP Verification */}
-              {currentStep === 'otp' && (
-                <View>
-                  <Text style={[styles.stepTitle, { color: theme.colors.textPrimary }]}>{currentConfig.title}</Text>
-                  <Text style={[styles.stepDescription, { color: theme.colors.textSecondary }]}>
-                    Enter the 6-digit code sent to{' '}
-                    <Text style={styles.emailHighlight}>{email}</Text>
-                  </Text>
-
-                  <View style={styles.form}>
-                    <View>
-                      <Text style={[styles.label, { color: theme.colors.textSecondary }]}>One-Time Password</Text>
-                      <View style={[styles.inputContainer, errors.otp ? styles.inputContainerError : null]}>
-                        <MaterialCommunityIcons
-                          name="shield-key-outline"
-                          size={moderateScale(18)}
-                          color={theme.colors.textSecondary}
-                          style={styles.inputIcon}
-                        />
-                        <TextInput
-                          style={[styles.input, styles.otpInput]}
-                          placeholder="000000"
-                          placeholderTextColor={theme.colors.border}
-                          keyboardType="number-pad"
-                          maxLength={6}
-                          editable={!isLoading}
-                          value={otp}
-                          onChangeText={handleOtpChange}
-                        />
-                      </View>
-                      {errors.otp && (
-                        <Text style={styles.errorText}>{errors.otp}</Text>
-                      )}
-                    </View>
-
-                    <View style={styles.resendContainer}>
-                      {resendTimer > 0 ? (
-                        <View style={styles.resendRow}>
-                          <MaterialCommunityIcons
-                            name="timer-outline"
-                            size={moderateScale(14)}
-                            color={theme.colors.textSecondary}
-                          />
-                          <Text style={styles.resendText}>
-                            Resend OTP in {resendTimer}s
-                          </Text>
-                        </View>
+                  <TouchableOpacity onPress={handleSendOtp} disabled={isLoading} style={styles.buttonWrap} activeOpacity={0.85}>
+                    <LinearGradient colors={[BRAND.primary, '#E68200']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.buttonGradient}>
+                      {isLoading ? (
+                        <ActivityIndicator size="small" color="#000" />
                       ) : (
-                        <TouchableOpacity
-                          onPress={() => handleSendOtp()}
-                          style={styles.resendButton}
-                        >
-                          <MaterialCommunityIcons
-                            name="refresh"
-                            size={moderateScale(14)}
-                            color={theme.colors.textPrimary}
-                          />
-                          <Text style={styles.resendLink}>Resend OTP</Text>
-                        </TouchableOpacity>
+                        <>
+                          <Text style={styles.buttonText}>Send OTP</Text>
+                          <View style={styles.btnArrowBg}>
+                            <MaterialCommunityIcons name="send" size={14} color="#000" />
+                          </View>
+                        </>
                       )}
-                    </View>
-
-                    <TouchableOpacity
-                      onPress={handleVerifyOtp}
-                      disabled={isLoading}
-                      style={styles.button}
-                      activeOpacity={0.85}
-                    >
-                      <LinearGradient
-                        colors={[BRAND.primary, '#E68200']}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
-                        style={styles.buttonGradient}
-                      >
-                        {isLoading ? (
-                          <ActivityIndicator size="small" color="#000" />
-                        ) : (
-                          <>
-                            <Text style={styles.buttonText}>Verify OTP</Text>
-                            <View style={styles.btnArrowBg}>
-                              <MaterialCommunityIcons
-                                name="check"
-                                size={moderateScale(14)}
-                                color="#000"
-                              />
-                            </View>
-                          </>
-                        )}
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  </View>
+                    </LinearGradient>
+                  </TouchableOpacity>
                 </View>
               )}
 
-              {/* Step 3: New Password */}
+              {currentStep === 'otp' && (
+                <View style={styles.section}>
+                  <Text style={[styles.label, { color: colors.textSecondary }]}>One-Time Password</Text>
+                  <View style={[styles.inputContainer, { backgroundColor: colors.inputBackground, borderColor: errors.otp ? colors.error : colors.border }]}>
+                    <MaterialCommunityIcons name="shield-key-outline" size={18} color={colors.textSecondary} style={styles.inputIcon} />
+                    <TextInput
+                      style={[styles.input, styles.otpInput, { color: colors.textPrimary }]}
+                      placeholder="000000"
+                      placeholderTextColor={colors.textTertiary}
+                      keyboardType="number-pad"
+                      maxLength={6}
+                      editable={!isLoading}
+                      value={otp}
+                      onChangeText={(text) => {
+                        setOtp(text.replace(/[^0-9]/g, '').slice(0, 6));
+                        if (text.trim()) setErrors((prev) => ({ ...prev, otp: '' }));
+                      }}
+                    />
+                  </View>
+                  {errors.otp ? <Text style={[styles.errorText, { color: colors.error }]}>{errors.otp}</Text> : null}
+
+                  <View style={styles.resendContainer}>
+                    {resendTimer > 0 ? (
+                      <Text style={[styles.resendText, { color: colors.textSecondary }]}>Resend OTP in {resendTimer}s</Text>
+                    ) : (
+                      <TouchableOpacity onPress={handleSendOtp} disabled={isLoading} style={[styles.resendButton, { backgroundColor: `${BRAND.primary}14` }]}>
+                        <MaterialCommunityIcons name="refresh" size={14} color={BRAND.primary} />
+                        <Text style={styles.resendLink}>Resend OTP</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  <TouchableOpacity onPress={handleVerifyOtp} disabled={isLoading} style={styles.buttonWrap} activeOpacity={0.85}>
+                    <LinearGradient colors={[BRAND.primary, '#E68200']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.buttonGradient}>
+                      {isLoading ? (
+                        <ActivityIndicator size="small" color="#000" />
+                      ) : (
+                        <>
+                          <Text style={styles.buttonText}>Verify OTP</Text>
+                          <View style={styles.btnArrowBg}>
+                            <MaterialCommunityIcons name="check" size={14} color="#000" />
+                          </View>
+                        </>
+                      )}
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
+              )}
+
               {currentStep === 'password' && (
-                <View>
-                  <Text style={[styles.stepTitle, { color: theme.colors.textPrimary }]}>{currentConfig.title}</Text>
-                  <Text style={[styles.stepDescription, { color: theme.colors.textSecondary }]}>
-                    {currentConfig.description}
-                  </Text>
-
-                  <View style={styles.form}>
-                    <View>
-                      <Text style={[styles.label, { color: theme.colors.textSecondary }]}>New Password</Text>
-                      <View style={[styles.inputContainer, errors.password ? styles.inputContainerError : null]}>
-                        <MaterialCommunityIcons
-                          name="lock-outline"
-                          size={moderateScale(18)}
-                          color={theme.colors.textSecondary}
-                          style={styles.inputIcon}
-                        />
-                        <TextInput
-                          style={[styles.input, styles.passwordInput]}
-                          placeholder="At least 8 characters"
-                          placeholderTextColor={theme.colors.border}
-                          secureTextEntry={!showPassword}
-                          editable={!isLoading}
-                          value={password}
-                          onChangeText={handlePasswordChange}
-                        />
-                        <TouchableOpacity
-                          onPress={() => setShowPassword(!showPassword)}
-                          style={styles.eyeIcon}
-                        >
-                          <MaterialCommunityIcons
-                            name={showPassword ? 'eye' : 'eye-off'}
-                            size={moderateScale(16)}
-                            color={theme.colors.textSecondary}
-                          />
-                        </TouchableOpacity>
-                      </View>
-                      {errors.password && (
-                        <Text style={styles.errorText}>{errors.password}</Text>
-                      )}
-                    </View>
-
-                    <PasswordRequirements />
-
-                    <View>
-                      <Text style={[styles.label, { color: theme.colors.textSecondary }]}>Confirm Password</Text>
-                      <View
-                        style={[
-                          styles.inputContainer,
-                          errors.confirmPassword ? styles.inputContainerError : null,
-                        ]}
-                      >
-                        <MaterialCommunityIcons
-                          name="lock-check-outline"
-                          size={moderateScale(18)}
-                          color={theme.colors.textSecondary}
-                          style={styles.inputIcon}
-                        />
-                        <TextInput
-                          style={[styles.input, styles.passwordInput]}
-                          placeholder="Re-enter password"
-                          placeholderTextColor={theme.colors.border}
-                          secureTextEntry={!showConfirmPassword}
-                          editable={!isLoading}
-                          value={confirmPassword}
-                          onChangeText={handleConfirmPasswordChange}
-                        />
-                        <TouchableOpacity
-                          onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                          style={styles.eyeIcon}
-                        >
-                          <MaterialCommunityIcons
-                            name={showConfirmPassword ? 'eye' : 'eye-off'}
-                            size={moderateScale(16)}
-                            color={theme.colors.textSecondary}
-                          />
-                        </TouchableOpacity>
-                      </View>
-                      {errors.confirmPassword && (
-                        <Text style={styles.errorText}>{errors.confirmPassword}</Text>
-                      )}
-                    </View>
-
-                    <TouchableOpacity
-                      onPress={handleResetPassword}
-                      disabled={isLoading}
-                      style={styles.button}
-                      activeOpacity={0.85}
-                    >
-                      <LinearGradient
-                        colors={[BRAND.primary, '#E68200']}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
-                        style={styles.buttonGradient}
-                      >
-                        {isLoading ? (
-                          <ActivityIndicator size="small" color="#000" />
-                        ) : (
-                          <>
-                            <Text style={styles.buttonText}>Reset Password</Text>
-                            <View style={styles.btnArrowBg}>
-                              <MaterialCommunityIcons
-                                name="check-all"
-                                size={moderateScale(14)}
-                                color="#000"
-                              />
-                            </View>
-                          </>
-                        )}
-                      </LinearGradient>
+                <View style={styles.section}>
+                  <Text style={[styles.label, { color: colors.textSecondary }]}>New Password</Text>
+                  <View style={[styles.inputContainer, { backgroundColor: colors.inputBackground, borderColor: errors.password ? colors.error : colors.border }]}>
+                    <MaterialCommunityIcons name="lock-outline" size={18} color={colors.textSecondary} style={styles.inputIcon} />
+                    <TextInput
+                      style={[styles.input, styles.passwordInput, { color: colors.textPrimary }]}
+                      placeholder="At least 8 characters"
+                      placeholderTextColor={colors.textTertiary}
+                      secureTextEntry={!showPassword}
+                      editable={!isLoading}
+                      value={password}
+                      onChangeText={(text) => {
+                        setPassword(text);
+                        if (text.trim()) setErrors((prev) => ({ ...prev, password: '' }));
+                      }}
+                    />
+                    <TouchableOpacity onPress={() => setShowPassword((v) => !v)} style={styles.eyeIcon}>
+                      <MaterialCommunityIcons name={showPassword ? 'eye' : 'eye-off'} size={16} color={colors.textSecondary} />
                     </TouchableOpacity>
                   </View>
+                  {errors.password ? <Text style={[styles.errorText, { color: colors.error }]}>{errors.password}</Text> : null}
+
+                  <View style={[styles.requirementsContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    {passwordRequirements.map((req) => (
+                      <View key={req.text} style={styles.requirement}>
+                        <View style={[styles.requirementDot, { backgroundColor: req.met ? COLORS.light.success : colors.border }]} />
+                        <Text style={[styles.requirementText, { color: req.met ? COLORS.light.success : colors.textSecondary }]}>{req.text}</Text>
+                      </View>
+                    ))}
+                  </View>
+
+                  <Text style={[styles.label, { color: colors.textSecondary }]}>Confirm Password</Text>
+                  <View style={[styles.inputContainer, { backgroundColor: colors.inputBackground, borderColor: errors.confirmPassword ? colors.error : colors.border }]}>
+                    <MaterialCommunityIcons name="lock-check-outline" size={18} color={colors.textSecondary} style={styles.inputIcon} />
+                    <TextInput
+                      style={[styles.input, styles.passwordInput, { color: colors.textPrimary }]}
+                      placeholder="Re-enter password"
+                      placeholderTextColor={colors.textTertiary}
+                      secureTextEntry={!showConfirmPassword}
+                      editable={!isLoading}
+                      value={confirmPassword}
+                      onChangeText={(text) => {
+                        setConfirmPassword(text);
+                        if (text.trim()) setErrors((prev) => ({ ...prev, confirmPassword: '' }));
+                      }}
+                    />
+                    <TouchableOpacity onPress={() => setShowConfirmPassword((v) => !v)} style={styles.eyeIcon}>
+                      <MaterialCommunityIcons name={showConfirmPassword ? 'eye' : 'eye-off'} size={16} color={colors.textSecondary} />
+                    </TouchableOpacity>
+                  </View>
+                  {errors.confirmPassword ? <Text style={[styles.errorText, { color: colors.error }]}>{errors.confirmPassword}</Text> : null}
+
+                  <TouchableOpacity onPress={handleResetPassword} disabled={isLoading} style={styles.buttonWrap} activeOpacity={0.85}>
+                    <LinearGradient colors={[BRAND.primary, '#E68200']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.buttonGradient}>
+                      {isLoading ? (
+                        <ActivityIndicator size="small" color="#000" />
+                      ) : (
+                        <>
+                          <Text style={styles.buttonText}>Reset Password</Text>
+                          <View style={styles.btnArrowBg}>
+                            <MaterialCommunityIcons name="check-all" size={14} color="#000" />
+                          </View>
+                        </>
+                      )}
+                    </LinearGradient>
+                  </TouchableOpacity>
                 </View>
               )}
             </Animated.View>
 
-            {/* Back to Login */}
             <View style={styles.footer}>
-              <Text style={[styles.footerText, { color: theme.colors.textSecondary }]}>Remember your password? </Text>
+              <Text style={[styles.footerText, { color: colors.textSecondary }]}>Remember your password? </Text>
               <TouchableOpacity onPress={() => router.push('/auth/login-new')}>
                 <Text style={[styles.footerLink, { color: BRAND.primary }]}>Sign In</Text>
               </TouchableOpacity>
@@ -787,268 +482,198 @@ export default function ResetPasswordScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  safeArea: {
-    flex: 1,
-  },
-  keyboardView: {
-    flex: 1,
-  },
+  container: { flex: 1 },
+  safeArea: { flex: 1 },
+  flex: { flex: 1 },
   scrollContent: {
-    paddingBottom: verticalScale(40),
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 40,
+    justifyContent: 'center',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: scale(20),
-    paddingVertical: verticalScale(14),
+    marginBottom: 20,
   },
   backButton: {
-    padding: scale(2),
-  },
-  backCircle: {
-    width: scale(34),
-    height: scale(34),
-    borderRadius: scale(17),
-    backgroundColor: '#F5F5F517',
-    justifyContent: 'center',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#E5E5E5',
   },
   headerTitle: {
-    color: '#000000',
-    fontSize: moderateScale(16),
+    fontSize: 16,
     fontWeight: '800',
     letterSpacing: 0.2,
   },
   stepIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: scale(40),
-    marginBottom: verticalScale(24),
-  },
-  stepItem: {
-    alignItems: 'center',
+    marginBottom: 18,
   },
   stepCircle: {
-    width: scale(36),
-    height: scale(36),
-    borderRadius: scale(18),
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  stepNumber: {
-    color: '#000000',
-    fontWeight: '700',
-    fontSize: moderateScale(13),
-  },
-  stepLine: {
-    flex: 1,
-    height: 2,
-    borderRadius: 1,
-    marginHorizontal: scale(8),
-  },
-  stepIconHeader: {
-    alignItems: 'center',
-    marginBottom: verticalScale(20),
-  },
-  stepIconCircle: {
-    width: scale(64),
-    height: scale(64),
-    borderRadius: scale(32),
-    backgroundColor: '#FFF5E5',
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     borderWidth: 1.5,
-    borderColor: 'rgba(241, 137, 2, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  contentContainer: {
-    paddingHorizontal: scale(24),
+  stepNumber: { fontSize: 13, fontWeight: '800' },
+  stepLine: { flex: 1, height: 2, marginHorizontal: 8, borderRadius: 1 },
+  hero: {
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 20,
+    alignItems: 'center',
+    marginBottom: 16,
   },
-  stepTitle: {
-    color: '#000000',
-    fontSize: moderateScale(22),
-    fontWeight: '800',
-    marginBottom: verticalScale(6),
-    letterSpacing: 0.1,
+  heroIcon: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
   },
-  stepDescription: {
-    color: 'rgba(0, 0, 0, 0.6)',
-    fontSize: moderateScale(12),
-    marginBottom: verticalScale(24),
-    lineHeight: moderateScale(18),
-    fontWeight: '400',
-    letterSpacing: 0.2,
+  heroTitle: { fontSize: 24, fontWeight: '900', textAlign: 'center' },
+  heroDesc: { fontSize: 13, textAlign: 'center', lineHeight: 19, marginTop: 6 },
+  card: {
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: 18,
+    gap: 14,
   },
-  emailHighlight: {
-    color: '#F18902',
-    fontWeight: '700',
-  },
-  form: {
-    gap: verticalScale(16),
-  },
+  section: { gap: 12 },
   label: {
-    color: 'rgba(0, 0, 0, 0.6)',
-    fontSize: moderateScale(11),
-    fontWeight: '600',
-    marginBottom: verticalScale(6),
-    letterSpacing: 0.3,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
     textTransform: 'uppercase',
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: scale(12),
-    paddingHorizontal: scale(14),
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#E5E5E5',
+    paddingHorizontal: 14,
+    minHeight: 56,
   },
-  inputContainerError: {
-    borderColor: '#ef4444',
-    backgroundColor: 'rgba(239, 68, 68, 0.06)',
-  },
-  inputIcon: {
-    marginRight: scale(10),
-  },
+  inputIcon: { marginRight: 10 },
   input: {
     flex: 1,
-    paddingVertical: verticalScale(14),
-    fontSize: moderateScale(13),
-    color: '#000000',
-    fontWeight: '500',
+    paddingVertical: 12,
+    fontSize: 15,
+    fontWeight: '600',
   },
   otpInput: {
-    letterSpacing: scale(8),
-    fontSize: moderateScale(18),
-    fontWeight: '700',
+    letterSpacing: 6,
+    fontSize: 18,
   },
   passwordInput: {
-    paddingRight: scale(40),
+    paddingRight: 10,
   },
   eyeIcon: {
-    padding: scale(6),
+    padding: 6,
   },
   errorText: {
-    color: '#dc2626',
-    fontSize: moderateScale(10),
-    marginTop: verticalScale(4),
-    fontWeight: '500',
-    letterSpacing: 0.1,
+    fontSize: 12,
+    fontWeight: '600',
   },
   requirementsContainer: {
-    backgroundColor: '#F8F8F8',
-    borderRadius: scale(12),
-    padding: scale(14),
-    gap: verticalScale(10),
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#E5E5E5',
+    padding: 14,
+    gap: 8,
   },
   requirement: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: scale(10),
+    gap: 10,
   },
   requirementDot: {
-    width: scale(6),
-    height: scale(6),
-    borderRadius: scale(3),
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   requirementText: {
-    color: 'rgba(0, 0, 0, 0.6)',
-    fontSize: moderateScale(11),
-    fontWeight: '500',
-  },
-  requirementMet: {
-    color: '#10B981',
+    fontSize: 12,
+    fontWeight: '600',
   },
   resendContainer: {
     alignItems: 'center',
   },
-  resendRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: scale(6),
-  },
   resendText: {
-    color: 'rgba(0, 0, 0, 0.6)',
-    fontSize: moderateScale(11),
-    fontWeight: '500',
-  },
-  futurecount: {
-    color: 'rgb(0, 0, 0)',
-    fontWeight: '700',
-    fontSize: moderateScale(13),
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   resendButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: scale(6),
-    paddingVertical: verticalScale(6),
-    paddingHorizontal: scale(14),
-    borderRadius: scale(20),
-    backgroundColor: '#FFF5E5',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
   },
   resendLink: {
-    color: '#F18902',
-    fontSize: moderateScale(11),
-    fontWeight: '700',
+    color: BRAND.primary,
+    fontSize: 13,
+    fontWeight: '800',
   },
-  button: {
-    borderRadius: scale(12),
+  buttonWrap: {
+    marginTop: 2,
+    borderRadius: 16,
     overflow: 'hidden',
-    marginTop: verticalScale(4),
     ...Platform.select({
       ios: {
-        shadowColor: 'rgba(241, 137, 2, 0.35)',
+        shadowColor: 'rgba(241, 137, 2, 0.3)',
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
+        shadowOpacity: 0.25,
         shadowRadius: 8,
       },
-      android: {
-        elevation: 4,
-      },
+      android: { elevation: 4 },
     }),
   },
   buttonGradient: {
+    minHeight: 54,
     flexDirection: 'row',
-    paddingVertical: verticalScale(15),
-    justifyContent: 'center',
     alignItems: 'center',
-    gap: scale(10),
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
   },
   buttonText: {
-    color: '#000000',
-    fontWeight: '800',
-    fontSize: moderateScale(14),
-    letterSpacing: 0.2,
+    color: '#000',
+    fontWeight: '900',
+    fontSize: 15,
   },
   btnArrowBg: {
-    width: scale(26),
-    height: scale(26),
-    borderRadius: scale(13),
-    backgroundColor: 'rgba(0, 0, 0, 0.08)',
-    justifyContent: 'center',
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.08)',
   },
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    paddingVertical: verticalScale(20),
-    gap: scale(4),
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 18,
   },
   footerText: {
-    color: 'rgba(0, 0, 0, 0.6)',
-    fontSize: moderateScale(12),
+    fontSize: 12,
   },
   footerLink: {
-    color: '#F18902',
-    fontSize: moderateScale(12),
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '800',
     textDecorationLine: 'underline',
   },
 });

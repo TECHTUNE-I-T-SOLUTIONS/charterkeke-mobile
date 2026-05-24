@@ -44,6 +44,13 @@ export default function RideDetailsScreen() {
   const [routeDurationMin, setRouteDurationMin] = useState(0);
   const [showFullMap, setShowFullMap] = useState(false);
   const [lastMapTap, setLastMapTap] = useState(0);
+  const extractCoordinate = (source: any, latKeys: string[], lngKeys: string[]) => {
+    if (!source) return null;
+    const lat = latKeys.map((key) => Number(source[key])).find((value) => Number.isFinite(value));
+    const lng = lngKeys.map((key) => Number(source[key])).find((value) => Number.isFinite(value));
+    if (!Number.isFinite(lat as number) || !Number.isFinite(lng as number)) return null;
+    return [lng as number, lat as number] as [number, number];
+  };
 
   useEffect(() => {
     if (rideData) {
@@ -141,7 +148,21 @@ export default function RideDetailsScreen() {
       );
    }
 
-  const routeFitCoordinates = routeCoordinates || [[3.3792, 6.5244], [3.4292, 6.5844]];
+  const pickupCoordinate =
+    extractCoordinate(ride, ['pickup_latitude', 'pickupLat', 'pickup_lat'], ['pickup_longitude', 'pickupLng', 'pickup_lon']) ||
+    routeCoordinates?.[0] ||
+    [3.3792, 6.5244];
+  const dropoffCoordinate =
+    extractCoordinate(ride, ['dropoff_latitude', 'dropoffLat', 'dropoff_lat'], ['dropoff_longitude', 'dropoffLng', 'dropoff_lon']) ||
+    routeCoordinates?.[routeCoordinates.length - 1] ||
+    [3.4292, 6.5844];
+  const driverCoordinate =
+    extractCoordinate(ride, ['driver_current_latitude', 'driverLatitude', 'driver_latitude'], ['driver_current_longitude', 'driverLongitude', 'driver_longitude']) ||
+    null;
+  const riderCoordinate =
+    extractCoordinate(ride, ['rider_current_latitude', 'riderLatitude', 'rider_latitude'], ['rider_current_longitude', 'riderLongitude', 'rider_longitude']) ||
+    null;
+  const routeFitCoordinates = routeCoordinates || [pickupCoordinate, dropoffCoordinate];
   const handleMapTap = () => {
     const now = Date.now();
     if (now - lastMapTap < 300) {
@@ -156,7 +177,7 @@ export default function RideDetailsScreen() {
       
       {/* Header Overlay on Map */}
       <View style={styles.mapWrapper}>
-         <MapboxMap
+           <MapboxMap
            style={styles.map}
            latitude={6.5244}
            longitude={3.3792}
@@ -166,23 +187,34 @@ export default function RideDetailsScreen() {
                 fitCoordinates={routeFitCoordinates}
                 routeCoordinates={routeCoordinates}
            zoom={12}
+           autoCenter={false}
            onPressCoordinate={handleMapTap}
          >
                   <MapboxMarker
                      id="pickup"
-                     coordinate={routeCoordinates?.[0] || [3.3792, 6.5244]}
+                     coordinate={pickupCoordinate}
                      title="Pickup"
                      color={BRAND.primary}
                   />
                   <MapboxMarker
                      id="dropoff"
-                     coordinate={routeCoordinates?.[routeCoordinates.length - 1] || [3.4292, 6.5844]}
+                     coordinate={dropoffCoordinate}
                      title="Dropoff"
                      color="black"
                   />
+                  {riderCoordinate ? (
+                    <MapboxMarker id="rider-current" coordinate={riderCoordinate} title="Rider current location" color="#2563EB" />
+                  ) : null}
+                  {driverCoordinate ? (
+                    <MapboxMarker id="driver-current" coordinate={driverCoordinate} title="Tricycle current location" color="#10B981" />
+                  ) : null}
          </MapboxMap>
-         <SafeAreaView style={[styles.headerSafe, { paddingTop: Math.max(0, verticalScale(8)) }]}>
-            <View style={[styles.headerRow, { paddingHorizontal: scale(16), paddingVertical: verticalScale(8) }]}>
+         <TouchableOpacity onPress={() => setShowFullMap(true)} style={styles.fullMapBtn}>
+            <MaterialCommunityIcons name="fullscreen" size={18} color="#000" />
+            <Text style={styles.fullMapBtnText}>Full Map</Text>
+         </TouchableOpacity>
+         <SafeAreaView pointerEvents="box-none" style={[styles.headerSafe, { paddingTop: Math.max(0, verticalScale(8)) }]}>
+            <View pointerEvents="box-none" style={[styles.headerRow, { paddingHorizontal: scale(16), paddingVertical: verticalScale(8) }]}>
                <TouchableOpacity onPress={() => router.back()} style={[styles.backCircle, { backgroundColor: theme.colors.surface }]}>
                   <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.textPrimary} />
                </TouchableOpacity>
@@ -291,8 +323,10 @@ export default function RideDetailsScreen() {
         title="Ride Map"
         routeCoordinates={routeCoordinates}
         focusCoordinates={routeFitCoordinates}
-        pickup={routeCoordinates?.[0] || [3.3792, 6.5244]}
-        dropoff={routeCoordinates?.[routeCoordinates.length - 1] || [3.4292, 6.5844]}
+        pickup={pickupCoordinate}
+        dropoff={dropoffCoordinate}
+        riderLocation={riderCoordinate}
+        driverLocation={driverCoordinate}
         speedText={routeLoading ? 'Loading route...' : `ETA ${routeDurationMin || 0} min | ${routeDistanceKm || 0} km`}
         onClose={() => setShowFullMap(false)}
       />
@@ -304,11 +338,13 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   mapWrapper: { height: verticalScale(250), position: 'relative' },
   map: { ...StyleSheet.absoluteFillObject },
-  headerSafe: { flex: 1 },
+  headerSafe: { ...StyleSheet.absoluteFillObject },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: scale(12) },
   backCircle: { width: scale(44), height: scale(44), borderRadius: scale(22), justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, elevation: 4 },
   statusPill: { paddingHorizontal: scale(12), paddingVertical: verticalScale(6), borderRadius: scale(16), justifyContent: 'center', elevation: 4 },
   statusText: { fontSize: scale(10), fontWeight: '800' },
+  fullMapBtn: { position: 'absolute', right: 16, bottom: 16, zIndex: 20, backgroundColor: '#FFF', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 6, elevation: 4 },
+  fullMapBtnText: { fontSize: 12, fontWeight: '800', color: '#000' },
    contentContainer: { flex: 1, marginTop: -30, borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 20, paddingTop: 30, paddingBottom: 120, overflow: 'hidden', backgroundColor: 'transparent' }, 
   // Simple Hack: Content background is handled by container color, this is to overlap map. Actually simpler to set background on ScrollView but it covers map corners. 
   // Let's rely on View structure.

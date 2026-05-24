@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Button from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
+import { authService } from '@/services/auth';
 import { COLORS } from '@/utils/colors';
 import { TextInput } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -86,6 +87,7 @@ export default function ResumeSessionScreen() {
     enrolled: false,
   });
   const [biometricError, setBiometricError] = useState('');
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   // Load cached profile picture on mount
   useEffect(() => {
@@ -113,6 +115,36 @@ export default function ResumeSessionScreen() {
   useEffect(() => {
     checkBiometricAvailability();
   }, []);
+
+  useEffect(() => {
+    const verifySession = async () => {
+      try {
+        await authService.initialize();
+        if (authService.isTokenExpired()) {
+          setSessionExpired(true);
+          await AsyncStorage.removeItem('sessionResumed');
+          Alert.alert(
+            'Session Expired',
+            'Your session has expired. Please log in again.',
+            [
+              {
+                text: 'Log In',
+                onPress: async () => {
+                  await authService.logout().catch(() => {});
+                  navigation.replace('/auth/login-new');
+                },
+              },
+            ],
+            { cancelable: false }
+          );
+        }
+      } catch (error) {
+        console.error('[ResumeSession] Session validity check failed:', error);
+      }
+    };
+
+    verifySession();
+  }, [navigation]);
 
   // Reset OTP state when changing methods
   useEffect(() => {
@@ -273,6 +305,11 @@ export default function ResumeSessionScreen() {
   };
 
   const handleVerifyOtp = async () => {
+    if (sessionExpired || authService.isTokenExpired()) {
+      setOtpError('Your session has expired. Please log in again.');
+      await handleLogout();
+      return;
+    }
     setOtpError('');
     const otpCode = otp.join('');
 
@@ -317,14 +354,18 @@ export default function ResumeSessionScreen() {
         // Resume session successfully
         await AsyncStorage.setItem('sessionResumed', 'true');
         
-        // Route based on user role
+        if (sessionExpired || authService.isTokenExpired()) {
+          setOtpError('Your session has expired. Please log in again.');
+          await handleLogout();
+          return;
+        }
+
         if (userRole === 'driver') {
           navigation.replace('/driver/home');
         } else if (userRole === 'rider') {
           navigation.replace('/rider/home');
         } else {
-          // Default to rider if role is unknown
-          navigation.replace('/rider/home');
+          await handleLogout();
         }
       } else {
         setOtpError(data?.error || 'Invalid OTP. Please try again.');
@@ -352,6 +393,11 @@ export default function ResumeSessionScreen() {
   };
 
   const handleVerifyPassword = async () => {
+    if (sessionExpired || authService.isTokenExpired()) {
+      setPasswordError('Your session has expired. Please log in again.');
+      await handleLogout();
+      return;
+    }
     setPasswordError('');
 
     if (!password) {
@@ -393,14 +439,18 @@ export default function ResumeSessionScreen() {
       if (response.ok && data.verified) {
         await AsyncStorage.setItem('sessionResumed', 'true');
         
-        // Route based on user role
+        if (sessionExpired || authService.isTokenExpired()) {
+          setPasswordError('Your session has expired. Please log in again.');
+          await handleLogout();
+          return;
+        }
+
         if (userRole === 'driver') {
           navigation.replace('/driver/home');
         } else if (userRole === 'rider') {
           navigation.replace('/rider/home');
         } else {
-          // Default to rider if role is unknown
-          navigation.replace('/rider/home');
+          await handleLogout();
         }
       } else {
         setPasswordError(data?.message || 'Invalid password. Please try again.');
@@ -483,6 +533,7 @@ export default function ResumeSessionScreen() {
     try {
       await AsyncStorage.removeItem('sessionResumed');
       await AsyncStorage.removeItem('userSession');
+      setSessionExpired(true);
       navigation.replace('/auth/login-new');
     } catch (error) {
       console.error('[ResumeSession] Error during logout:', error);
@@ -886,6 +937,52 @@ export default function ResumeSessionScreen() {
       </TouchableOpacity>
     </View>
   );
+
+  if (sessionExpired) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+        <View style={{ flex: 1, paddingHorizontal: 20, justifyContent: 'center' }}>
+          <View style={{
+            borderRadius: 24,
+            padding: 24,
+            backgroundColor: colors.card,
+            borderWidth: 1,
+            borderColor: colors.border,
+            gap: 16,
+          }}>
+            <View style={{
+              width: 64,
+              height: 64,
+              borderRadius: 20,
+              backgroundColor: `${colors.primary}20`,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              <MaterialCommunityIcons name="account-clock-outline" size={32} color={colors.primary} />
+            </View>
+            <Text style={{ fontSize: 28, fontWeight: '800', color: colors.text }}>Session expired</Text>
+            <Text style={{ fontSize: 15, lineHeight: 22, color: colors.textSecondary }}>
+              For your security, you need to sign in again to continue.
+            </Text>
+            <TouchableOpacity
+              onPress={handleLogout}
+              style={{
+                marginTop: 8,
+                borderRadius: 14,
+                paddingVertical: 14,
+                alignItems: 'center',
+                backgroundColor: colors.primary,
+              }}
+            >
+              <Text style={{ color: colors.primaryForeground, fontWeight: '800', fontSize: 15 }}>
+                Sign in again
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>

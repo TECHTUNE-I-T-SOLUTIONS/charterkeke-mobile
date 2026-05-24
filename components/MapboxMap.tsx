@@ -153,6 +153,7 @@ interface MapboxMapProps {
   showLogo?: boolean;
   routeColor?: string;
   routeWidth?: number;
+  autoCenter?: boolean;
   onRegionChange?: (region: any) => void;
   onPressCoordinate?: (coordinate: { latitude: number; longitude: number }) => void;
   onTouchStart?: () => void;
@@ -182,6 +183,7 @@ export const MapboxMap = React.forwardRef<any, MapboxMapProps>(
       showLogo = true,
       routeColor = '#2563EB',
       routeWidth = 4,
+      autoCenter = true,
       onRegionChange,
       onPressCoordinate,
       onTouchStart,
@@ -226,6 +228,7 @@ export const MapboxMap = React.forwardRef<any, MapboxMapProps>(
     );
 
     useEffect(() => {
+      if (!autoCenter) return;
       if (!cameraRef.current) return;
 
       cameraRef.current.setCamera({
@@ -236,7 +239,7 @@ export const MapboxMap = React.forwardRef<any, MapboxMapProps>(
         animationMode: 'flyTo',
         animationDuration: cameraAnimationDuration,
       });
-    }, [resolvedCameraCenter, resolvedCameraZoom, pitch, bearing, cameraAnimationDuration]);
+    }, [resolvedCameraCenter, resolvedCameraZoom, pitch, bearing, cameraAnimationDuration, autoCenter]);
 
     const routeFeature = useMemo(() => {
       if (!routeCoordinates || routeCoordinates.length < 2) return null;

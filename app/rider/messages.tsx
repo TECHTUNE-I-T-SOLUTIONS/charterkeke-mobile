@@ -17,6 +17,7 @@ import { Chat } from '@/types';
 import { COLORS } from '@/utils/colors';
 import { moderateScale, scale, verticalScale } from 'react-native-size-matters';
 import { apiService } from '@/services/api';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 interface ChatListItemProps {
   chat: Chat & { lastMessage?: any; unreadCount?: number };
@@ -304,15 +305,15 @@ export default function MessagesScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color={colors.primary} />
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.background }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text} />
         </TouchableOpacity>
@@ -334,8 +335,8 @@ export default function MessagesScreen() {
           />
         }
         contentContainerStyle={chats.length === 0 ? styles.emptyList : undefined}
-      />
-    </View>
+        />
+    </SafeAreaView>
   );
 }
 
@@ -351,11 +352,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   backButton: {
-    padding: scale(8),
+    padding: scale(10),
+    borderRadius: moderateScale(20),
   },
   headerTitle: {
-    fontSize: moderateScale(18),
-    fontWeight: '600',
+    fontSize: moderateScale(17),
+    fontWeight: '800',
     flex: 1,
     textAlign: 'center',
   },
@@ -365,13 +367,20 @@ const styles = StyleSheet.create({
   chatItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: scale(16),
-    paddingVertical: verticalScale(12),
-    borderBottomWidth: 1,
+    marginHorizontal: scale(16),
+    marginBottom: verticalScale(10),
+    paddingHorizontal: scale(14),
+    paddingVertical: verticalScale(14),
+    borderWidth: 1,
+    borderRadius: moderateScale(16),
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 2,
   },
   chatAvatar: {
-    width: scale(50),
-    height: scale(50),
+    width: scale(46),
+    height: scale(46),
     borderRadius: moderateScale(25),
     backgroundColor: '#f0f0f0',
     justifyContent: 'center',
@@ -379,8 +388,8 @@ const styles = StyleSheet.create({
     marginRight: scale(12),
   },
   chatAvatarImage: {
-    width: scale(50),
-    height: scale(50),
+    width: scale(46),
+    height: scale(46),
     borderRadius: moderateScale(25),
     marginRight: scale(12),
   },
@@ -395,18 +404,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: verticalScale(4),
+    marginBottom: verticalScale(6),
   },
   chatTitle: {
-    fontSize: moderateScale(16),
-    fontWeight: '600',
+    fontSize: moderateScale(15),
+    fontWeight: '700',
     flex: 1,
   },
   chatTime: {
-    fontSize: moderateScale(12),
+    fontSize: moderateScale(11),
   },
   chatMessage: {
-    fontSize: moderateScale(14),
+    fontSize: moderateScale(12),
+    lineHeight: moderateScale(16),
   },
   unreadBadge: {
     minWidth: scale(20),
@@ -425,6 +435,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: scale(32),
+    paddingTop: verticalScale(32),
   },
   emptyTitle: {
     fontSize: moderateScale(18),

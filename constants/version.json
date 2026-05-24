@@ -1,6 +1,6 @@
 {
-  "version": "2.1.6",
-  "buildNumber": 216,
-  "releaseDate": "2026-05-23",
-  "changelog": "Added richer signup error handling, improved booking search and Lagos-only location validation, and enhanced ride map fullscreen UX."
+  "version": "2.1.7",
+  "buildNumber": 217,
+  "releaseDate": "2026-05-24",
+  "changelog": "Refined ride rating review handling, improved rating screen routing, and synced release versioning."
 }

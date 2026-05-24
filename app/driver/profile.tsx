@@ -34,9 +34,33 @@ interface ProfileData {
   email: string;
   phone_number: string;
   profile_picture_url?: string;
+  accepted_rides?: number;
   total_rides_completed?: number;
   average_rating?: number;
+  account_created_at?: string;
 }
+
+const normalizeRideList = (payload: any): any[] => {
+  const candidates = [
+    payload?.rides,
+    payload?.transactions,
+    payload?.data,
+    payload,
+  ];
+  const list = candidates.find(Array.isArray);
+  return Array.isArray(list) ? list : [];
+};
+
+const countDriverRideStats = (rides: any[]) => {
+  const accepted = rides.filter((ride) => {
+    const status = String(ride?.status || '').toLowerCase();
+    return ['accepted', 'in_progress', 'started', 'completed'].includes(status);
+  }).length;
+
+  const completed = rides.filter((ride) => String(ride?.status || '').toLowerCase() === 'completed').length;
+
+  return { accepted, completed };
+};
 
 export default function DriverProfileScreen() {
   const router = useRouter();
@@ -101,8 +125,13 @@ export default function DriverProfileScreen() {
   const fetchProfile = async (showLoader: boolean = true) => {
     try {
       if (showLoader) setLoading(true);
-      const res = await apiService.getDriverDetails();
-      const data = res.driver || res.user || res;
+      const [detailsRes, historyRes] = await Promise.all([
+        apiService.getDriverDetails(),
+        apiService.getTransactions(1).catch(() => ({ rides: [] })),
+      ]);
+      const data = detailsRes.driver || detailsRes.user || detailsRes;
+      const rides = normalizeRideList(historyRes);
+      const { accepted, completed } = countDriverRideStats(rides);
       const nextProfile: ProfileData = {
         first_name: data?.first_name || (user as any)?.first_name || (user as any)?.firstName || '',
         last_name: data?.last_name || (user as any)?.last_name || (user as any)?.lastName || '',
@@ -114,6 +143,14 @@ export default function DriverProfileScreen() {
           (user as any)?.profile_picture_url ||
           (user as any)?.avatar ||
           (user as any)?.photo_url,
+        accepted_rides:
+          Number(
+            data?.accepted_rides ??
+            data?.acceptedRides ??
+            data?.rides_accepted ??
+            data?.total_rides_accepted ??
+            accepted
+          ) || accepted,
         total_rides_completed:
           Number(
             data?.total_rides_completed ??
@@ -121,11 +158,10 @@ export default function DriverProfileScreen() {
             data?.rides_completed ??
             data?.total_rides ??
             data?.totalRides ??
-            (user as any)?.total_rides_completed ??
-            (user as any)?.totalRides ??
-            0
-          ) || 0,
+            completed
+          ) || completed,
         average_rating: Number(data?.average_rating ?? data?.rating ?? (user as any)?.averageRating ?? 0),
+        account_created_at: data?.created_at || (user as any)?.created_at || (user as any)?.createdAt || '',
       };
 
       setProfileData(nextProfile);
@@ -246,15 +282,43 @@ export default function DriverProfileScreen() {
             
             <View style={styles.statsRow}>
                 <View style={styles.statItem}>
-                    <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{profileData?.total_rides_completed || 0}</Text>
-                    <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Rides</Text>
+                    <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{profileData?.accepted_rides || 0}</Text>
+                    <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Accepted</Text>
                 </View>
                 <View style={[styles.vertDivider, { backgroundColor: theme.colors.border }]} />
                 <View style={styles.statItem}>
-                    <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{profileData?.average_rating?.toFixed(1) || '5.0'}</Text>
+                    <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{profileData?.total_rides_completed || 0}</Text>
+                    <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Completed</Text>
+                </View>
+                <View style={[styles.vertDivider, { backgroundColor: theme.colors.border }]} />
+                <View style={styles.statItem}>
+                    <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{profileData?.average_rating?.toFixed(1) || '0.0'}</Text>
                     <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Rating</Text>
                 </View>
             </View>
+            {profileData?.account_created_at ? (
+              <Text style={[styles.joinedText, { color: theme.colors.textSecondary }]}>
+                Joined {new Date(profileData.account_created_at).toLocaleDateString()}
+              </Text>
+            ) : null}
+          </View>
+
+          <View style={[styles.detailsCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+            <Text style={[styles.detailsHeader, { color: theme.colors.textSecondary }]}>PROFILE DETAILS</Text>
+            <DetailRow label="First name" value={profileData?.first_name || '-'} theme={theme} />
+            <DetailRow label="Last name" value={profileData?.last_name || '-'} theme={theme} />
+            <DetailRow label="Email" value={profileData?.email || '-'} theme={theme} />
+            <DetailRow label="Phone" value={profileData?.phone_number || '-'} theme={theme} />
+            <DetailRow label="Rating" value={(profileData?.average_rating || 0).toFixed(1)} theme={theme} />
+            <DetailRow label="Accepted rides" value={String(profileData?.accepted_rides || 0)} theme={theme} />
+            <DetailRow label="Completed rides" value={String(profileData?.total_rides_completed || 0)} theme={theme} />
+            {profileData?.account_created_at ? (
+              <DetailRow
+                label="Joined"
+                value={new Date(profileData.account_created_at).toLocaleDateString()}
+                theme={theme}
+              />
+            ) : null}
           </View>
 
           {/* Menu */}
@@ -367,6 +431,15 @@ const MenuItemWithSub = ({ icon, label, subLabel, onPress, theme }: any) => (
   </TouchableOpacity>
 );
 
+const DetailRow = ({ label, value, theme }: any) => (
+  <View style={[styles.detailRow, { borderBottomColor: theme.colors.border }]}>
+    <Text style={[styles.detailLabel, { color: theme.colors.textSecondary }]}>{label}</Text>
+    <Text style={[styles.detailValue, { color: theme.colors.textPrimary }]} numberOfLines={1}>
+      {value}
+    </Text>
+  </View>
+);
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { padding: 20 },
@@ -385,6 +458,12 @@ const styles = StyleSheet.create({
   statValue: { fontSize: 20, fontWeight: '800' },
   statLabel: { fontSize: 12 },
   vertDivider: { width: 1, height: 30 },
+  joinedText: { fontSize: 12, marginTop: 10 },
+  detailsCard: { marginHorizontal: 20, marginBottom: 24, padding: 16, borderWidth: 1, borderRadius: 16 },
+  detailsHeader: { fontSize: 11, fontWeight: '700', letterSpacing: 0.6, marginBottom: 6 },
+  detailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1 },
+  detailLabel: { fontSize: 13, fontWeight: '600' },
+  detailValue: { fontSize: 13, fontWeight: '700', maxWidth: '58%', textAlign: 'right' },
   menuContainer: { paddingHorizontal: 20 },
   sectionLabel: { fontSize: 12, fontWeight: '700', marginBottom: 8, marginLeft: 4 },
   menuItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderRadius: 12, marginBottom: 8, borderWidth: 1 },

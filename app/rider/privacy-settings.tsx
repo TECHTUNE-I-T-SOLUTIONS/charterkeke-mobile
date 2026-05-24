@@ -1,166 +1,124 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  Switch,
-  StyleSheet,
-} from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet, ActivityIndicator, Share } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useTheme } from '@/context/ThemeContext';
 import { COLORS } from '@/utils/colors';
+import { apiService } from '@/services/api';
+import { useAuth } from '@/context/AuthContext';
+import { sendLocalNotification } from '@/services/notificationService';
 
 export default function PrivacySettingsScreen() {
   const router = useRouter();
   const { theme, mode } = useTheme();
+  const { logout } = useAuth();
   const isDark = mode === 'dark';
   const colors = isDark ? COLORS.dark : COLORS.light;
+  const [busy, setBusy] = useState(false);
 
-  const [privacySettings, setPrivacySettings] = useState({
-    shareProfile: true,
-    shareRideHistory: false,
-    shareLocation: true,
-    allowNotifications: true,
-    allowMarketing: false,
-    allowThirdParty: false,
-  });
+  const items = [
+    { title: 'Data use', desc: 'We only use your profile and ride data to run the app safely.' },
+    { title: 'Location', desc: 'Used for booking, live tracking, and pickup matching.' },
+    { title: 'Messages', desc: 'Stored for ride communication and support history.' },
+  ];
 
-  const handleToggle = (key: keyof typeof privacySettings) => {
-    setPrivacySettings(prev => ({
-      ...prev,
-      [key]: !prev[key]
-    }));
+  const downloadMyData = async () => {
+    try {
+      setBusy(true);
+      const [profile, rides, wallet] = await Promise.all([
+        apiService.get('/user/profile'),
+        apiService.get('/user/ride-history?limit=100').catch(() => ({ rides: [] })),
+        apiService.get('/user/wallet').catch(() => ({})),
+      ]);
+
+      const payload = {
+        exportedAt: new Date().toISOString(),
+        profile: (profile as any)?.user || profile,
+        rides: (rides as any)?.rides || [],
+        wallet,
+      };
+
+      const fileUri = `${FileSystem.documentDirectory}charter-keke-my-data-${Date.now()}.json`;
+      await FileSystem.writeAsStringAsync(fileUri, JSON.stringify(payload, null, 2));
+
+      await Share.share({
+        message: 'Charter Keke data export',
+        url: fileUri,
+        title: 'Save or share your Charter Keke data',
+      });
+
+      await sendLocalNotification('Data saved', 'Your Charter Keke data export is ready.');
+      Alert.alert('Saved', 'Your data export has been created. You can now save it to Files or share it.');
+    } catch {
+      Alert.alert('Download failed', 'We could not prepare your data export right now.');
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const privacyOptions = [
-    {
-      id: 'shareProfile',
-      label: 'Share Profile',
-      description: 'Allow others to see your profile information',
-      icon: 'account'
-    },
-    {
-      id: 'shareRideHistory',
-      label: 'Share Ride History',
-      description: 'Allow access to your ride history',
-      icon: 'history'
-    },
-    {
-      id: 'shareLocation',
-      label: 'Share Location',
-      description: 'Allow Charter Keke to track your location during rides',
-      icon: 'map-marker'
-    },
-    {
-      id: 'allowNotifications',
-      label: 'Allow Notifications',
-      description: 'Receive ride updates and promotional notifications',
-      icon: 'bell'
-    },
-    {
-      id: 'allowMarketing',
-      label: 'Marketing Communications',
-      description: 'Receive marketing emails and promotions',
-      icon: 'email'
-    },
-    {
-      id: 'allowThirdParty',
-      label: 'Third Party Sharing',
-      description: 'Share data with trusted third-party partners',
-      icon: 'share-variant'
-    },
-  ];
+  const deleteAccount = () => {
+    Alert.alert(
+      'Deactivate account',
+      'This will mark your account as inactive and sign you out. You can contact support to restore access.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Deactivate',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setBusy(true);
+              await apiService.patch('/user/profile/status', { status: 'inactive' });
+              await logout();
+              router.replace('/auth/welcome');
+            } catch {
+              Alert.alert('Failed', 'We could not deactivate your account.');
+            } finally {
+              setBusy(false);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
-      <View
-        style={[
-          styles.header,
-          { borderBottomColor: colors.border },
-        ]}
-      >
-        <TouchableOpacity onPress={() => router.back()}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color={colors.primary} />
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.headerIcon}>
+          <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Privacy Settings</Text>
-        <View style={{ width: 24 }} />
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Privacy & Security</Text>
+        <View style={styles.headerIcon} />
       </View>
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 20 }}
-      >
-        {/* Info Section */}
-        <View style={[styles.infoSection, { backgroundColor: colors.card }]}>
-          <MaterialCommunityIcons name="shield-lock" size={32} color={colors.primary} />
-          <Text style={[styles.infoText, { color: colors.text }]}>
-            Control how your data is used and shared
-          </Text>
+      <ScrollView contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
+        <View style={[styles.hero, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <MaterialCommunityIcons name="shield-lock" size={34} color={colors.primary} />
+          <Text style={[styles.heroTitle, { color: colors.text }]}>Your data, your control</Text>
+          <Text style={[styles.heroText, { color: colors.textSecondary }]}>Download your data anytime or deactivate your account with confirmation.</Text>
         </View>
 
-        {/* Settings List */}
-        <View style={styles.settingsSection}>
-          {privacyOptions.map((option) => (
-            <View
-              key={option.id}
-              style={[
-                styles.settingItem,
-                { borderColor: colors.border, backgroundColor: colors.card || colors.background }
-              ]}
-            >
-              <View style={styles.settingLeft}>
-                <MaterialCommunityIcons 
-                  name={option.icon as any} 
-                  size={20} 
-                  color={colors.primary} 
-                />
-                <View style={styles.settingTextContainer}>
-                  <Text style={[styles.settingLabel, { color: colors.text }]}>
-                    {option.label}
-                  </Text>
-                  <Text style={[styles.settingDescription, { color: colors.textSecondary }]}>
-                    {option.description}
-                  </Text>
-                </View>
-              </View>
-              <Switch
-                value={privacySettings[option.id as keyof typeof privacySettings]}
-                onValueChange={() => handleToggle(option.id as keyof typeof privacySettings)}
-                trackColor={{ false: colors.border, true: colors.primary + '50' }}
-                thumbColor={privacySettings[option.id as keyof typeof privacySettings] ? colors.primary : colors.border}
-              />
+        <View style={styles.section}>
+          {items.map((item) => (
+            <View key={item.title} style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.infoTitle, { color: colors.text }]}>{item.title}</Text>
+              <Text style={[styles.infoText, { color: colors.textSecondary }]}>{item.desc}</Text>
             </View>
           ))}
         </View>
 
-        {/* Data Download */}
-        <View style={styles.dataSection}>
-          <TouchableOpacity
-            style={[
-              styles.dataButton,
-              { backgroundColor: colors.card || colors.background, borderColor: colors.primary }
-            ]}
-          >
-            <MaterialCommunityIcons name="download" size={20} color={colors.primary} />
-            <Text style={[styles.dataButtonText, { color: colors.primary }]}>
-              Download My Data
-            </Text>
+        <View style={styles.actions}>
+          <TouchableOpacity style={[styles.actionBtn, { borderColor: colors.primary, backgroundColor: colors.card }]} onPress={downloadMyData} disabled={busy}>
+            {busy ? <ActivityIndicator color={colors.primary} /> : <MaterialCommunityIcons name="download" size={20} color={colors.primary} />}
+            <Text style={[styles.actionText, { color: colors.primary }]}>Download My Data</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[
-              styles.dataButton,
-              { backgroundColor: colors.card || colors.background, borderColor: colors.destructive }
-            ]}
-          >
-            <MaterialCommunityIcons name="delete" size={20} color={colors.destructive} />
-            <Text style={[styles.dataButtonText, { color: colors.destructive }]}>
-              Delete My Account
-            </Text>
+          <TouchableOpacity style={[styles.actionBtn, { borderColor: colors.error || '#ef4444', backgroundColor: colors.card }]} onPress={deleteAccount} disabled={busy}>
+            <MaterialCommunityIcons name="delete" size={20} color={colors.error || '#ef4444'} />
+            <Text style={[styles.actionText, { color: colors.error || '#ef4444' }]}>Deactivate Account</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -169,84 +127,18 @@ export default function PrivacySettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  infoSection: {
-    marginHorizontal: 16,
-    marginTop: 20,
-    paddingVertical: 20,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  infoText: {
-    marginTop: 12,
-    fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  settingsSection: {
-    paddingHorizontal: 16,
-    marginTop: 20,
-  },
-  settingItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    marginBottom: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  settingLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    gap: 12,
-  },
-  settingTextContainer: {
-    flex: 1,
-  },
-  settingLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  settingDescription: {
-    fontSize: 11,
-    lineHeight: 14,
-  },
-  dataSection: {
-    paddingHorizontal: 16,
-    marginTop: 24,
-    gap: 12,
-  },
-  dataButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    justifyContent: 'center',
-    gap: 8,
-  },
-  dataButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
+  container: { flex: 1 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1 },
+  headerIcon: { width: 24, height: 24 },
+  headerTitle: { fontSize: 18, fontWeight: '800' },
+  hero: { margin: 16, borderRadius: 18, padding: 18, borderWidth: 1, alignItems: 'center' },
+  heroTitle: { marginTop: 10, fontSize: 18, fontWeight: '800', textAlign: 'center' },
+  heroText: { marginTop: 6, fontSize: 13, textAlign: 'center', lineHeight: 18 },
+  section: { paddingHorizontal: 16, marginTop: 8, gap: 10 },
+  infoCard: { borderRadius: 16, padding: 16, borderWidth: 1 },
+  infoTitle: { fontSize: 15, fontWeight: '800', marginBottom: 4 },
+  infoText: { fontSize: 12, lineHeight: 18 },
+  actions: { paddingHorizontal: 16, marginTop: 20 },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1.5, borderRadius: 14, paddingVertical: 13, marginTop: 12 },
+  actionText: { fontSize: 14, fontWeight: '800' },
 });

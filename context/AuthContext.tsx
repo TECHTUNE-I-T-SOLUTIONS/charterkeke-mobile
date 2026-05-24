@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authService } from '@services/auth';
 import { syncService } from '@services/sync';
 import { cacheService } from '@services/cache';
-import { subscribeToPushNotifications, clearPushSubscription } from '@services/notificationService';
+import { subscribeToPushNotifications, clearPushSubscription, flushPendingPushSubscription } from '@services/notificationService';
 import { initializeWebSocket, disconnectWebSocket } from '@services/websocketService';
 import { Rider, Driver, UserRole } from '@/types';
 
@@ -46,6 +46,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             const current = authService.getCurrentUser();
             if (current && current.id) {
               await subscribeToPushNotifications(current.id as string);
+              await flushPendingPushSubscription(current.id as string);
               console.log('🔔 [AUTH-CONTEXT] Push subscription ensured on app init');
             }
           } catch (err) {
@@ -82,6 +83,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // Subscribe to push notifications on login
       try {
         await subscribeToPushNotifications(loggedInUser.id || '');
+        await flushPendingPushSubscription(loggedInUser.id || '');
         console.log('🔔 [AUTH-CONTEXT] Push notification subscription successful');
       } catch (pushError) {
         console.error('❌ [AUTH-CONTEXT] Failed to subscribe to push notifications:', pushError);
@@ -122,6 +124,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // Subscribe to push notifications on signup
       try {
         await subscribeToPushNotifications(signedUpUser.id || '');
+        await flushPendingPushSubscription(signedUpUser.id || '');
         console.log('🔔 [AUTH-CONTEXT] Push notification subscription successful');
       } catch (pushError) {
         console.error('❌ [AUTH-CONTEXT] Failed to subscribe to push notifications:', pushError);

@@ -16,8 +16,8 @@ class LocationService {
         return false;
       }
 
-      const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
-      return backgroundStatus === 'granted';
+      // Background access is only needed for ride tracking, not basic app location reads.
+      return true;
     } catch (error) {
       console.error('Error requesting permissions:', error);
       return false;
@@ -31,9 +31,27 @@ class LocationService {
         throw new Error('Location permission not granted');
       }
 
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
+      let location: any = null;
+      try {
+        location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+          mayShowUserSettingsDialog: true,
+        });
+      } catch (primaryError) {
+        console.warn('Primary location fetch failed, falling back to last known position:', primaryError);
+        location = await Location.getLastKnownPositionAsync({
+          maxAge: 60_000,
+          requiredAccuracy: 500,
+        });
+      }
+
+      if (!location) {
+        const servicesEnabled = await Location.hasServicesEnabledAsync();
+        if (!servicesEnabled) {
+          throw new Error('Location services are disabled on this device.');
+        }
+        return null;
+      }
 
       const locationData = {
         latitude: location.coords.latitude,
@@ -165,9 +183,9 @@ class LocationService {
     try {
       const subscription = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.High,
-          timeInterval: 1000,
-          distanceInterval: 0,
+          accuracy: Location.Accuracy.Balanced,
+          timeInterval: 2000,
+          distanceInterval: 5,
         },
         (location) => {
           const locationData = {

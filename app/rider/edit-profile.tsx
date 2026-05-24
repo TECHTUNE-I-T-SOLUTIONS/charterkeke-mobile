@@ -27,6 +27,15 @@ interface ProfileData {
   last_name: string;
   email: string;
   phone_number: string;
+  dob?: string;
+  gender?: string;
+  role?: string;
+  status?: string;
+  profile_complete?: boolean;
+  created_at?: string;
+  updated_at?: string;
+  emergency_contact?: string;
+  emergency_phone?: string;
   profile_picture_url?: string;
 }
 
@@ -47,6 +56,12 @@ export default function EditProfileScreen() {
     email: '',
     phone: '',
     profileImage: '',
+    dob: '',
+    gender: '',
+    role: '',
+    status: '',
+    emergencyContact: '',
+    emergencyPhone: '',
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -76,6 +91,12 @@ export default function EditProfileScreen() {
         email: user.email || '',
         phone: user.phone_number || '',
         profileImage: user.profile_picture_url || `https://avatar.vercel.sh/${user.first_name}?size=100`,
+        dob: user.dob || '',
+        gender: user.gender || '',
+        role: user.role || '',
+        status: user.status || '',
+        emergencyContact: user.emergency_contact || '',
+        emergencyPhone: user.emergency_phone || '',
       });
     } catch (error) {
       console.error('❌ [EDIT-PROFILE] Error fetching profile:', error);
@@ -266,6 +287,20 @@ export default function EditProfileScreen() {
             </TouchableOpacity>
           </View>
 
+          <View style={[styles.detailsCard, { backgroundColor: colors.card || colors.background, borderColor: colors.border }]}>
+            <Text style={[styles.detailsTitle, { color: colors.textSecondary }]}>PROFILE DETAILS</Text>
+            <DetailRow label="First Name" value={formData.firstName || 'N/A'} colors={colors} />
+            <DetailRow label="Last Name" value={formData.lastName || 'N/A'} colors={colors} />
+            <DetailRow label="Email" value={formData.email || 'N/A'} colors={colors} />
+            <DetailRow label="Phone" value={formData.phone || 'N/A'} colors={colors} />
+            <DetailRow label="DOB" value={formData.dob || 'N/A'} colors={colors} />
+            <DetailRow label="Gender" value={formData.gender || 'N/A'} colors={colors} />
+            <DetailRow label="Role" value={formData.role || 'user'} colors={colors} />
+            <DetailRow label="Status" value={formData.status || 'pending'} colors={colors} />
+            <DetailRow label="Emergency Contact" value={formData.emergencyContact || 'N/A'} colors={colors} />
+            <DetailRow label="Emergency Phone" value={formData.emergencyPhone || 'N/A'} colors={colors} />
+          </View>
+
           {/* Form Fields */}
           <View style={[styles.card, { backgroundColor: colors.card || colors.background, borderColor: colors.border }]}>
             {/* First Name */}
@@ -452,6 +487,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 12,
   },
+  detailsCard: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 16,
+  },
+  detailsTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
   formGroup: {
     marginBottom: 16,
   },
@@ -489,3 +537,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+
+const DetailRow = ({ label, value, colors }: any) => (
+  <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+    <Text style={{ color: colors.textSecondary, fontSize: 13, fontWeight: '600' }}>{label}</Text>
+    <Text style={{ color: colors.text, fontSize: 13, fontWeight: '700', flexShrink: 1, textAlign: 'right' }}>{value}</Text>
+  </View>
+);

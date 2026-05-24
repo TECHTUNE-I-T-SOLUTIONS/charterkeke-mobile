@@ -40,6 +40,7 @@ export function PickupTimeModal({
   const quickTimes = useMemo(() => {
     const now = new Date();
     const times: Array<{
+      group: string;
       label: string;
       sublabel: string;
       icon: string;
@@ -60,6 +61,7 @@ export function PickupTimeModal({
       const slotDate = new Date(now);
       slotDate.setMinutes(slotDate.getMinutes() + slot.offset);
       times.push({
+        group: 'Today',
         label: slot.label,
         sublabel: slot.sublabel,
         icon: slot.icon,
@@ -83,6 +85,7 @@ export function PickupTimeModal({
         const slotDate = new Date(baseDate);
         slotDate.setHours(slot.hour, 0, 0, 0);
         times.push({
+          group: dayOffset === 1 ? 'Tomorrow' : `Day ${dayOffset + 1}`,
           label: slot.label,
           sublabel: slot.sublabel,
           icon: slot.icon,
@@ -93,6 +96,16 @@ export function PickupTimeModal({
 
     return times.slice(0, 24);
   }, []);
+
+  const groupedQuickTimes = useMemo(() => {
+    const groups = new Map<string, typeof quickTimes>();
+    quickTimes.forEach((slot) => {
+      const list = groups.get(slot.group) || [];
+      list.push(slot);
+      groups.set(slot.group, list);
+    });
+    return Array.from(groups.entries()).map(([group, slots]) => ({ group, slots }));
+  }, [quickTimes]);
 
   const handleDateChange = (event: any, date?: Date) => {
     if (Platform.OS === 'android') {
@@ -204,58 +217,59 @@ export function PickupTimeModal({
               <MaterialCommunityIcons name="lightning-bolt" size={18} color={BRAND.primary} />
               <Text style={[styles.sectionTitle, { color: theme.colors.textSecondary, marginLeft: 6 }]}>Quick Select</Text>
             </View>
-            
-            <View style={styles.gridContainer}>
-              {quickTimes.map((time, idx) => {
-                const selected = isSelected(time.date);
-                return (
-                  <TouchableOpacity
-                    key={idx}
-                    style={[
-                      styles.gridTimeButton,
-                      {
-                        backgroundColor: selected
-                          ? BRAND.primary
-                          : theme.colors.inputBackground,
-                        borderColor: selected ? BRAND.primary : theme.colors.border,
-                        borderWidth: 2,
-                      },
-                    ]}
-                    onPress={() => setSelectedDate(time.date)}
-                    activeOpacity={0.7}
-                  >
-                    <MaterialCommunityIcons
-                      name={time.icon as any}
-                      size={24}
-                      color={selected ? '#fff' : BRAND.primary}
-                      style={styles.gridIcon}
-                    />
-                    <Text
-                      style={[
-                        styles.gridTimeLabel,
-                        {
-                          color: selected ? '#fff' : theme.colors.textPrimary,
-                        },
-                      ]}
-                    >
-                      {time.label}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.gridTimeSublabel,
-                        {
-                          color: selected
-                            ? 'rgba(255,255,255,0.85)'
-                            : theme.colors.textSecondary,
-                        },
-                      ]}
-                    >
-                      {time.sublabel}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+
+            {groupedQuickTimes.map(({ group, slots }) => (
+              <View key={group} style={styles.groupSection}>
+                <Text style={[styles.groupLabel, { color: theme.colors.textPrimary }]}>{group}</Text>
+                <View style={styles.gridContainer}>
+                  {slots.map((time, idx) => {
+                    const selected = isSelected(time.date);
+                    return (
+                      <TouchableOpacity
+                        key={`${group}-${idx}`}
+                        style={[
+                          styles.gridTimeButton,
+                          {
+                            backgroundColor: selected ? BRAND.primary : theme.colors.inputBackground,
+                            borderColor: selected ? BRAND.primary : theme.colors.border,
+                            borderWidth: 2,
+                          },
+                        ]}
+                        onPress={() => setSelectedDate(time.date)}
+                        activeOpacity={0.7}
+                      >
+                        <MaterialCommunityIcons
+                          name={time.icon as any}
+                          size={24}
+                          color={selected ? '#fff' : BRAND.primary}
+                          style={styles.gridIcon}
+                        />
+                        <Text
+                          style={[
+                            styles.gridTimeLabel,
+                            {
+                              color: selected ? '#fff' : theme.colors.textPrimary,
+                            },
+                          ]}
+                        >
+                          {time.label}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.gridTimeSublabel,
+                            {
+                              color: selected ? 'rgba(255,255,255,0.85)' : theme.colors.textSecondary,
+                            },
+                          ]}
+                        >
+                          {time.sublabel}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            ))}
           </View>
 
           {/* Custom Pickers */}
@@ -495,6 +509,15 @@ const styles = StyleSheet.create({
   },
   section: {
     marginBottom: 28,
+  },
+  groupSection: {
+    marginBottom: 16,
+  },
+  groupLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    marginBottom: 10,
+    letterSpacing: 0.3,
   },
   sectionHeader: {
     flexDirection: 'row',

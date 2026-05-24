@@ -38,7 +38,6 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
   useEffect(() => {
     const initializeLocation = async () => {
       try {
-        // Request location permissions first
         const hasPermission = await locationService.requestPermissions();
         
         if (!hasPermission) {
@@ -52,6 +51,12 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
         if (location) {
           setCurrentLocation(location);
           setLastLocation(location);
+        } else {
+          const cached = await locationService.getCurrentLocationData?.();
+          if (cached) {
+            setCurrentLocation(cached);
+            setLastLocation(cached);
+          }
         }
 
         // Check network state
@@ -123,6 +128,7 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
       const location = await locationService.getCurrentLocation();
       if (location) {
         setCurrentLocation(location);
+        setLastLocation(location);
       }
       return location;
     } catch (err) {

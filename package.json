@@ -1,6 +1,6 @@
 {
   "name": "charter-keke-mobile",
-  "version": "2.1.6",
+  "version": "2.1.7",
   "description": "Professional mobile app for Charter Keke ride-sharing platform",
   "packageManager": "pnpm@9.4.0",
   "main": "expo-router/entry",

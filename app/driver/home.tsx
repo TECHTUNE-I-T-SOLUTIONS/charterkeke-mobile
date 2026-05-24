@@ -438,6 +438,7 @@ export default function DriverHomeScreen() {
                showUserLocation
                showCompass
                showScaleBar
+               autoCenter={false}
                fitCoordinates={mapFocusCoordinates}
                 onTouchStart={() => setScrollEnabled(false)}
                 onTouchEnd={() => setScrollEnabled(true)}

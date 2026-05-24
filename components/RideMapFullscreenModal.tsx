@@ -16,6 +16,8 @@ interface RideMapFullscreenModalProps {
   dropoff?: Coordinate | null;
   riderLocation?: Coordinate | null;
   driverLocation?: Coordinate | null;
+  riderHeading?: number;
+  driverHeading?: number;
   speedText?: string;
   onClose: () => void;
 }
@@ -29,6 +31,8 @@ export const RideMapFullscreenModal: React.FC<RideMapFullscreenModalProps> = ({
   dropoff,
   riderLocation,
   driverLocation,
+  riderHeading,
+  driverHeading,
   speedText,
   onClose,
 }) => {
@@ -54,6 +58,7 @@ export const RideMapFullscreenModal: React.FC<RideMapFullscreenModalProps> = ({
             fitCoordinates={focusCoordinates || routeCoordinates}
             routeCoordinates={routeCoordinates}
             zoom={13}
+            autoCenter={false}
           >
             {pickup && <MapboxMarker id="pickup" coordinate={pickup} title="Pickup" color="#FF9203" />}
             {dropoff && <MapboxMarker id="dropoff" coordinate={dropoff} title="Dropoff" color="#000000" />}

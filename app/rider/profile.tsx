@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -21,7 +21,7 @@ import { useTheme } from '@/context/ThemeContext';
 import ConfirmationDialog from '@/components/ui/ConfirmationDialog';
 import { ProfileSkeleton } from '@/components/ProfileSkeleton';
 import { apiService } from '@/services/api';
-import * as Clipboard from 'expo-clipboard';
+import * as FileSystem from 'expo-file-system/legacy';
 import { cacheService } from '@/services/cache';
 import { STORAGE_KEYS } from '@/utils/constants';
 import { BRAND, COLORS } from '@/utils/colors';
@@ -29,10 +29,20 @@ import { useUpdateChecker } from '@/hooks/useUpdateChecker';
 import { UpdateCheckerModal } from '@/components/UpdateCheckerModal';
 
 interface ProfileData {
+  id?: string;
   first_name: string;
   last_name: string;
   email: string;
   phone_number: string;
+  dob?: string;
+  gender?: string;
+  role?: string;
+  status?: string;
+  profile_complete?: boolean;
+  created_at?: string;
+  updated_at?: string;
+  emergency_contact?: string;
+  emergency_phone?: string;
   profile_picture_url?: string;
 }
 
@@ -49,6 +59,12 @@ export default function ProfileScreen() {
   const renderedOnce = useRef(false);
   const [hasCached, setHasCached] = useState(false);
   const [referralCode, setReferralCode] = useState<string>('');
+  const [rideStats, setRideStats] = useState({
+    acceptedRides: 0,
+    completedRides: 0,
+    reviewsGiven: 0,
+    averageRatingGiven: 0,
+  });
   
   // Update checker
   const { isChecking, updateInfo, checkForUpdates, dismissUpdate } = useUpdateChecker();
@@ -101,9 +117,51 @@ export default function ProfileScreen() {
       const nextProfile = (res as any)?.user || res;
       setProfileData(nextProfile);
       await cacheService.set(STORAGE_KEYS.RIDER_PROFILE, nextProfile);
+      await loadRideStats((nextProfile as any)?.id || (res as any)?.user?.id || '');
     } catch (error) { console.error(error); } 
     finally { if (showLoader) setLoading(false); }
   };
+
+  const loadRideStats = async (userId: string) => {
+    try {
+      if (!userId) return;
+      const [rideHistoryRes, reviewsRes] = await Promise.all([
+        apiService.get('/user/ride-history?limit=200').catch(() => ({ rides: [] })),
+        apiService.get(`/ride-reviews?reviewer_id=${userId}`).catch(() => ({ reviews: [] })),
+      ]);
+
+      const rides = (rideHistoryRes as any)?.rides || [];
+      const acceptedRides = rides.filter((ride: any) => ['accepted', 'started', 'in_progress', 'completed'].includes(String(ride.status || '').toLowerCase())).length;
+      const completedRides = rides.filter((ride: any) => String(ride.status || '').toLowerCase() === 'completed').length;
+      const reviews = (reviewsRes as any)?.reviews || (Array.isArray(reviewsRes) ? reviewsRes : []);
+      const reviewRatings = reviews
+        .map((review: any) => Number(review.rating))
+        .filter((rating: number) => Number.isFinite(rating) && rating > 0);
+
+      setRideStats({
+        acceptedRides,
+        completedRides,
+        reviewsGiven: reviews.length,
+        averageRatingGiven: reviewRatings.length ? reviewRatings.reduce((sum: number, rating: number) => sum + rating, 0) / reviewRatings.length : 0,
+      });
+    } catch (error) {
+      console.error('[Profile] Failed to load ride stats:', error);
+    }
+  };
+
+  const accountAge = useMemo(() => {
+    if (!profileData?.created_at) return 'N/A';
+    const created = new Date(profileData.created_at);
+    if (Number.isNaN(created.getTime())) return 'N/A';
+    const now = new Date();
+    const diffMs = now.getTime() - created.getTime();
+    const days = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+    const months = Math.floor(days / 30);
+    const years = Math.floor(days / 365);
+    if (years > 0) return `${years}y`;
+    if (months > 0) return `${months}m`;
+    return `${days}d`;
+  }, [profileData?.created_at]);
 
   const handleLogout = async () => {
     try {
@@ -209,18 +267,23 @@ export default function ProfileScreen() {
           {/* Stats */}
           <View style={[styles.statsContainer, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
              <View style={styles.stat}>
-               <Text style={[styles.statNum, { color: theme.colors.textPrimary }]}>0</Text>
-               <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Rides</Text>
+               <Text style={[styles.statNum, { color: theme.colors.textPrimary }]}>{rideStats.acceptedRides}</Text>
+               <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Accepted</Text>
              </View>
              <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
              <View style={styles.stat}>
-               <Text style={[styles.statNum, { color: theme.colors.textPrimary }]}>5.0</Text>
-               <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Rating</Text>
+               <Text style={[styles.statNum, { color: theme.colors.textPrimary }]}>{rideStats.completedRides}</Text>
+               <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Completed</Text>
              </View>
              <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
              <View style={styles.stat}>
-               <Text style={[styles.statNum, { color: theme.colors.textPrimary }]}>1</Text>
-               <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Years</Text>
+               <Text style={[styles.statNum, { color: theme.colors.textPrimary }]}>{rideStats.reviewsGiven ? rideStats.averageRatingGiven.toFixed(1) : 'N/A'}</Text>
+               <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Given</Text>
+             </View>
+             <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
+             <View style={styles.stat}>
+               <Text style={[styles.statNum, { color: theme.colors.textPrimary }]}>{accountAge}</Text>
+               <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Age</Text>
              </View>
           </View>
 
@@ -248,7 +311,7 @@ export default function ProfileScreen() {
                   thumbColor="#FFF"
                 />
              </View>
-             <MenuItem icon="shield-check-outline" label="Privacy & Security" onPress={() => router.push('/rider/privacy-settings')} theme={theme} />
+            <MenuItem icon="shield-check-outline" label="Privacy & Security" onPress={() => router.push('/rider/privacy-settings')} theme={theme} />
 
              <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary, marginTop: 24 }]}>SUPPORT</Text>
              <MenuItem icon="help-circle-outline" label="Help & Support" onPress={() => router.push('/rider/help-and-support')} theme={theme} />
@@ -341,6 +404,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 18, fontWeight: '700' },
   content: { paddingBottom: 40 },
   profileSection: { alignItems: 'center', marginTop: 10, marginBottom: 24 },
+  detailsCard: { marginHorizontal: 16, borderWidth: 1, borderRadius: 16, padding: 16, marginBottom: 20 },
   avatarContainer: { position: 'relative', marginBottom: 16 },
   avatar: { width: 100, height: 100, borderRadius: 50, borderWidth: 4, borderColor: BRAND.primary },
   editBadge: { position: 'absolute', bottom: 0, right: 0, backgroundColor: BRAND.primary, width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#FFF' },
@@ -360,3 +424,10 @@ const styles = StyleSheet.create({
   menuText: { fontSize: 14, fontWeight: '600' },
   logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, borderRadius: 12, borderWidth: 1, marginTop: 20, gap: 8 },
 });
+
+const DetailRow = ({ label, value }: { label: string; value: string }) => (
+  <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.05)' }}>
+    <Text style={{ fontSize: 13, fontWeight: '600', color: '#666' }}>{label}</Text>
+    <Text style={{ fontSize: 13, fontWeight: '700', color: '#111', flexShrink: 1, textAlign: 'right' }}>{value}</Text>
+  </View>
+);
