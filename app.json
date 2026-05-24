@@ -20,6 +20,12 @@
         {}
       ],
       [
+        "@rnmapbox/maps",
+        {
+          "RNMapboxMapsVersion": "11.24.2"
+        }
+      ],
+      [
         "expo-location",
         {
           "locationAlwaysAndWhenInUsePermissions": "Allow Charter Keke to access your location even when you aren't using the app"
@@ -54,7 +60,7 @@
     "ios": {
       "icon": "./assets/ios-app-icon-1024.png",
       "bundleIdentifier": "com.charterkeke.mobile",
-      "buildNumber": "13",
+      "buildNumber": "14",
       "config": {
         "usesNonExemptEncryption": false
       },
