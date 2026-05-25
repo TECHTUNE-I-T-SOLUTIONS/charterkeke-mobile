@@ -60,7 +60,7 @@
     "ios": {
       "icon": "./assets/ios-app-icon-1024.png",
       "bundleIdentifier": "com.charterkeke.mobile",
-      "buildNumber": "18",
+      "buildNumber": "19",
       "config": {
         "usesNonExemptEncryption": false
       },
