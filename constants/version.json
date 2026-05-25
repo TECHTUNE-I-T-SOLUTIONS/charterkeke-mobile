@@ -1,6 +1,6 @@
 {
-  "version": "2.1.7",
-  "buildNumber": 217,
-  "releaseDate": "2026-05-24",
-  "changelog": "Refined ride rating review handling, improved rating screen routing, and synced release versioning."
+  "version": "2.1.8",
+  "buildNumber": 218,
+  "releaseDate": "2026-05-25",
+  "changelog": "Migrated rider booking search to Google Places with Supabase caching, improved session-expiry handling, and updated API access security."
 }

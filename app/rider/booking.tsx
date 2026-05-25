@@ -35,7 +35,13 @@ import {
   getOperationalAreaByLocation,
 } from '@/utils/geofencing';
 import { fetchMapboxRoute } from '@/utils/mapboxDirections';
-import { searchBestLocations } from '@/utils/mapboxGeocoding';
+import {
+  getGooglePlaceDetails,
+  LocationSearchResult,
+  markSearchLocationUsed,
+  saveSearchLocationsToCache,
+  searchLagosPlaces,
+} from '@/utils/googlePlacesSearch';
 
 // Fare calculation constants
 const BASE_FARE_PER_KM = 600;
@@ -153,8 +159,11 @@ interface Location {
 
 interface SearchResult {
   address: string;
-  lat: number;
-  lng: number;
+  lat: number | null;
+  lng: number | null;
+  placeId?: string;
+  name?: string;
+  source?: 'cache' | 'google' | 'local' | 'recent';
   isRecent?: boolean;
 }
 
@@ -212,7 +221,7 @@ function searchLocations(query: string, locations: typeof MOCK_LOCATIONS, recent
 function dedupeSearchResults(results: SearchResult[]): SearchResult[] {
   const seen = new Set<string>();
   return results.filter((item) => {
-    const key = `${item.address.toLowerCase()}-${item.lat.toFixed(5)}-${item.lng.toFixed(5)}`;
+    const key = item.placeId || `${item.address.toLowerCase()}-${item.lat?.toFixed(5) || 'pending'}-${item.lng?.toFixed(5) || 'pending'}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -306,6 +315,12 @@ export default function BookingScreen() {
   const [showDropoffResults, setShowDropoffResults] = useState(false);
   const pickupBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dropoffBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pickupSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dropoffSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pickupSearchRequest = useRef(0);
+  const dropoffSearchRequest = useRef(0);
+  const pickupGoogleSessionToken = useRef(`pickup-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const dropoffGoogleSessionToken = useRef(`dropoff-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const [locationWarningVisible, setLocationWarningVisible] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [recentLocations, setRecentLocations] = useState<RecentLocation[]>([]);
@@ -333,6 +348,19 @@ export default function BookingScreen() {
   const isLight = theme.mode === 'light';
 
   useEffect(() => { loadRecentData(); loadUserName(); }, []);
+
+  useEffect(() => {
+    return () => {
+      [
+        pickupBlurTimer.current,
+        dropoffBlurTimer.current,
+        pickupSearchTimer.current,
+        dropoffSearchTimer.current,
+      ].forEach((timer) => {
+        if (timer) clearTimeout(timer);
+      });
+    };
+  }, []);
 
   const loadUserName = async () => {
     try {
@@ -509,21 +537,33 @@ export default function BookingScreen() {
       else { setDropoffSearchResults([]); setShowDropoffResults(false); }
       return;
     }
-    const localResults = searchLocations(query, MOCK_LOCATIONS, recentLocations);
-    let apiResults: SearchResult[] = [];
+    const localResults = searchLocations(query, MOCK_LOCATIONS, recentLocations).map((item) => ({
+      ...item,
+      source: 'local' as const,
+    }));
+    const currentRequest =
+      type === 'pickup' ? ++pickupSearchRequest.current : ++dropoffSearchRequest.current;
+    const sessionToken =
+      type === 'pickup' ? pickupGoogleSessionToken.current : dropoffGoogleSessionToken.current;
 
-    try {
-      const results = await searchBestLocations(query);
-      apiResults = results.map((item) => ({
-        address: item.placeName,
-        lat: item.coordinate[1],
-        lng: item.coordinate[0],
-      }));
-    } catch (error) {
-      console.log('Mapbox/Google search failed for booking search:', error);
+    let placeResults: SearchResult[] = [];
+
+    if (query.trim().length >= 2) {
+      try {
+        placeResults = await searchLagosPlaces(query, sessionToken);
+      } catch (error) {
+        console.log('Google Places search failed for booking search:', error);
+      }
     }
 
-    const results = dedupeSearchResults([...apiResults, ...localResults]);
+    if (
+      (type === 'pickup' && currentRequest !== pickupSearchRequest.current) ||
+      (type === 'dropoff' && currentRequest !== dropoffSearchRequest.current)
+    ) {
+      return;
+    }
+
+    const results = dedupeSearchResults([...placeResults, ...localResults]);
     if (type === 'pickup') {
       setDropoffSearchResults([]);
       setShowDropoffResults(false);
@@ -538,6 +578,30 @@ export default function BookingScreen() {
       setActiveLocationPicker('dropoff');
     }
     await saveRecentSearch(query);
+  };
+
+  const scheduleSearch = (query: string, type: 'pickup' | 'dropoff') => {
+    const timerRef = type === 'pickup' ? pickupSearchTimer : dropoffSearchTimer;
+    if (timerRef.current) clearTimeout(timerRef.current);
+
+    const localResults = searchLocations(query, MOCK_LOCATIONS, recentLocations).map((item) => ({
+      ...item,
+      source: 'local' as const,
+    }));
+
+    if (type === 'pickup') {
+      setPickupSearchResults(localResults);
+      setShowPickupResults(query.length > 0);
+      setActiveLocationPicker('pickup');
+    } else {
+      setDropoffSearchResults(localResults);
+      setShowDropoffResults(query.length > 0);
+      setActiveLocationPicker('dropoff');
+    }
+
+    timerRef.current = setTimeout(() => {
+      handleSearch(query, type);
+    }, 350);
   };
 
   const clearPickupSearch = () => {
@@ -556,16 +620,38 @@ export default function BookingScreen() {
 
   const scheduleClosePickupResults = () => {
     if (pickupBlurTimer.current) clearTimeout(pickupBlurTimer.current);
-    pickupBlurTimer.current = setTimeout(() => setShowPickupResults(false), 180);
+    pickupBlurTimer.current = setTimeout(() => setShowPickupResults(Boolean(pickupSearchResults.length)), 180);
   };
 
   const scheduleCloseDropoffResults = () => {
     if (dropoffBlurTimer.current) clearTimeout(dropoffBlurTimer.current);
-    dropoffBlurTimer.current = setTimeout(() => setShowDropoffResults(false), 180);
+    dropoffBlurTimer.current = setTimeout(() => setShowDropoffResults(Boolean(dropoffSearchResults.length)), 180);
   };
 
   const selectSearchResult = async (result: SearchResult, type: 'pickup' | 'dropoff') => {
-    const location: Location = { lat: result.lat, lng: result.lng, address: sanitizeAddress(result.address) };
+    let resolvedResult: LocationSearchResult | SearchResult | null = result;
+    const sessionToken =
+      type === 'pickup' ? pickupGoogleSessionToken.current : dropoffGoogleSessionToken.current;
+
+    if ((!Number.isFinite(result.lat) || !Number.isFinite(result.lng)) && result.placeId) {
+      try {
+        resolvedResult = await getGooglePlaceDetails(result.placeId, sessionToken);
+      } catch (error) {
+        console.log('Google Place Details lookup failed:', error);
+      }
+    }
+
+    if (!resolvedResult || !Number.isFinite(resolvedResult.lat) || !Number.isFinite(resolvedResult.lng)) {
+      setErrorMessage('We could not get map coordinates for that location. Please choose another nearby result.');
+      setErrorDialogVisible(true);
+      return;
+    }
+
+    const location: Location = {
+      lat: Number(resolvedResult.lat),
+      lng: Number(resolvedResult.lng),
+      address: sanitizeAddress(resolvedResult.address),
+    };
     
     if (type === 'pickup') {
       setPickupLocation(location);
@@ -586,6 +672,15 @@ export default function BookingScreen() {
     }
     setCameraCenter([location.lng, location.lat]);
     setCameraZoom(14);
+    if (resolvedResult.placeId) {
+      saveSearchLocationsToCache([resolvedResult]).catch(() => {});
+      markSearchLocationUsed(resolvedResult).catch(() => {});
+    }
+    if (type === 'pickup') {
+      pickupGoogleSessionToken.current = `pickup-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    } else {
+      dropoffGoogleSessionToken.current = `dropoff-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
     await saveRecentLocation(location);
     setRecentLocations(await getRecentLocations());
   };
@@ -853,7 +948,7 @@ export default function BookingScreen() {
                     placeholder="Where are you?"
                     placeholderTextColor={theme.colors.textTertiary}
                     value={pickupSearch}
-                    onChangeText={(t) => { setPickupSearch(t); handleSearch(t, 'pickup'); }}
+                    onChangeText={(t) => { setPickupSearch(t); scheduleSearch(t, 'pickup'); }}
                     onFocus={() => {
                       openPickupSearch();
                       if (!pickupLocation) promptForCurrentLocation('pickup');
@@ -898,7 +993,7 @@ export default function BookingScreen() {
                     placeholder="Where to?"
                     placeholderTextColor={theme.colors.textTertiary}
                     value={dropoffSearch}
-                    onChangeText={(t) => { setDropoffSearch(t); handleSearch(t, 'dropoff'); }}
+                    onChangeText={(t) => { setDropoffSearch(t); scheduleSearch(t, 'dropoff'); }}
                     onFocus={() => {
                       openDropoffSearch();
                       if (!dropoffLocation) promptForCurrentLocation('dropoff');
@@ -1145,13 +1240,15 @@ const styles = StyleSheet.create({
   inputIcon: { marginTop: 4 },
   label: { fontSize: 12, fontWeight: '600', marginBottom: 4 },
   input: {
+    flex: 1,
     fontSize: 16,
     fontWeight: '500',
     padding: 0,
+    paddingRight: 30,
     height: 24,
   },
-  searchInputWrap: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  clearButton: { paddingLeft: 8, paddingVertical: 4 },
+  searchInputWrap: { flexDirection: 'row', alignItems: 'center', flex: 1, position: 'relative' },
+  clearButton: { position: 'absolute', right: 0, top: -2, padding: 4 },
   selectedRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingTop: 2 },
   selectedText: { fontSize: 15, fontWeight: '600', flex: 1, marginRight: 8, lineHeight: 20 },
   mapIconBtn: { padding: 8 },

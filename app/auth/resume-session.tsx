@@ -352,6 +352,13 @@ export default function ResumeSessionScreen() {
 
       if (response.ok && data.success) {
         // Resume session successfully
+        const nextRole = userRole || (authService.getUserRole() as any);
+        if (!nextRole) {
+          setOtpError('We could not verify your account role. Please log in again.');
+          await handleLogout();
+          return;
+        }
+
         await AsyncStorage.setItem('sessionResumed', 'true');
         
         if (sessionExpired || authService.isTokenExpired()) {
@@ -360,9 +367,9 @@ export default function ResumeSessionScreen() {
           return;
         }
 
-        if (userRole === 'driver') {
+        if (nextRole === 'driver') {
           navigation.replace('/driver/home');
-        } else if (userRole === 'rider') {
+        } else if (nextRole === 'rider' || nextRole === 'user') {
           navigation.replace('/rider/home');
         } else {
           await handleLogout();
@@ -437,6 +444,13 @@ export default function ResumeSessionScreen() {
       }
 
       if (response.ok && data.verified) {
+        const nextRole = userRole || (authService.getUserRole() as any);
+        if (!nextRole) {
+          setPasswordError('We could not verify your account role. Please log in again.');
+          await handleLogout();
+          return;
+        }
+
         await AsyncStorage.setItem('sessionResumed', 'true');
         
         if (sessionExpired || authService.isTokenExpired()) {
@@ -445,9 +459,9 @@ export default function ResumeSessionScreen() {
           return;
         }
 
-        if (userRole === 'driver') {
+        if (nextRole === 'driver') {
           navigation.replace('/driver/home');
-        } else if (userRole === 'rider') {
+        } else if (nextRole === 'rider' || nextRole === 'user') {
           navigation.replace('/rider/home');
         } else {
           await handleLogout();
@@ -471,6 +485,17 @@ export default function ResumeSessionScreen() {
       return;
     }
 
+    if (sessionExpired || authService.isTokenExpired()) {
+      setBiometricError('Your session has expired. Please log in again.');
+      Alert.alert(
+        'Session Expired',
+        'For your security, your login session has expired. Please sign in again to continue.',
+        [{ text: 'Log In', onPress: handleLogout }],
+        { cancelable: false }
+      );
+      return;
+    }
+
     setIsVerifying(true);
     try {
       const result = await LocalAuthentication.authenticateAsync({
@@ -479,19 +504,25 @@ export default function ResumeSessionScreen() {
       });
 
       if (result.success) {
+        const nextRole = userRole || (authService.getUserRole() as any);
+        if (!nextRole) {
+          setBiometricError('We could not verify your account role. Please log in again.');
+          await handleLogout();
+          return;
+        }
         console.log('✅ [BIOMETRIC] Verification successful, navigating to dashboard');
         await AsyncStorage.setItem('sessionResumed', 'true');
         
         // Route based on user role
-        if (userRole === 'driver') {
+        if (nextRole === 'driver') {
           console.log('🚗 [ROUTING] Verified via biometric, routing to /driver/home');
           navigation.replace('/driver/home');
-        } else if (userRole === 'rider') {
+        } else if (nextRole === 'rider' || nextRole === 'user') {
           console.log('👤 [ROUTING] Verified via biometric, routing to /rider/home');
           navigation.replace('/rider/home');
         } else {
-          console.log('⚠️  [ROUTING] Unknown role, defaulting to /rider/home');
-          navigation.replace('/rider/home');
+          console.log('Unknown role after biometric verification, logging out');
+          await handleLogout();
         }
       } else if (result.error !== 'user_cancel') {
         console.log('❌ [BIOMETRIC] Verification failed:', result.error);
@@ -533,6 +564,7 @@ export default function ResumeSessionScreen() {
     try {
       await AsyncStorage.removeItem('sessionResumed');
       await AsyncStorage.removeItem('userSession');
+      await authService.logout().catch(() => {});
       setSessionExpired(true);
       navigation.replace('/auth/login-new');
     } catch (error) {

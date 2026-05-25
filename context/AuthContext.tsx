@@ -40,10 +40,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         await authService.initialize();
 
         if (authService.isAuthenticated()) {
-          setUser(authService.getCurrentUser());
+          const current = authService.getCurrentUser();
+          setUser(current);
+          setUserRole(((current as any)?.role || null) as UserRole | null);
           // Ensure push subscription is active on app start
           try {
-            const current = authService.getCurrentUser();
             if (current && current.id) {
               await subscribeToPushNotifications(current.id as string);
               await flushPendingPushSubscription(current.id as string);

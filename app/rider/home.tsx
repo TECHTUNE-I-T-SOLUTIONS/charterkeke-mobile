@@ -29,10 +29,12 @@ import { HomeSkeleton } from '@/components/HomeSkeleton';
 import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
 import CtaCarousel, { CtaCard } from '@/components/CtaCarousel';
 import SupportFloatingWidget from '@/components/SupportFloatingWidget';
+import { ErrorDialog } from '@/components/ErrorDialog';
 import { useAutoUpdateCheck } from '@/hooks/useAutoUpdateCheck';
 import { BRAND, COLORS } from '@/utils/colors';
 import { cacheService } from '@/services/cache';
 import { STORAGE_KEYS } from '@/utils/constants';
+import { authService } from '@/services/auth';
 
 const { width } = Dimensions.get('window');
 
@@ -57,13 +59,14 @@ export default function RiderHomeScreen() {
   const [profileData, setProfileData] = useState<ProfileData | null>(null);  
   const [rideStats, setRideStats] = useState({ totalRides: 0, averageRating: 0, walletBalance: 0 });
   const [recentRides, setRecentRides] = useState<any[]>([]);
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, logout } = useAuth();
   const { currentLocation } = useLocation();
   const [loading, setLoading] = useState(true);  
   const { theme, mode, toggleTheme } = useTheme();
   const [refreshing, setRefreshing] = useState(false);
   const [scrollEnabled, setScrollEnabled] = useState(true);
   const [hasCached, setHasCached] = useState(false);
+  const [sessionExpiredVisible, setSessionExpiredVisible] = useState(false);
   const { unreadCount, resetUnreadCount, incrementUnreadCount } = useNotificationBadge();
 
   // Refs to prevent state updates on unmounted component
@@ -106,7 +109,16 @@ export default function RiderHomeScreen() {
         return router.replace('/auth/welcome');
       }
       if (!user?.id) {
+        setSessionExpiredVisible(true);
         console.warn('⚠️  [RIDER-HOME] User ID not available, skipping home load');
+        if (isMountedRef.current) {
+          setLoading(false);
+        }
+        return;
+      }
+      if (authService.isTokenExpired()) {
+        console.warn('Session expired on rider home, requiring login');
+        setSessionExpiredVisible(true);
         if (isMountedRef.current) {
           setLoading(false);
         }
@@ -119,6 +131,11 @@ export default function RiderHomeScreen() {
     }, [isAuthenticated, user?.id])
   );
 
+  const handleExpiredSessionLogin = async () => {
+    setSessionExpiredVisible(false);
+    await logout().catch(() => {});
+    router.replace('/auth/login-new');
+  };
 
   const loadHomeData = async () => {
     if (!isMountedRef.current || isLoadingRef.current) return;
@@ -560,6 +577,14 @@ export default function RiderHomeScreen() {
       )}
 
       <SupportFloatingWidget route="/rider/help-and-support" />
+      <ErrorDialog
+        visible={sessionExpiredVisible}
+        title="Session expired"
+        message="For your security, your login session has expired or could not be verified. Please log in again to continue."
+        actionText="Log In Again"
+        onAction={handleExpiredSessionLogin}
+        onClose={handleExpiredSessionLogin}
+      />
     </View>
   );
 }
