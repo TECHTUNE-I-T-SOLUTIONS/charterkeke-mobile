@@ -24,6 +24,95 @@ const devLog = (message: string, data?: any) => {
   }
 };
 
+const parseMaybeJson = (value: any) => {
+  if (!value || typeof value !== 'string') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+};
+
+export const normalizeNotificationPayload = (notificationOrData: any = {}) => {
+  const metadata = parseMaybeJson(notificationOrData.metadata) || {};
+  const data = parseMaybeJson(notificationOrData.data) || {};
+  return {
+    ...metadata,
+    ...data,
+    ...notificationOrData,
+    metadata,
+    data,
+  };
+};
+
+const cleanRoute = (route?: any) => {
+  if (typeof route !== 'string' || !route.trim()) return null;
+  const trimmed = route.trim();
+  if (/^https?:\/\//i.test(trimmed)) {
+    const match = trimmed.match(/^https?:\/\/[^/]+(\/[^#]*)?/i);
+    return match?.[1] || null;
+  }
+  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+};
+
+export const resolveNotificationRoute = (data: any, userRole?: 'driver' | 'rider' | string) => {
+  const payload = normalizeNotificationPayload(data);
+  const explicitRoute = cleanRoute(
+    payload?.deeplink ||
+      payload?.deep_link ||
+      payload?.action_url ||
+      payload?.actionUrl ||
+      payload?.link ||
+      payload?.url
+  );
+
+  if (explicitRoute) {
+    return explicitRoute;
+  }
+
+  const rideId = payload?.rideId || payload?.ride_id || payload?.ride?.id;
+  const ticketId = payload?.ticketId || payload?.ticket_id || payload?.support_ticket_id;
+  const chatId = payload?.chatId || payload?.chat_id;
+  const role = userRole || payload?.userRole || payload?.user_role || payload?.role;
+  const type = String(payload?.type || payload?.notification_type || '').toLowerCase();
+
+  switch (type) {
+    case 'ride':
+      return role === 'driver'
+        ? rideId ? `/driver/ride-details?rideId=${rideId}` : '/driver/rides'
+        : rideId ? `/rider/ride-details?rideId=${rideId}` : '/rider/rides-history';
+    case 'ride_request':
+      return rideId ? `/driver/available-rides?focusRide=${rideId}` : '/driver/rides';
+    case 'ride_accepted':
+    case 'ride_update':
+    case 'driver_arrived':
+    case 'trip_started':
+      return role === 'driver'
+        ? rideId ? `/driver/ride-details?rideId=${rideId}` : '/driver/rides'
+        : rideId ? `/rider/active-ride?rideId=${rideId}` : '/rider/rides-history';
+    case 'ride_completed':
+    case 'ride_cancelled':
+      return role === 'driver'
+        ? rideId ? `/driver/ride-details?rideId=${rideId}` : '/driver/rides'
+        : rideId ? `/rider/ride-details?rideId=${rideId}` : '/rider/rides-history';
+    case 'support_message':
+    case 'support_ticket':
+      return ticketId ? `/${role === 'driver' ? 'driver' : 'rider'}/help-and-support?ticketId=${ticketId}` : `/${role === 'driver' ? 'driver' : 'rider'}/help-and-support`;
+    case 'message':
+    case 'chat_message':
+      return `/${role === 'driver' ? 'driver' : 'rider'}/chat${rideId ? `?rideId=${rideId}` : chatId ? `?chatId=${chatId}` : ''}`;
+    case 'remittance_due':
+    case 'remittance_reminder':
+    case 'payment_received':
+    case 'payment':
+      return '/driver/wallet';
+    case 'welcome':
+      return role === 'driver' ? '/driver/home' : '/rider/booking';
+    default:
+      return null;
+  }
+};
+
 /**
  * Configure notification behavior and handlers
  */
@@ -418,6 +507,12 @@ const handleNotificationResponse = async (response: Notifications.NotificationRe
   }
 
   console.log('🎯 [NOTIFICATIONS] Handling action for type:', data.type);
+
+  const explicitRoute = resolveNotificationRoute(data);
+  if (explicitRoute) {
+    navigate(explicitRoute);
+    return;
+  }
 
   switch (data.type) {
     case 'welcome':

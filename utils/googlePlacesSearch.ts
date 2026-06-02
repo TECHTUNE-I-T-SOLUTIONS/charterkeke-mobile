@@ -137,6 +137,39 @@ export async function getGooglePlaceDetails(
   };
 }
 
+export async function reverseGeocodeWithGooglePlaces(
+  latitude: number,
+  longitude: number
+): Promise<LocationSearchResult | null> {
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+
+  const response = await fetch(`${API_CONFIG.url}/places/reverse-geocode`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ latitude, longitude }),
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(payload?.details || payload?.error || `Google reverse geocoding failed with status ${response.status}`);
+  }
+
+  const payload = await response.json();
+  const lat = Number(payload?.lat ?? latitude);
+  const lng = Number(payload?.lng ?? longitude);
+
+  return {
+    address: payload?.address || 'Current location',
+    lat: Number.isFinite(lat) ? lat : latitude,
+    lng: Number.isFinite(lng) ? lng : longitude,
+    placeId: payload?.placeId,
+    name: payload?.name || payload?.address,
+    source: 'google',
+  };
+}
+
 export async function saveSearchLocationsToCache(results: LocationSearchResult[]): Promise<void> {
   const rows = results
     .filter((item) => item.placeId && Number.isFinite(item.lat) && Number.isFinite(item.lng))

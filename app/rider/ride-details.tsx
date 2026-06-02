@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -24,6 +24,10 @@ import { BRAND } from '@/utils/colors';
 import { verticalScale, scale } from 'react-native-size-matters';
 import { fetchMapboxRoute } from '@/utils/mapboxDirections';
 import { geocodeMapboxLocation } from '@/utils/mapboxGeocoding';
+import { exportRideReceipt, saveCapturedRideReceiptImage, shareReceiptFile, shareRideReceipt, RideReceiptFormat } from '@/utils/rideReceipt';
+import { RideReceiptExportModal } from '@/components/RideReceiptExportModal';
+import { RideReceiptTemplate } from '@/components/RideReceiptTemplate';
+import { captureRef } from 'react-native-view-shot';
 
 interface RideData {
   id: string;
@@ -83,6 +87,21 @@ function formatCurrency(value?: number | null) {
   return amount.toLocaleString();
 }
 
+function mapDriverDetails(driver?: RideData['drivers'] | null): DriverDetails | null {
+  if (!driver?.users) return null;
+
+  return {
+    first_name: driver.users.first_name,
+    last_name: driver.users.last_name,
+    phone_number: driver.users.phone_number,
+    avatar_url: driver.users.profile_picture_url,
+    vehicle_type: driver.vehicle_type,
+    plate_number: driver.plate_number,
+    vehicle_picture_url: driver.vehicle_picture_url,
+    average_rating: driver.average_rating,
+  };
+}
+
 export default function RideDetailsScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -92,6 +111,7 @@ export default function RideDetailsScreen() {
   const isLight = theme.mode === 'light';
   
   const rideDataParam = Array.isArray(params.rideData) ? params.rideData[0] : params.rideData || '';
+  const rideIdParam = Array.isArray(params.rideId) ? params.rideId[0] : params.rideId || '';
   const [rideDetails, setRideDetails] = useState<RideData | null>(null);
   const [driverDetails, setDriverDetails] = useState<DriverDetails | null>(null);
   const [pickupCoords, setPickupCoords] = useState<any>(null);
@@ -101,6 +121,8 @@ export default function RideDetailsScreen() {
   const [routeDistanceKm, setRouteDistanceKm] = useState(0);
   const [routeDurationMin, setRouteDurationMin] = useState(0);
   const [showFullMap, setShowFullMap] = useState(false);
+  const [receiptModalMode, setReceiptModalMode] = useState<'share' | 'download' | null>(null);
+  const receiptRef = useRef<View>(null);
   const parseMapCoordinate = (value: any): [number, number] | null => {
     if (Array.isArray(value) && value.length === 2 && Number.isFinite(Number(value[0])) && Number.isFinite(Number(value[1]))) {
       return [Number(value[0]), Number(value[1])];
@@ -119,22 +141,55 @@ export default function RideDetailsScreen() {
         setPickupCoords(parseCoordinates(parsed.pickup_description || ''));
         setDestCoords(parseCoordinates(parsed.destination_description || ''));
 
-        // Map driver details from the ride data structure
-        if (parsed.drivers?.users) {
-          setDriverDetails({
-            first_name: parsed.drivers.users.first_name,
-            last_name: parsed.drivers.users.last_name,
-            phone_number: parsed.drivers.users.phone_number,
-            avatar_url: parsed.drivers.users.profile_picture_url,
-            vehicle_type: parsed.drivers.vehicle_type,
-            plate_number: parsed.drivers.plate_number,
-            vehicle_picture_url: parsed.drivers.vehicle_picture_url,
-            average_rating: parsed.drivers.average_rating,
-          });
-        }
+        setDriverDetails(mapDriverDetails(parsed.drivers));
       } catch (e) { console.error(e); }
     }
   }, [rideDataParam]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadRideById = async () => {
+      if (rideDataParam || !rideIdParam) return;
+
+      try {
+        const response = await apiService.getRide(String(rideIdParam));
+        const ride = (response as any)?.ride || response;
+        if (cancelled || !ride) return;
+
+        setRideDetails(ride);
+        setPickupCoords(parseCoordinates(ride.pickup_description || ''));
+        setDestCoords(parseCoordinates(ride.destination_description || ''));
+
+        const joinedDriverDetails = mapDriverDetails(ride.drivers);
+        if (joinedDriverDetails) {
+          setDriverDetails(joinedDriverDetails);
+          return;
+        }
+
+        const driverId = ride.driver_id || ride.assigned_driver_id || ride.drivers?.id;
+        if (driverId) {
+          const driverResponse = await apiService.get(`/drivers/${driverId}`).catch(() => null);
+          if (!cancelled && driverResponse) {
+            setDriverDetails(mapDriverDetails(driverResponse as any));
+            setRideDetails((current) =>
+              current ? { ...current, drivers: driverResponse as any } : current
+            );
+          }
+        }
+      } catch (error) {
+        if (!cancelled) {
+          showError('Ride unavailable', 'We could not load this ride yet. Please try again.');
+        }
+      }
+    };
+
+    loadRideById();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rideDataParam, rideIdParam, showError]);
 
   useEffect(() => {
     let cancelled = false;
@@ -278,6 +333,47 @@ export default function RideDetailsScreen() {
     } as any);
   };
 
+  const openReceiptModal = (action: 'share' | 'download') => {
+    if (!rideDetails) return;
+    setReceiptModalMode(action);
+  };
+
+  const handleReceiptFormat = async (format: RideReceiptFormat) => {
+    if (!rideDetails || !receiptModalMode) return;
+    const action = receiptModalMode;
+    setReceiptModalMode(null);
+
+    try {
+      if (format === 'pdf') {
+        const uri = action === 'share'
+          ? await shareRideReceipt(rideDetails, 'rider', 'pdf')
+          : await exportRideReceipt(rideDetails, 'rider', 'pdf');
+        if (action === 'download') {
+          showSuccess('Receipt saved', 'Your PDF ride receipt has been saved on this device.');
+        }
+        console.log('[RideReceipt] Generated:', uri);
+        return;
+      }
+
+      if (!receiptRef.current) throw new Error('Receipt template is not ready yet.');
+      const capturedUri = await captureRef(receiptRef, {
+        format: 'png',
+        quality: 1,
+        result: 'tmpfile',
+      });
+      const finalUri = await saveCapturedRideReceiptImage(capturedUri, rideDetails);
+
+      if (action === 'share') {
+        await shareReceiptFile(finalUri, 'image');
+      } else {
+        showSuccess('Receipt image saved', 'Your PNG ride receipt has been saved on this device.');
+      }
+      console.log('[RideReceipt] Generated PNG:', finalUri);
+    } catch (error: any) {
+      showError('Receipt unavailable', error?.message || 'Could not generate this ride receipt.');
+    }
+  };
+
   if (!rideDetails) return <View style={[styles.container, { backgroundColor: theme.colors.background }]}><ActivityIndicator size="large" color={BRAND.primary} style={{marginTop: 50}} /></View>;
 
   return (
@@ -333,6 +429,16 @@ export default function RideDetailsScreen() {
         contentContainerStyle={{ paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
       >
+        <View style={styles.receiptActions}>
+          <TouchableOpacity onPress={() => openReceiptModal('share')} style={[styles.receiptBtn, { backgroundColor: BRAND.primary }]}>
+            <MaterialCommunityIcons name="share-variant" size={18} color="#000" />
+            <Text style={styles.receiptBtnText}>Share</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => openReceiptModal('download')} style={[styles.receiptBtn, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderWidth: 1 }]}>
+            <MaterialCommunityIcons name="download" size={18} color={theme.colors.textPrimary} />
+            <Text style={[styles.receiptBtnText, { color: theme.colors.textPrimary }]}>Download</Text>
+          </TouchableOpacity>
+        </View>
         
         {/* Driver Card */}
         {(driverDetails || rideDetails.drivers) ? (
@@ -500,6 +606,24 @@ export default function RideDetailsScreen() {
         speedText={routeLoading ? 'Loading route...' : `${displayDistanceKm || 0} km • ${displayDurationMin || 0} min`}
         onClose={() => setShowFullMap(false)}
       />
+      <RideReceiptExportModal
+        visible={!!receiptModalMode}
+        mode={receiptModalMode || 'share'}
+        onClose={() => setReceiptModalMode(null)}
+        onSelect={handleReceiptFormat}
+        colors={{
+          surface: theme.colors.surface,
+          background: theme.colors.background,
+          border: theme.colors.border,
+          textPrimary: theme.colors.textPrimary,
+          textSecondary: theme.colors.textSecondary,
+        }}
+      />
+      <View pointerEvents="none" style={styles.hiddenReceipt}>
+        <View ref={receiptRef} collapsable={false}>
+          <RideReceiptTemplate ride={rideDetails} audience="rider" />
+        </View>
+      </View>
     </View>
   );
 }
@@ -556,6 +680,10 @@ const styles = StyleSheet.create({
   rateBtn: { backgroundColor: BRAND.primary, padding: 16, borderRadius: 16, alignItems: 'center', marginTop: 12 },
   rateBtnDisabled: { opacity: 0.75 },
   rateBtnText: { color: '#000', fontWeight: '700', fontSize: 16 },
+  receiptActions: { flexDirection: 'row', gap: 12, marginBottom: 16 },
+  receiptBtn: { flex: 1, minHeight: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
+  receiptBtnText: { color: '#000', fontWeight: '800', fontSize: 14 },
+  hiddenReceipt: { position: 'absolute', left: -1200, top: 0, opacity: 1 },
 });
 
 const mapDarkStyle = [

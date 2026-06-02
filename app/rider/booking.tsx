@@ -11,12 +11,12 @@ import {
   StatusBar,
   Modal,
   Platform,
-  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 // import { LinearGradient } from 'expo-linear-gradient';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import Voice from '@react-native-voice/voice';
 import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocation } from '@/context/LocationContext';
@@ -29,6 +29,7 @@ import { SuccessDialog } from '@/components/SuccessDialog';
 import { OperationalAreasModal } from '@/components/OperationalAreasModal';
 import { OutOfServiceAreaModal } from '@/components/OutOfServiceAreaModal';
 import { PickupTimeModal } from '@/components/PickupTimeModal';
+import AlertDialog from '@/components/ui/AlertDialog';
 import {
   validateLocationInOperationalArea,
   getNearbyOperationalAreas,
@@ -39,6 +40,7 @@ import {
   getGooglePlaceDetails,
   LocationSearchResult,
   markSearchLocationUsed,
+  reverseGeocodeWithGooglePlaces,
   saveSearchLocationsToCache,
   searchLagosPlaces,
 } from '@/utils/googlePlacesSearch';
@@ -296,6 +298,32 @@ function findNearestLocation(lat: number, lng: number): Location | null {
   return nearest;
 }
 
+const resolveCurrentLocationAddress = async (
+  currentLocation: { latitude: number; longitude: number },
+  fallbackReverseGeocode: (location: any) => Promise<string | null>
+): Promise<LocationSearchResult> => {
+  try {
+    const googleResult = await reverseGeocodeWithGooglePlaces(
+      currentLocation.latitude,
+      currentLocation.longitude
+    );
+
+    if (googleResult?.address) {
+      return googleResult;
+    }
+  } catch (error) {
+    console.log('Google reverse geocoding failed for current location:', error);
+  }
+
+  const fallbackAddress = await fallbackReverseGeocode(currentLocation).catch(() => null);
+  return {
+    lat: currentLocation.latitude,
+    lng: currentLocation.longitude,
+    address: fallbackAddress || `Current location (${currentLocation.latitude.toFixed(5)}, ${currentLocation.longitude.toFixed(5)})`,
+    source: 'local',
+  };
+};
+
 export default function BookingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -344,6 +372,14 @@ export default function BookingScreen() {
   }>({});
   const [showPickupTimeModal, setShowPickupTimeModal] = useState(false);
   const [selectedPickupTime, setSelectedPickupTime] = useState<string | null>(null);
+  const [currentLocationPrompt, setCurrentLocationPrompt] = useState<'pickup' | 'dropoff' | null>(null);
+  const [currentLocationUnavailableVisible, setCurrentLocationUnavailableVisible] = useState(false);
+  const [currentLocationUsedAs, setCurrentLocationUsedAs] = useState<'pickup' | 'dropoff' | null>(null);
+  const [voiceLocationTarget, setVoiceLocationTarget] = useState<'pickup' | 'dropoff' | null>(null);
+  const [voiceLocationText, setVoiceLocationText] = useState('');
+  const [voiceLocationError, setVoiceLocationError] = useState('');
+  const [isVoiceListening, setIsVoiceListening] = useState(false);
+  const [isVoiceAvailable, setIsVoiceAvailable] = useState(true);
 
   const isLight = theme.mode === 'light';
 
@@ -361,6 +397,49 @@ export default function BookingScreen() {
       });
     };
   }, []);
+
+  useEffect(() => {
+    Voice.onSpeechStart = () => {
+      setVoiceLocationError('');
+      setIsVoiceListening(true);
+    };
+    Voice.onSpeechEnd = () => {
+      setIsVoiceListening(false);
+    };
+    Voice.onSpeechError = (event: any) => {
+      setIsVoiceListening(false);
+      setVoiceLocationError(
+        event?.error?.message || 'We could not hear that clearly. Please try again or type the address.'
+      );
+    };
+    Voice.onSpeechResults = (event: any) => {
+      const spokenAddress = event?.value?.[0]?.trim();
+      if (!spokenAddress) return;
+
+      setVoiceLocationText(spokenAddress);
+      if (voiceLocationTarget === 'pickup') {
+        setPickupLocation(null);
+        setPickupSearch(spokenAddress);
+        scheduleSearch(spokenAddress, 'pickup');
+        openPickupSearch();
+      } else if (voiceLocationTarget === 'dropoff') {
+        setDropoffLocation(null);
+        setDropoffSearch(spokenAddress);
+        scheduleSearch(spokenAddress, 'dropoff');
+        openDropoffSearch();
+      }
+    };
+
+    Voice.isAvailable()
+      .then((available: 0 | 1) => setIsVoiceAvailable(Boolean(available)))
+      .catch(() => setIsVoiceAvailable(false));
+
+    return () => {
+      Voice.destroy()
+        .then(Voice.removeAllListeners)
+        .catch(() => undefined);
+    };
+  }, [voiceLocationTarget]);
 
   const loadUserName = async () => {
     try {
@@ -398,40 +477,44 @@ export default function BookingScreen() {
 
   const promptForCurrentLocation = (type: 'pickup' | 'dropoff') => {
     if (!currentLocation) {
-      Alert.alert('Location unavailable', 'We could not read your current location yet.');
+      setCurrentLocationUnavailableVisible(true);
       return;
     }
 
-    Alert.alert(
-      'Use current location?',
-      `Use your current location for ${type === 'pickup' ? 'pickup' : 'dropoff'}?`,
-      [
-        { text: 'Not now', style: 'cancel' },
-        {
-          text: 'Use current location',
-          onPress: async () => {
-            const resolvedAddress = await reverseGeocodeLocation(currentLocation).catch(() => null);
-            const location: Location = {
-              lat: currentLocation.latitude,
-              lng: currentLocation.longitude,
-              address: resolvedAddress || 'Current location',
-            };
-            if (type === 'pickup') {
-              setPickupLocation(location);
-              setPickupSearch(location.address);
-              setShowPickupResults(false);
-            } else {
-              setDropoffLocation(location);
-              setDropoffSearch(location.address);
-              setShowDropoffResults(false);
-            }
-            setCameraCenter([location.lng, location.lat]);
-            setCameraZoom(14);
-            await saveRecentLocation(location);
-          },
-        },
-      ]
-    );
+    setCurrentLocationPrompt(type);
+  };
+
+  const useCurrentLocationForPrompt = async () => {
+    if (!currentLocation || !currentLocationPrompt) return;
+
+    const type = currentLocationPrompt;
+    setCurrentLocationPrompt(null);
+    const resolvedLocation = await resolveCurrentLocationAddress(currentLocation, reverseGeocodeLocation);
+    const location: Location = {
+      lat: Number(resolvedLocation.lat) || currentLocation.latitude,
+      lng: Number(resolvedLocation.lng) || currentLocation.longitude,
+      address: sanitizeAddress(resolvedLocation.address),
+    };
+
+    if (type === 'pickup') {
+      setPickupLocation(location);
+      setPickupSearch(location.address);
+      setShowPickupResults(false);
+      setActiveLocationPicker('dropoff');
+    } else {
+      setDropoffLocation(location);
+      setDropoffSearch(location.address);
+      setShowDropoffResults(false);
+    }
+    setCurrentLocationUsedAs(type);
+    setCameraCenter([location.lng, location.lat]);
+    setCameraZoom(14);
+    if (resolvedLocation.placeId) {
+      saveSearchLocationsToCache([resolvedLocation]).catch(() => {});
+      markSearchLocationUsed(resolvedLocation).catch(() => {});
+    }
+    await saveRecentLocation(location);
+    setRecentLocations(await getRecentLocations());
   };
 
   const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number) => {
@@ -604,6 +687,63 @@ export default function BookingScreen() {
     }, 350);
   };
 
+  const openVoiceLocation = (type: 'pickup' | 'dropoff') => {
+    setVoiceLocationError('');
+    setIsVoiceListening(false);
+    setVoiceLocationTarget(type);
+    setVoiceLocationText(type === 'pickup' ? pickupSearch : dropoffSearch);
+  };
+
+  const closeVoiceLocation = async () => {
+    try {
+      await Voice.stop();
+    } catch {}
+    setIsVoiceListening(false);
+    setVoiceLocationTarget(null);
+    setVoiceLocationError('');
+  };
+
+  const startVoiceLocationListening = async () => {
+    if (!voiceLocationTarget) return;
+    if (!isVoiceAvailable) {
+      setVoiceLocationError('Voice search is not available on this device. Please type the address.');
+      return;
+    }
+
+    try {
+      setVoiceLocationError('');
+      setIsVoiceListening(true);
+      await Voice.start('en-NG');
+    } catch (error: any) {
+      setIsVoiceListening(false);
+      setVoiceLocationError(error?.message || 'Voice search could not start. Please try again or type the address.');
+    }
+  };
+
+  const stopVoiceLocationListening = async () => {
+    try {
+      await Voice.stop();
+    } catch {}
+    setIsVoiceListening(false);
+  };
+
+  const applyVoiceLocationText = () => {
+    const query = voiceLocationText.trim();
+    if (!voiceLocationTarget || !query) return;
+    if (voiceLocationTarget === 'pickup') {
+      setPickupLocation(null);
+      setPickupSearch(query);
+      scheduleSearch(query, 'pickup');
+      openPickupSearch();
+    } else {
+      setDropoffLocation(null);
+      setDropoffSearch(query);
+      scheduleSearch(query, 'dropoff');
+      openDropoffSearch();
+    }
+    setVoiceLocationTarget(null);
+  };
+
   const clearPickupSearch = () => {
     setPickupSearch('');
     setPickupSearchResults([]);
@@ -655,6 +795,7 @@ export default function BookingScreen() {
     
     if (type === 'pickup') {
       setPickupLocation(location);
+      setCurrentLocationUsedAs((current) => (current === 'pickup' ? null : current));
       setPickupSearch('');
       setPickupSearchResults([]);
       setShowPickupResults(false);
@@ -663,6 +804,7 @@ export default function BookingScreen() {
       setShowDropoffResults(false);
     } else {
       setDropoffLocation(location);
+      setCurrentLocationUsedAs((current) => (current === 'dropoff' ? null : current));
       setDropoffSearch('');
       setDropoffSearchResults([]);
       setShowDropoffResults(false);
@@ -699,6 +841,7 @@ export default function BookingScreen() {
 
     if (activeLocationPicker === 'pickup') {
       setPickupLocation(location);
+      setCurrentLocationUsedAs((current) => (current === 'pickup' ? null : current));
       setPickupSearch('');
       setPickupSearchResults([]);
       setShowPickupResults(false);
@@ -706,6 +849,7 @@ export default function BookingScreen() {
       setShowDropoffResults(false);
     } else {
       setDropoffLocation(location);
+      setCurrentLocationUsedAs((current) => (current === 'dropoff' ? null : current));
       setDropoffSearch('');
       setDropoffSearchResults([]);
       setShowDropoffResults(false);
@@ -937,7 +1081,10 @@ export default function BookingScreen() {
               {pickupLocation ? (
                 <View style={styles.selectedRow}>
                    <Text numberOfLines={2} style={[styles.selectedText, { color: theme.colors.textPrimary }]}>{sanitizeAddress(pickupLocation.address)}</Text>
-                   <TouchableOpacity onPress={() => setPickupLocation(null)}>
+                   <TouchableOpacity onPress={() => {
+                     setPickupLocation(null);
+                     setCurrentLocationUsedAs((current) => (current === 'pickup' ? null : current));
+                   }}>
                      <MaterialCommunityIcons name="close-circle" size={18} color={theme.colors.textSecondary} />
                    </TouchableOpacity>
                 </View>
@@ -966,6 +1113,9 @@ export default function BookingScreen() {
             <TouchableOpacity onPress={() => setActiveLocationPicker('pickup')} style={styles.mapIconBtn}>
               <MaterialCommunityIcons name="crosshairs-gps" size={22} color={activeLocationPicker === 'pickup' ? BRAND.primary : theme.colors.textSecondary} />
             </TouchableOpacity>
+            <TouchableOpacity onPress={() => openVoiceLocation('pickup')} style={styles.mapIconBtn}>
+              <MaterialCommunityIcons name="microphone-outline" size={21} color={BRAND.primary} />
+            </TouchableOpacity>
           </View>
 
           {showPickupResults && activeLocationPicker === 'pickup' && !pickupLocation && (
@@ -982,7 +1132,10 @@ export default function BookingScreen() {
               {dropoffLocation ? (
                 <View style={styles.selectedRow}>
                    <Text numberOfLines={2} style={[styles.selectedText, { color: theme.colors.textPrimary }]}>{sanitizeAddress(dropoffLocation.address)}</Text>
-                   <TouchableOpacity onPress={() => setDropoffLocation(null)}>
+                   <TouchableOpacity onPress={() => {
+                     setDropoffLocation(null);
+                     setCurrentLocationUsedAs((current) => (current === 'dropoff' ? null : current));
+                   }}>
                      <MaterialCommunityIcons name="close-circle" size={18} color={theme.colors.textSecondary} />
                    </TouchableOpacity>
                 </View>
@@ -996,7 +1149,7 @@ export default function BookingScreen() {
                     onChangeText={(t) => { setDropoffSearch(t); scheduleSearch(t, 'dropoff'); }}
                     onFocus={() => {
                       openDropoffSearch();
-                      if (!dropoffLocation) promptForCurrentLocation('dropoff');
+                      if (!dropoffLocation && currentLocationUsedAs !== 'pickup') promptForCurrentLocation('dropoff');
                     }}
                     onBlur={scheduleCloseDropoffResults}
                   />
@@ -1010,6 +1163,9 @@ export default function BookingScreen() {
             </View>
             <TouchableOpacity onPress={() => setActiveLocationPicker('dropoff')} style={styles.mapIconBtn}>
               <MaterialCommunityIcons name="crosshairs-gps" size={22} color={activeLocationPicker === 'dropoff' ? BRAND.primary : theme.colors.textSecondary} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => openVoiceLocation('dropoff')} style={styles.mapIconBtn}>
+              <MaterialCommunityIcons name="microphone-outline" size={21} color={BRAND.primary} />
             </TouchableOpacity>
           </View>
 
@@ -1084,6 +1240,26 @@ export default function BookingScreen() {
         onClose={() => setErrorDialogVisible(false)}
       />
 
+      <AlertDialog
+        visible={currentLocationUnavailableVisible}
+        type="warning"
+        title="Location unavailable"
+        message="We could not read your current location yet. Please check location permission or search for the address manually."
+        onDismiss={() => setCurrentLocationUnavailableVisible(false)}
+      />
+
+      <AlertDialog
+        visible={Boolean(currentLocationPrompt)}
+        type="confirm"
+        title="Use current location?"
+        message={`Use your current location as ${currentLocationPrompt === 'pickup' ? 'pickup' : 'destination'}?`}
+        buttons={[
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Use location', style: 'default', onPress: useCurrentLocationForPrompt },
+        ]}
+        onDismiss={() => setCurrentLocationPrompt(null)}
+      />
+
       {/* Operational Areas Modal */}
       <OperationalAreasModal
         visible={showOperationalAreasModal}
@@ -1132,6 +1308,62 @@ export default function BookingScreen() {
         onConfirm={handlePickupTimeConfirmed}
         onCancel={() => setShowPickupTimeModal(false)}
       />
+
+      <Modal visible={!!voiceLocationTarget} transparent animationType="fade" onRequestClose={closeVoiceLocation}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.voiceModal, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+            <View style={[styles.voiceIcon, { backgroundColor: isVoiceListening ? `${BRAND.primary}28` : `${BRAND.primary}18` }]}>
+              <MaterialCommunityIcons name={isVoiceListening ? 'microphone' : 'microphone-outline'} size={28} color={BRAND.primary} />
+            </View>
+            <Text style={[styles.voiceTitle, { color: theme.colors.textPrimary }]}>
+              Voice location search
+            </Text>
+            <Text style={[styles.voiceCopy, { color: theme.colors.textSecondary }]}>
+              Tap the mic and say the {voiceLocationTarget === 'pickup' ? 'pickup' : 'destination'} address. We will search Google Places with the transcript.
+            </Text>
+            <TouchableOpacity
+              onPress={isVoiceListening ? stopVoiceLocationListening : startVoiceLocationListening}
+              style={[
+                styles.voiceRecordButton,
+                {
+                  backgroundColor: isVoiceListening ? '#FFE8E3' : BRAND.primary,
+                  borderColor: isVoiceListening ? '#FFB5A6' : BRAND.primary,
+                },
+              ]}
+            >
+              <MaterialCommunityIcons
+                name={isVoiceListening ? 'stop-circle-outline' : 'microphone-outline'}
+                size={19}
+                color={isVoiceListening ? '#B3261E' : '#000'}
+              />
+              <Text style={[styles.voiceRecordText, { color: isVoiceListening ? '#B3261E' : '#000' }]}>
+                {isVoiceListening ? 'Stop recording' : 'Start speaking'}
+              </Text>
+            </TouchableOpacity>
+            {!!voiceLocationError && (
+              <Text style={styles.voiceErrorText}>{voiceLocationError}</Text>
+            )}
+            <TextInput
+              style={[styles.voiceInput, { color: theme.colors.textPrimary, borderColor: theme.colors.border, backgroundColor: theme.colors.inputBackground }]}
+              placeholder="Example: University of Lagos, Akoka"
+              placeholderTextColor={theme.colors.textTertiary}
+              value={voiceLocationText}
+              onChangeText={setVoiceLocationText}
+              autoFocus
+              returnKeyType="search"
+              onSubmitEditing={applyVoiceLocationText}
+            />
+            <View style={styles.voiceActions}>
+              <TouchableOpacity onPress={closeVoiceLocation} style={[styles.voiceButton, { borderColor: theme.colors.border }]}>
+                <Text style={[styles.voiceButtonText, { color: theme.colors.textPrimary }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={applyVoiceLocationText} style={[styles.voiceButton, { backgroundColor: BRAND.primary, borderColor: BRAND.primary }]}>
+                <Text style={[styles.voiceButtonText, { color: '#000' }]}>Find Location</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1330,6 +1562,90 @@ const styles = StyleSheet.create({
     color: '#000',
     fontSize: 15,
     fontWeight: '700',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 22,
+  },
+  voiceModal: {
+    width: '100%',
+    borderRadius: 22,
+    borderWidth: 1,
+    padding: 20,
+    alignItems: 'center',
+  },
+  voiceIcon: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  voiceTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  voiceCopy: {
+    marginTop: 8,
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+  },
+  voiceInput: {
+    width: '100%',
+    marginTop: 16,
+    minHeight: 52,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  voiceRecordButton: {
+    minHeight: 48,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 18,
+    marginTop: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  voiceRecordText: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  voiceErrorText: {
+    marginTop: 10,
+    color: '#B3261E',
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: 'center',
+    fontWeight: '700',
+  },
+  voiceActions: {
+    width: '100%',
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 14,
+  },
+  voiceButton: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  voiceButtonText: {
+    fontSize: 14,
+    fontWeight: '900',
   },
   guideBox: { marginTop: 20, padding: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
   guideText: { fontSize: 12, flex: 1, lineHeight: 18 },

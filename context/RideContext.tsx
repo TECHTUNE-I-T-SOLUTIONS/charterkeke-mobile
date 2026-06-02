@@ -14,7 +14,7 @@ interface RideContextType {
   cancelRide: (rideId: string, reason?: string) => Promise<void>;
   completeRide: (rideId: string) => Promise<Ride>;
   getRideDetails: (rideId: string) => Promise<Ride>;
-  getAvailableRides: (latitude: number, longitude: number) => Promise<Ride[]>;
+  getAvailableRides: (latitude?: number, longitude?: number) => Promise<Ride[]>;
   getRideHistory: (limit?: number) => Promise<Ride[]>;
   submitRating: (payload: { rideId: string; rating: number; review?: string; tags?: string[] }) => Promise<{ success: boolean }>;
   setCurrentRide: (ride: Ride | null) => void;
@@ -127,13 +127,14 @@ export const RideProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const handleGetAvailableRides = async (
-    latitude: number,
-    longitude: number
+    latitude?: number,
+    longitude?: number
   ): Promise<Ride[]> => {
     try {
       setError(null);
       setIsLoading(true);
-      const rides = await apiService.getAvailableRides(latitude, longitude);
+      const response = await apiService.getAvailableRides(latitude, longitude);
+      const rides = Array.isArray(response) ? response : response?.rides || [];
       setAvailableRides(rides);
       return rides;
     } catch (err) {

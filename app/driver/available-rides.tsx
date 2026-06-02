@@ -18,6 +18,7 @@ import { ListScreenSkeleton } from '@/components/ListScreenSkeleton';
 import { COLORS } from '@/utils/colors';
 import { formatDistance } from '@/utils/formatting';
 import { useWindowDimensions } from 'react-native';
+const PLATFORM_FEE_PERCENTAGE = 0.15;
 
 export default function AvailableRidesScreen() {
   const { width } = useWindowDimensions();
@@ -110,9 +111,7 @@ export default function AvailableRidesScreen() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    if (currentLocation) {
-      await getAvailableRides(currentLocation.latitude, currentLocation.longitude);
-    }
+    await getAvailableRides(currentLocation?.latitude, currentLocation?.longitude);
     setRefreshing(false);
   };
 
@@ -127,7 +126,25 @@ export default function AvailableRidesScreen() {
   }, []);
 
 
-  const renderRideCard = ({ item }: { item: (typeof mockRides)[0] }) => {
+  const ridesToRender = (availableRides || []).map((ride: any) => ({
+    id: ride.id,
+    rider: {
+      name: [ride.users?.first_name, ride.users?.last_name].filter(Boolean).join(' ') || 'Rider',
+      rating: Number(ride.users?.rating || 5),
+      image: ride.users?.profile_picture_url,
+    },
+    pickup: { address: ride.pickup_zone || ride.pickup?.address || 'Pickup location' },
+    dropoff: { address: ride.destination_zone || ride.dropoff?.address || 'Destination' },
+    distance: Number(ride.distance_km || ride.distance || 0),
+    duration: Number(ride.duration_minutes || ride.duration || 0),
+    fare: Number(ride.fare_amount || ride.fare || 0),
+    driverEarnings: Number(ride.driver_earnings || 0),
+    platformFee: Number(ride.platform_fee || 0),
+    distanceFromYou: Number(ride.distance_from_driver_km || ride.distanceFromYou || ride.distance_km || 0),
+    status: ride.status || 'pending',
+  }));
+
+  const renderRideCard = ({ item }: { item: any }) => {
     const isFocused = selectedRideId === item.id;
     
     return (
@@ -236,7 +253,7 @@ export default function AvailableRidesScreen() {
             Your Earning
           </Text>
           <Text style={{ fontSize: 14, fontWeight: '600', color: colors.primary }}>
-            ₦{(item.fare * 0.8).toFixed(0)}
+            ₦{(item.driverEarnings || item.fare * (1 - PLATFORM_FEE_PERCENTAGE)).toFixed(0)}
           </Text>
         </View>
       </View>
@@ -258,9 +275,9 @@ export default function AvailableRidesScreen() {
         </Text>
       </View>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
-        <Text style={{ fontSize: 12, color: colors.textSecondary }}>Your commission (20%)</Text>
+        <Text style={{ fontSize: 12, color: colors.textSecondary }}>Platform fee (15%)</Text>
         <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
-          ₦{(item.fare * 0.2).toFixed(0)}
+          ₦{(item.platformFee || item.fare * PLATFORM_FEE_PERCENTAGE).toFixed(0)}
         </Text>
       </View>
 
@@ -276,7 +293,7 @@ export default function AvailableRidesScreen() {
     );
   };
 
-  if (isLoading && mockRides.length === 0) {
+  if (isLoading && ridesToRender.length === 0) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" color={colors.primary} />
@@ -302,14 +319,14 @@ export default function AvailableRidesScreen() {
           Available Rides
         </Text>
         <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 4 }}>
-          {mockRides.length} rides within 5km
+          {ridesToRender.length} rides nearby
         </Text>
       </View>
 
       {/* Rides List */}
-      {mockRides.length > 0 ? (
+      {ridesToRender.length > 0 ? (
         <FlatList
-          data={mockRides}
+          data={ridesToRender}
           renderItem={renderRideCard}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ padding: scale(16), paddingBottom: scale(100) }}

@@ -16,6 +16,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import { COLORS } from '@/utils/colors';
 import { apiService } from '@/services/api';
+import { normalizeNotificationPayload, resolveNotificationRoute } from '@/services/notificationService';
 import { ListScreenSkeleton } from '@/components/ListScreenSkeleton';
 import { useNotifications } from '@/hooks/useLocationCache';
 
@@ -28,6 +29,8 @@ interface Notification {
   read?: boolean | null;
   created_at: string;
   action_url?: string;
+  deep_link?: string;
+  metadata?: any;
 }
 
 export default function NotificationsScreen() {
@@ -71,6 +74,17 @@ export default function NotificationsScreen() {
       Alert.alert('Error', 'Failed to mark notification as read');
     } finally {
       setMarkingAsRead(null);
+    }
+  };
+
+  const handleNotificationPress = async (notification: Notification) => {
+    if (!(notification.is_read || notification.read)) {
+      await handleMarkAsRead(notification.id);
+    }
+    const payload = normalizeNotificationPayload(notification);
+    const route = resolveNotificationRoute(payload, 'rider');
+    if (route) {
+      router.push(route as any);
     }
   };
 
@@ -322,8 +336,10 @@ export default function NotificationsScreen() {
           ) : (
             <View style={{ gap: 12, marginBottom: 20 }}>
               {notifications.map((notification) => (
-                <View
+                <TouchableOpacity
                   key={notification.id}
+                  activeOpacity={0.75}
+                  onPress={() => handleNotificationPress(notification)}
                   style={{
                     paddingHorizontal: 16,
                     paddingVertical: 14,
@@ -431,7 +447,7 @@ export default function NotificationsScreen() {
                       </TouchableOpacity>
                     )}
                   </View>
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
           )}

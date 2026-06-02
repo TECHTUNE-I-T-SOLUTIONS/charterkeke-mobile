@@ -29,6 +29,20 @@ import { AdVideoManager } from '@/components/AdVideoManager';
 
 type VerificationMethod = 'otp' | 'biometric' | 'password';
 
+function localDayKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+async function markSessionResumedToday() {
+  await AsyncStorage.multiSet([
+    ['sessionResumed', 'true'],
+    ['sessionResumedDate', localDayKey()],
+  ]);
+}
+
 interface BiometricInfo {
   available: boolean;
   compatible: string[];
@@ -68,9 +82,11 @@ export default function ResumeSessionScreen() {
   // OTP states
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [otpRequested, setOtpRequested] = useState(false); // Track if user requested OTP
+  const [otpDeliveryMethod, setOtpDeliveryMethod] = useState<'email' | 'sms'>('email');
   const [timeLeft, setTimeLeft] = useState(600); // 10 minutes
   const [canResend, setCanResend] = useState(false);
   const [otpError, setOtpError] = useState('');
+  const [otpNeedsLogout, setOtpNeedsLogout] = useState(false);
   
   // OTP input refs for auto-focus
   const otpInputRefs = useRef<any[]>([]);
@@ -152,6 +168,7 @@ export default function ResumeSessionScreen() {
       setOtpRequested(false);
       setOtp(['', '', '', '', '', '']);
       setOtpError('');
+      setOtpNeedsLogout(false);
       setCanResend(false);
       setTimeLeft(600); // Reset to 10 minutes
     }
@@ -212,9 +229,17 @@ export default function ResumeSessionScreen() {
 
   const requestOTP = async () => {
     try {
-      const userEmail = email || (user && 'email' in user ? user.email : '');
+      setOtpNeedsLogout(false);
+      const currentUser = authService.getCurrentUser();
+      const userEmail =
+        email ||
+        (user && 'email' in user ? user.email : '') ||
+        profileData?.email ||
+        currentUser?.email ||
+        '';
       if (!userEmail) {
-        setOtpError('Unable to determine email address');
+        setOtpError('We could not find the email for this saved session. Please log in again to continue.');
+        setOtpNeedsLogout(true);
         return;
       }
 
@@ -226,7 +251,8 @@ export default function ResumeSessionScreen() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           email: userEmail,
-          type: 'resume_session' 
+          type: 'resume_session',
+          deliveryMethod: otpDeliveryMethod,
         }),
       });
 
@@ -359,7 +385,7 @@ export default function ResumeSessionScreen() {
           return;
         }
 
-        await AsyncStorage.setItem('sessionResumed', 'true');
+        await markSessionResumedToday();
         
         if (sessionExpired || authService.isTokenExpired()) {
           setOtpError('Your session has expired. Please log in again.');
@@ -451,7 +477,7 @@ export default function ResumeSessionScreen() {
           return;
         }
 
-        await AsyncStorage.setItem('sessionResumed', 'true');
+        await markSessionResumedToday();
         
         if (sessionExpired || authService.isTokenExpired()) {
           setPasswordError('Your session has expired. Please log in again.');
@@ -511,7 +537,7 @@ export default function ResumeSessionScreen() {
           return;
         }
         console.log('✅ [BIOMETRIC] Verification successful, navigating to dashboard');
-        await AsyncStorage.setItem('sessionResumed', 'true');
+        await markSessionResumedToday();
         
         // Route based on user role
         if (nextRole === 'driver') {
@@ -563,6 +589,7 @@ export default function ResumeSessionScreen() {
   const handleLogout = async () => {
     try {
       await AsyncStorage.removeItem('sessionResumed');
+      await AsyncStorage.removeItem('sessionResumedDate');
       await AsyncStorage.removeItem('userSession');
       await authService.logout().catch(() => {});
       setSessionExpired(true);
@@ -577,10 +604,12 @@ export default function ResumeSessionScreen() {
   const renderOtpVerification = () => (
     <View>
       <Text style={{ fontSize: 24, fontWeight: '600', color: colors.text, marginBottom: 16 }}>
-        Verify via SMS Code
+        Verify via {otpDeliveryMethod === 'email' ? 'Email' : 'SMS'} Code
       </Text>
       <Text style={{ fontSize: 14, color: colors.textSecondary, marginBottom: 24 }}>
-        {otpRequested ? 'Enter the 6-digit code sent to your phone' : 'Request a verification code via SMS'}
+        {otpRequested
+          ? `Enter the 6-digit code sent to your ${otpDeliveryMethod === 'email' ? 'email' : 'phone'}`
+          : `Request a verification code via ${otpDeliveryMethod === 'email' ? 'email' : 'SMS'}`}
       </Text>
 
       {!otpRequested ? (
@@ -595,6 +624,28 @@ export default function ResumeSessionScreen() {
             isDark={isDark}
             size="large"
           />
+          {otpDeliveryMethod === 'email' ? (
+            <Text style={{ marginTop: 10, fontSize: 12, color: colors.textSecondary, textAlign: 'center' }}>
+              We will send this code to the email address saved on your account.
+            </Text>
+          ) : null}
+          {otpNeedsLogout ? (
+            <TouchableOpacity
+              onPress={handleLogout}
+              style={{
+                marginTop: 14,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: '#FF6B6B',
+                paddingVertical: 13,
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ color: '#FF6B6B', fontWeight: '700', fontSize: 14 }}>
+                Log out and sign in again
+              </Text>
+            </TouchableOpacity>
+          ) : null}
         </>
       ) : (
         <>
@@ -664,7 +715,7 @@ export default function ResumeSessionScreen() {
           {/* SMS Delivery Notice */}
           <View style={{ marginTop: 20, backgroundColor: colors.primary + '10', borderLeftWidth: 4, borderLeftColor: colors.primary, padding: 12, borderRadius: 6 }}>
             <Text style={{ fontSize: 12, color: colors.textSecondary, fontStyle: 'italic' }}>
-              💡 <Text style={{ fontWeight: '600', color: colors.text }}>Note:</Text> If the SMS didn't deliver, it could be due to temporary service provider delays or network issues. Please check your spam folder or try resending once the timer expires.
+              💡 <Text style={{ fontWeight: '600', color: colors.text }}>Note:</Text> If the SMS or email didn't deliver, it could be due to temporary service provider delays or network issues. Please check your spam folder or try resending once the timer expires.
             </Text>
           </View>
         </>
@@ -867,16 +918,58 @@ export default function ResumeSessionScreen() {
           </TouchableOpacity>
         )}
         
-        {/* OTP Option */}
+        {/* Email OTP Option */}
         <TouchableOpacity
-          onPress={() => setSelectedMethod('otp')}
+          onPress={() => {
+            setOtpDeliveryMethod('email');
+            setSelectedMethod('otp');
+          }}
           style={{
             borderRadius: 12,
             borderWidth: 2,
-            borderColor: selectedMethod === 'otp' ? colors.primary : colors.border,
+            borderColor: selectedMethod === 'otp' && otpDeliveryMethod === 'email' ? colors.primary : colors.border,
             paddingVertical: 16,
             paddingHorizontal: 16,
-            backgroundColor: selectedMethod === 'otp' ? colors.primary + '15' : colors.card || colors.background,
+            backgroundColor: selectedMethod === 'otp' && otpDeliveryMethod === 'email' ? colors.primary + '15' : colors.card || colors.background,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 16, fontWeight: '600', color: colors.text, marginBottom: 4 }}>
+              Email Code
+            </Text>
+            <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+              Get a 6-digit code in your email inbox
+            </Text>
+          </View>
+          <View
+            style={{
+              width: 24,
+              height: 24,
+              borderRadius: 12,
+              borderWidth: 2,
+              borderColor: selectedMethod === 'otp' && otpDeliveryMethod === 'email' ? colors.primary : colors.border,
+              backgroundColor: selectedMethod === 'otp' && otpDeliveryMethod === 'email' ? colors.primary : 'transparent',
+              marginLeft: 12,
+            }}
+          />
+        </TouchableOpacity>
+
+        {/* SMS OTP Option */}
+        <TouchableOpacity
+          onPress={() => {
+            setOtpDeliveryMethod('sms');
+            setSelectedMethod('otp');
+          }}
+          style={{
+            borderRadius: 12,
+            borderWidth: 2,
+            borderColor: selectedMethod === 'otp' && otpDeliveryMethod === 'sms' ? colors.primary : colors.border,
+            paddingVertical: 16,
+            paddingHorizontal: 16,
+            backgroundColor: selectedMethod === 'otp' && otpDeliveryMethod === 'sms' ? colors.primary + '15' : colors.card || colors.background,
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -896,8 +989,8 @@ export default function ResumeSessionScreen() {
               height: 24,
               borderRadius: 12,
               borderWidth: 2,
-              borderColor: selectedMethod === 'otp' ? colors.primary : colors.border,
-              backgroundColor: selectedMethod === 'otp' ? colors.primary : 'transparent',
+              borderColor: selectedMethod === 'otp' && otpDeliveryMethod === 'sms' ? colors.primary : colors.border,
+              backgroundColor: selectedMethod === 'otp' && otpDeliveryMethod === 'sms' ? colors.primary : 'transparent',
               marginLeft: 12,
             }}
           />
@@ -954,6 +1047,7 @@ export default function ResumeSessionScreen() {
                 text: 'Log Out',
                 onPress: async () => {
                   await AsyncStorage.removeItem('sessionResumed');
+                  await AsyncStorage.removeItem('sessionResumedDate');
                   navigation.replace('/auth/login-new');
                 },
                 style: 'destructive',

@@ -15,6 +15,7 @@ import {
   AppState,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
+import * as ExpoLinking from 'expo-linking';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -55,8 +56,25 @@ export default function WalletScreen() {
   const [showPaystackModal, setShowPaystackModal] = useState(false);
   const [paystackAuthUrl, setPaystackAuthUrl] = useState<string>('');
   const [paystackAmount, setPaystackAmount] = useState(0);
+  const verifyingPaymentRef = useRef(false);
 
   const isLight = theme.mode === 'light';
+
+  const getPaymentStatus = (result: any) => {
+    if (result?.paymentStatus) return result.paymentStatus;
+    if (result?.success === true || result?.payment?.status === 'completed') return 'success';
+    return result?.status;
+  };
+
+  const finishSuccessfulPayment = async (showAlert = true) => {
+    setSettlementReference(null);
+    await cacheService.remove('paystack_pending_reference');
+    await fetchSettlementStatus();
+    await fetchEarningsForToday(true);
+    if (showAlert) {
+      Alert.alert('✅ Payment Successful', 'Your settlement has been paid. You can now accept rides.');
+    }
+  };
 
   const getDailyRemittanceDue = () => {
     const explicitOutstanding = Number(
@@ -151,49 +169,43 @@ export default function WalletScreen() {
 
   const checkPaymentStatus = async (reference: string) => {
     try {
-      console.log('🔄 [DEEP_LINK] Checking payment status:', reference);
+      console.log('[DEEP_LINK] Checking payment status:', reference);
       const result = await apiService.verifyDriverSettlementPayment(reference);
-      
-      if (result?.paymentStatus === 'success') {
-        console.log('✅ [DEEP_LINK] Payment verified');
+      const paymentStatus = getPaymentStatus(result);
+
+      if (paymentStatus === 'success') {
+        console.log('[DEEP_LINK] Payment verified');
+        await finishSuccessfulPayment();
+      } else if (['failed', 'cancelled'].includes(paymentStatus)) {
+        console.log('[DEEP_LINK] Payment failed:', paymentStatus);
         setSettlementReference(null);
-        await cacheService.remove('paystack_pending_reference');
-        await fetchSettlementStatus();
-        await fetchEarningsForToday(true);
-        Alert.alert('✅ Payment Successful', 'Your settlement has been paid. You can now accept rides.');
-      } else if (['failed', 'cancelled'].includes(result?.paymentStatus)) {
-        console.log('❌ [DEEP_LINK] Payment failed:', result?.paymentStatus);
-        setSettlementReference(null);
-        Alert.alert('Payment Failed', `Status: ${result?.paymentStatus}`);
+        Alert.alert('Payment Failed', `Status: ${paymentStatus}`);
       } else {
-        console.log('⏳ [DEEP_LINK] Payment pending:', result?.paymentStatus);
-        // Keep checking periodically
+        console.log('[DEEP_LINK] Payment pending:', paymentStatus);
         startPaymentStatusPolling(reference);
       }
     } catch (error) {
       console.error('[DEEP_LINK] Error checking payment:', error);
     }
   };
-
-  const handlePaystackSuccess = async () => {
-    console.log('🎉 [PAYSTACK_MODAL] Payment successful, verifying...');
+  const handlePaystackSuccess = async (callbackReference?: string) => {
+    console.log('[PAYSTACK_MODAL] Payment successful, verifying...');
     try {
-      if (!settlementReference) return;
-      
+      const referenceToVerify = callbackReference || settlementReference;
+      if (!referenceToVerify) return;
+
       setSettlementPaying(true);
-      const result = await apiService.verifyDriverSettlementPayment(settlementReference);
-      
-      if (result?.paymentStatus === 'success') {
-        setSettlementReference(null);
-        await cacheService.remove('paystack_pending_reference');
-        await fetchSettlementStatus();
-        await fetchEarningsForToday(true);
+      const result = await apiService.verifyDriverSettlementPayment(referenceToVerify);
+      const paymentStatus = getPaymentStatus(result);
+
+      if (paymentStatus === 'success') {
+        await finishSuccessfulPayment(false);
         setShowPaystackModal(false);
         setPaystackAuthUrl('');
         setPaystackAmount(0);
-        Alert.alert('✅ Payment Successful', 'Your settlement has been paid. You can now accept rides.');
+        Alert.alert('Payment Successful', 'Your settlement has been paid. You can now accept rides.');
       } else {
-        Alert.alert('Payment Status', `Status: ${result?.paymentStatus}`);
+        Alert.alert('Payment Status', `Status: ${paymentStatus || 'processing'}`);
       }
     } catch (error) {
       console.error('Payment verification error:', error);
@@ -202,7 +214,6 @@ export default function WalletScreen() {
       setSettlementPaying(false);
     }
   };
-
   const handlePaystackError = (error: string) => {
     console.error('🔴 [PAYSTACK_MODAL] Error:', error);
     Alert.alert('Payment Error', error || 'An error occurred during payment.');
@@ -395,7 +406,9 @@ export default function WalletScreen() {
 
       setSettlementPaying(true);
       // Don't pass date - let backend determine all outstanding settlements
-      const data = await apiService.initiateDriverSettlementPayment();
+      const data = await apiService.initiateDriverSettlementPayment({
+        returnUrl: ExpoLinking.createURL('payment-callback'),
+      });
       const authUrl = data?.authUrl;
       const reference = data?.reference;
       
@@ -416,7 +429,10 @@ export default function WalletScreen() {
       setShowPaystackModal(true);
     } catch (error) {
       console.error('Settlement payment error:', error);
-      Alert.alert('Payment Failed', 'Unable to start payment. Please try again.');
+      const message = error instanceof Error && error.message
+        ? error.message
+        : 'Unable to start payment. Please try again.';
+      Alert.alert('Payment Failed', message);
     } finally {
       setSettlementPaying(false);
     }
@@ -426,67 +442,62 @@ export default function WalletScreen() {
     const startTime = Date.now();
     const pollInterval = setInterval(async () => {
       try {
-        // Check if timeout exceeded
         if (Date.now() - startTime > timeoutMs) {
           clearInterval(pollInterval);
-          console.log('📊 [POLLING] Timeout - stopping payment status polling');
+          console.log('[POLLING] Timeout - stopping payment status polling');
           return;
         }
 
         const result = await apiService.verifyDriverSettlementPayment(reference);
-        
-        if (result?.paymentStatus === 'success') {
+        const paymentStatus = getPaymentStatus(result);
+
+        if (paymentStatus === 'success') {
           clearInterval(pollInterval);
-          console.log('✅ [POLLING] Payment verified successfully');
-          setSettlementReference(null);
-          await cacheService.remove('paystack_pending_reference');
-          await fetchSettlementStatus();
-          await fetchEarningsForToday(true);
-          Alert.alert('✅ Payment Successful', 'Your settlement has been paid. You can now accept rides.');
-        } else if (['failed', 'cancelled'].includes(result?.paymentStatus)) {
+          console.log('[POLLING] Payment verified successfully');
+          await finishSuccessfulPayment();
+        } else if (['failed', 'cancelled'].includes(paymentStatus)) {
           clearInterval(pollInterval);
-          console.log('❌ [POLLING] Payment failed:', result?.paymentStatus);
+          console.log('[POLLING] Payment failed:', paymentStatus);
           setSettlementReference(null);
-          Alert.alert('Payment Failed', `Payment status: ${result?.paymentStatus}`);
+          Alert.alert('Payment Failed', `Payment status: ${paymentStatus}`);
         }
       } catch (error) {
-        console.log('📊 [POLLING] Check scheduled, will retry...', error);
-        // Continue polling on error - payment might still be processing
+        console.log('[POLLING] Check scheduled, will retry...', error);
       }
-    }, 3000); // Poll every 3 seconds
+    }, 3000);
   };
 
   const checkPendingPayment = async () => {
+    if (verifyingPaymentRef.current) return;
+
     try {
       const pendingRef = await cacheService.get<string>('paystack_pending_reference');
       if (pendingRef) {
-        console.log('🔄 [VERIFY] Found pending payment reference:', pendingRef);
+        verifyingPaymentRef.current = true;
+        console.log('[VERIFY] Found pending payment reference:', pendingRef);
         setSettlementReference(pendingRef);
-        
+
         const result = await apiService.verifyDriverSettlementPayment(pendingRef);
-        
-        if (result?.paymentStatus === 'success') {
-          console.log('✅ [VERIFY] Pending payment completed');
+        const paymentStatus = getPaymentStatus(result);
+
+        if (paymentStatus === 'success') {
+          console.log('[VERIFY] Pending payment completed');
+          await finishSuccessfulPayment();
+        } else if (['failed', 'cancelled'].includes(paymentStatus)) {
+          console.log('[VERIFY] Pending payment failed:', paymentStatus);
           setSettlementReference(null);
           await cacheService.remove('paystack_pending_reference');
-          await fetchSettlementStatus();
-          await fetchEarningsForToday(true);
-          Alert.alert('✅ Payment Successful', 'Your settlement has been paid. You can now accept rides.');
-        } else if (['failed', 'cancelled'].includes(result?.paymentStatus)) {
-          console.log('❌ [VERIFY] Pending payment failed:', result?.paymentStatus);
-          setSettlementReference(null);
-          await cacheService.remove('paystack_pending_reference');
-          Alert.alert('Payment Failed', `Status: ${result?.paymentStatus}`);
+          Alert.alert('Payment Failed', `Status: ${paymentStatus}`);
         } else {
-          console.log('⏳ [VERIFY] Payment still processing:', result?.paymentStatus);
-          // Still polling, keep reference stored
+          console.log('[VERIFY] Payment still processing:', paymentStatus || 'pending');
         }
       }
     } catch (error) {
       console.error('Check pending payment error:', error);
+    } finally {
+      verifyingPaymentRef.current = false;
     }
   };
-
   const onRefresh = async () => {
     setRefreshing(true);
     await Promise.all([
@@ -521,12 +532,12 @@ export default function WalletScreen() {
               style={styles.cardGradient}
             >
               <View style={styles.cardHeader}>
-                <Text style={styles.cardLabel}>Available Balance</Text>
+                <Text style={styles.cardLabel}>Earned Balance</Text>
                 <MaterialCommunityIcons name="wallet-outline" size={24} color="rgba(0,0,0,0.5)" />
               </View>
               <Text style={styles.balanceText}>₦{((walletData?.balance) ?? 0).toLocaleString('en-US')}</Text>
               <View style={styles.cardFooter}>
-                <Text style={styles.cardNumber}>**** **** **** 8829</Text>
+                <Text style={styles.cardNumber}>**** ****  CK</Text>
                 <Text style={styles.cardBrand}>Charter Keke</Text>
               </View>
             </LinearGradient>

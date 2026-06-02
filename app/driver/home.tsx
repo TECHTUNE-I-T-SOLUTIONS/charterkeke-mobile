@@ -70,6 +70,7 @@ export default function DriverHomeScreen() {
   const [hasCached, setHasCached] = useState(false);
   const [settlementBlocked, setSettlementBlocked] = useState(false);
   const [settlementOutstanding, setSettlementOutstanding] = useState(0);
+  const [driverStats, setDriverStats] = useState({ completedTrips: 0, averageRating: 0 });
   
   // Refs to prevent state updates on unmounted component
   const isMountedRef = useRef(true);
@@ -153,6 +154,7 @@ export default function DriverHomeScreen() {
         setRecentRides(cached.recentRides || []);
         setSettlementBlocked(!!cached.settlementBlocked);
         setSettlementOutstanding(cached.settlementOutstanding || 0);
+        setDriverStats(cached.driverStats || { completedTrips: 0, averageRating: 0 });
         setHasCached(true);
         setLoading(false);
       }
@@ -177,7 +179,7 @@ export default function DriverHomeScreen() {
       if (showLoader) setLoading(true);
       
       console.log('📊 [DRIVER-HOME] Fetching dashboard data...');
-      const [details, status, rides, available, history, settlement, dailyEarnings] = await Promise.all([
+      const [details, status, rides, available, history, settlement, dailyEarnings, earningsStats] = await Promise.all([
         apiService.getDriverDetails().catch((err) => {
           console.warn('⚠️  [DRIVER-HOME] getDriverDetails failed:', err?.message || err);
           return {};
@@ -206,6 +208,10 @@ export default function DriverHomeScreen() {
           console.warn('⚠️  [DRIVER-HOME] getDriverDailySettlement failed:', err?.message || err);
           return { total_ride_earnings: 0 };
         }),
+        apiService.getDriverEarningsStats().catch((err) => {
+          console.warn('⚠️  [DRIVER-HOME] getDriverEarningsStats failed:', err?.message || err);
+          return { stats: { totalRides: 0, averageRating: 0 } };
+        }),
       ]);
 
       if (!isMountedRef.current) return;
@@ -217,6 +223,10 @@ export default function DriverHomeScreen() {
       const nextAvailableRides = available.rides?.slice(0, 3) || [];
       const nextRecentRides = ((history as any)?.rides || (history as any)?.data || []).slice(0, 5);
       const nextTodayEarnings = Number(dailyEarnings?.settlement?.totalDriverEarnings || dailyEarnings?.totals?.netDriverEarnings || 0);
+      const nextStats = {
+        completedTrips: Number(earningsStats?.stats?.totalRides || nextDriverData?.total_rides_completed || 0),
+        averageRating: Number(earningsStats?.stats?.averageRating || nextDriverData?.average_rating || 0),
+      };
 
       console.log('✅ [DRIVER-HOME] Dashboard data loaded:', {
         hasDriverData: !!nextDriverData,
@@ -234,6 +244,7 @@ export default function DriverHomeScreen() {
       setRecentRides(nextRecentRides);
       setSettlementBlocked(!!settlement?.blocked);
       setSettlementOutstanding(settlement?.totalOutstanding || 0);
+      setDriverStats(nextStats);
 
       await cacheService.set('driver_home_dashboard', {
         driverData: nextDriverData,
@@ -245,6 +256,7 @@ export default function DriverHomeScreen() {
         recentRides: nextRecentRides,
         settlementBlocked: !!settlement?.blocked,
         settlementOutstanding: settlement?.totalOutstanding || 0,
+        driverStats: nextStats,
       });
     } catch (error) {
       console.error('❌ [DRIVER-HOME] Dashboard fetch error:', error);
@@ -268,8 +280,19 @@ export default function DriverHomeScreen() {
       await apiService.setDriverStatus(value ? 'online' : 'offline');
     } catch (error) {
       setIsOnline(!value); // Revert on failure
-      const message = (error as any)?.message || 'Failed to update status';
-      Alert.alert('Error', message);
+      const err: any = error;
+      if (err?.status === 403 || err?.code === 'settlement_overdue' || settlementBlocked) {
+        Alert.alert(
+          'Remittance Required',
+          `Please pay your outstanding remittance${settlementOutstanding ? ` of ${formatCurrency(settlementOutstanding)}` : ''} before accepting new rides.`,
+          [
+            { text: 'Not Now', style: 'cancel' },
+            { text: 'Pay Now', onPress: () => router.push('/driver/wallet') },
+          ]
+        );
+        return;
+      }
+      Alert.alert('Unable to Update Status', err?.message || 'Failed to update status');
     }
   };
 
@@ -397,14 +420,16 @@ export default function DriverHomeScreen() {
                color={BRAND.primary}
                theme={theme}
                isLight={isLight}
+               onPress={() => router.push('/driver/earnings')}
              />
              <StatCard 
                label="Completed Trips" 
-               value={(driverData?.total_rides_completed || 0).toString()} 
+               value={driverStats.completedTrips.toString()} 
                icon="check-circle-outline" 
                color="#10B981"
                theme={theme}
                isLight={isLight}
+               onPress={() => router.push('/driver/rides')}
              />
           </View>
           
@@ -416,14 +441,16 @@ export default function DriverHomeScreen() {
                color="#3B82F6"
                theme={theme}
                isLight={isLight}
+               onPress={() => router.push('/driver/rides')}
              />
              <StatCard 
                label="Rating" 
-               value={(driverData?.average_rating || 5.0).toFixed(1)} 
+               value={(driverStats.averageRating || 0).toFixed(1)} 
                icon="star" 
                color="#F59E0B"
                theme={theme}
                isLight={isLight}
+               onPress={() => router.push('/driver/profile')}
              />
           </View>
 
@@ -571,8 +598,8 @@ export default function DriverHomeScreen() {
   );
 }
 
-const StatCard = ({ label, value, icon, color, theme, isLight }: any) => (
-  <View style={[styles.statCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+const StatCard = ({ label, value, icon, color, theme, onPress }: any) => (
+  <TouchableOpacity activeOpacity={0.75} onPress={onPress} style={[styles.statCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
     <View style={[styles.statIcon, { backgroundColor: color + '15' }]}>
       <MaterialCommunityIcons name={icon} size={20} color={color} />
     </View>
@@ -580,7 +607,7 @@ const StatCard = ({ label, value, icon, color, theme, isLight }: any) => (
       <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{value}</Text>
       <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>{label}</Text>
     </View>
-  </View>
+  </TouchableOpacity>
 );
 
 const styles = StyleSheet.create({

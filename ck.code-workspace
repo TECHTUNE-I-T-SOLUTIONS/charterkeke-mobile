@@ -5,6 +5,9 @@
 		},
 		{
 			"path": "../easely"
+		},
+		{
+			"path": "../CharterKekeAdmin"
 		}
 	],
 	"settings": {}

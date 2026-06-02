@@ -17,6 +17,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '@/context/ThemeContext';
 import { apiService } from '@/services/api';
 import { cacheService } from '@/services/cache';
+import { normalizeNotificationPayload, resolveNotificationRoute } from '@/services/notificationService';
 import { COLORS, BRAND } from '@/utils/colors';
 import { ListScreenSkeleton } from '@/components/ListScreenSkeleton';
 
@@ -31,6 +32,9 @@ interface Notification {
   read: boolean;
   created_at: string;
   read_at?: string;
+  deep_link?: string;
+  action_url?: string;
+  metadata?: any;
 }
 
 export default function NotificationsScreen() {
@@ -85,7 +89,7 @@ export default function NotificationsScreen() {
   const handleMarkAsRead = async (notification: Notification) => {
     try {
       if (!notification.read) {
-        await apiService.put(`/driver/notifications/${notification.id}`, { markAsRead: true });
+        await apiService.patch('/driver/notifications', { notificationId: notification.id, markAsRead: true });
         setNotifications(notifications.map(n => 
           n.id === notification.id 
             ? { ...n, read: true, read_at: new Date().toISOString() }
@@ -94,6 +98,15 @@ export default function NotificationsScreen() {
       }
     } catch (error) {
       console.error('Error marking as read:', error);
+    }
+  };
+
+  const handleNotificationPress = async (notification: Notification) => {
+    await handleMarkAsRead(notification);
+    const payload = normalizeNotificationPayload(notification);
+    const route = resolveNotificationRoute(payload, 'driver');
+    if (route) {
+      router.push(route as any);
     }
   };
 
@@ -115,7 +128,7 @@ export default function NotificationsScreen() {
     return (
       <TouchableOpacity
         activeOpacity={0.7}
-        onPress={() => handleMarkAsRead(item)}
+        onPress={() => handleNotificationPress(item)}
         style={[
           styles.itemContainer,
           { 

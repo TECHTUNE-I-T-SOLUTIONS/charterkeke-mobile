@@ -57,6 +57,7 @@ export default function ResetPasswordScreen() {
   const [currentStep, setCurrentStep] = useState<ResetStep>('email');
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState('');
+  const [deliveryMethod, setDeliveryMethod] = useState<'email' | 'sms'>('email');
   const [otp, setOtp] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -122,6 +123,7 @@ export default function ResetPasswordScreen() {
         body: JSON.stringify({
           email: email.trim().toLowerCase(),
           type: 'forgot_password',
+          deliveryMethod,
         }),
       });
 
@@ -193,7 +195,7 @@ export default function ResetPasswordScreen() {
         body: JSON.stringify({
           email: email.trim().toLowerCase(),
           newPassword: password,
-          method: 'sms',
+          method: deliveryMethod,
         }),
       });
 
@@ -331,13 +333,40 @@ export default function ResetPasswordScreen() {
                   </View>
                   {errors.email ? <Text style={[styles.errorText, { color: colors.error }]}>{errors.email}</Text> : null}
 
+                  <Text style={[styles.label, { color: colors.textSecondary }]}>Receive OTP via</Text>
+                  <View style={styles.deliveryRow}>
+                    {(['email', 'sms'] as const).map((method) => (
+                      <TouchableOpacity
+                        key={method}
+                        onPress={() => setDeliveryMethod(method)}
+                        style={[
+                          styles.deliveryOption,
+                          {
+                            borderColor: deliveryMethod === method ? BRAND.primary : colors.border,
+                            backgroundColor: deliveryMethod === method ? `${BRAND.primary}18` : colors.surface,
+                          },
+                        ]}
+                        activeOpacity={0.85}
+                      >
+                        <MaterialCommunityIcons
+                          name={method === 'email' ? 'email-check-outline' : 'message-text-outline'}
+                          size={16}
+                          color={deliveryMethod === method ? BRAND.primary : colors.textSecondary}
+                        />
+                        <Text style={[styles.deliveryText, { color: deliveryMethod === method ? BRAND.primary : colors.textPrimary }]}>
+                          {method === 'email' ? 'Email' : 'SMS'}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
                   <TouchableOpacity onPress={handleSendOtp} disabled={isLoading} style={styles.buttonWrap} activeOpacity={0.85}>
                     <LinearGradient colors={[BRAND.primary, '#E68200']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.buttonGradient}>
                       {isLoading ? (
                         <ActivityIndicator size="small" color="#000" />
                       ) : (
                         <>
-                          <Text style={styles.buttonText}>Send OTP</Text>
+                          <Text style={styles.buttonText}>Send {deliveryMethod === 'email' ? 'Email' : 'SMS'} OTP</Text>
                           <View style={styles.btnArrowBg}>
                             <MaterialCommunityIcons name="send" size={14} color="#000" />
                           </View>
@@ -623,6 +652,24 @@ const styles = StyleSheet.create({
   },
   resendLink: {
     color: BRAND.primary,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  deliveryRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  deliveryOption: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  deliveryText: {
     fontSize: 13,
     fontWeight: '800',
   },

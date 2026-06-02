@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,14 +7,15 @@ import {
   TouchableOpacity,
   FlatList,
   Dimensions,
-  Alert,
   StyleSheet,
   StatusBar,
+  PanResponder,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '@/context/ThemeContext';
+import { useAlert } from '@/context/AlertContext';
 import { apiService } from '@/services/api';
 import { cacheService } from '@/services/cache';
 import { formatCurrency } from '@/utils/formatting';
@@ -22,6 +23,8 @@ import { BRAND, COLORS } from '@/utils/colors';
 import { ListScreenSkeleton } from '@/components/ListScreenSkeleton';
 
 const { width } = Dimensions.get('window');
+const DRIVER_RIDE_TABS = ['available', 'active', 'history'] as const;
+type DriverRideTab = typeof DRIVER_RIDE_TABS[number];
 
 interface RideItem {
   id: string;
@@ -39,13 +42,30 @@ interface RideItem {
 export default function RidesListScreen() {
   const router = useRouter();
   const { theme } = useTheme();
+  const { showError, showSuccess } = useAlert();
   const [rides, setRides] = useState<RideItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'active' | 'available' | 'history'>('available');
+  const [activeTab, setActiveTab] = useState<DriverRideTab>('available');
   const [hasCached, setHasCached] = useState(false);
 
   const isLight = theme.mode === 'light';
+  const swipeResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gesture) =>
+          Math.abs(gesture.dx) > 36 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.4,
+        onPanResponderRelease: (_, gesture) => {
+          if (Math.abs(gesture.dx) < 70) return;
+          const currentIndex = DRIVER_RIDE_TABS.indexOf(activeTab);
+          const nextIndex = gesture.dx < 0 ? currentIndex + 1 : currentIndex - 1;
+          if (nextIndex >= 0 && nextIndex < DRIVER_RIDE_TABS.length) {
+            setActiveTab(DRIVER_RIDE_TABS[nextIndex]);
+          }
+        },
+      }),
+    [activeTab]
+  );
 
   useFocusEffect(
     React.useCallback(() => {
@@ -100,9 +120,11 @@ export default function RidesListScreen() {
   const handleAcceptRide = async (ride: RideItem) => {
     try {
       await apiService.acceptRide(ride.id);
-      Alert.alert('Success', 'Ride accepted!');
+      showSuccess('Ride accepted', 'The ride has been assigned to you. You can now start the trip from your active rides.');
       fetchRides();
-    } catch (error) { Alert.alert('Error', 'Failed to accept ride'); }
+    } catch (error: any) {
+      showError('Could not accept ride', error?.message || 'This ride may already have been accepted by another driver.');
+    }
   };
 
   const renderRideCard = ({ item }: { item: RideItem }) => {
@@ -187,10 +209,10 @@ export default function RidesListScreen() {
         </View>
 
         <View style={styles.tabsContainer}>
-          {['available', 'active', 'history'].map(tab => (
+          {DRIVER_RIDE_TABS.map(tab => (
             <TouchableOpacity
               key={tab}
-              onPress={() => setActiveTab(tab as any)}
+              onPress={() => setActiveTab(tab)}
               style={[
                 styles.tab,
                 activeTab === tab ? { backgroundColor: BRAND.primary } : { backgroundColor: theme.colors.card, borderWidth: 1, borderColor: theme.colors.border }
@@ -203,24 +225,26 @@ export default function RidesListScreen() {
           ))}
         </View>
 
-        {loading ? (
-          <View style={styles.center}><ListScreenSkeleton itemCount={4} /></View>
-        ) : (
-          <FlatList
-            data={rides}
-            renderItem={renderRideCard}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.listContent}
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            ListEmptyComponent={
-              <View style={styles.emptyState}>
-                 <MaterialCommunityIcons name="clipboard-text-outline" size={48} color={theme.colors.textTertiary} />
-                 <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>No rides found</Text>
-              </View>
-            }
-          />
-        )}
+        <View style={styles.swipeArea} {...swipeResponder.panHandlers}>
+          {loading ? (
+            <View style={styles.center}><ListScreenSkeleton itemCount={4} /></View>
+          ) : (
+            <FlatList
+              data={rides}
+              renderItem={renderRideCard}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.listContent}
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              ListEmptyComponent={
+                <View style={styles.emptyState}>
+                   <MaterialCommunityIcons name="clipboard-text-outline" size={48} color={theme.colors.textTertiary} />
+                   <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>No rides found</Text>
+                </View>
+              }
+            />
+          )}
+        </View>
       </SafeAreaView>
     </View>
   );
@@ -233,6 +257,7 @@ const styles = StyleSheet.create({
   tabsContainer: { flexDirection: 'row', paddingHorizontal: 20, gap: 10, marginBottom: 16 },
   tab: { flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   tabText: { fontWeight: '600', fontSize: 13 },
+  swipeArea: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   listContent: { paddingHorizontal: 20, paddingBottom: 100, gap: 16 },
   card: { borderRadius: 16, borderWidth: 1, padding: 16 },

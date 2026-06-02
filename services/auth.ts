@@ -11,6 +11,9 @@ interface TokenPayload {
   exp: number;
 }
 
+const NON_JWT_TOKEN_LIFESPAN_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
+const REFRESH_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // Refresh during the final week
+
 class AuthService {
   private currentUser: any = null;
   private accessToken: string | null = null;
@@ -78,9 +81,10 @@ class AuthService {
       const decoded = jwtDecode<TokenPayload>(accessToken);
       this.tokenExpiryTime = decoded.exp * 1000;
     } catch (decodeError) {
-      // Token is not JWT format, set 24-hour default expiry
-      this.tokenExpiryTime = Date.now() + (24 * 60 * 60 * 1000);
-      console.log('Using 24-hour token expiry for non-JWT token');
+      // The backend mobile token is an opaque base64 token. Keep it long-lived locally;
+      // the server still validates the user account on every request.
+      this.tokenExpiryTime = Date.now() + NON_JWT_TOKEN_LIFESPAN_MS;
+      console.log('Using 90-day token expiry for non-JWT token');
     }
   }
 
@@ -130,8 +134,7 @@ class AuthService {
   shouldRefreshToken(): boolean {
     if (!this.tokenExpiryTime) return true;
     const timeUntilExpiry = this.tokenExpiryTime - Date.now();
-    // Refresh if less than 5 minutes remaining
-    return timeUntilExpiry < (5 * 60 * 1000);
+    return timeUntilExpiry < REFRESH_WINDOW_MS;
   }
 
   /**

@@ -1,6 +1,6 @@
 // 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
    ActivityIndicator,
   Linking,
-  Alert,
   StyleSheet,
   StatusBar,
   Dimensions,
@@ -21,19 +20,26 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
 import { RideMapFullscreenModal } from '@/components/RideMapFullscreenModal';
 import { useTheme } from '@/context/ThemeContext';
+import { useAlert } from '@/context/AlertContext';
 import { apiService } from '@/services/api';
 import { ListScreenSkeleton } from '@/components/ListScreenSkeleton';
 import { BRAND, COLORS } from '@/utils/colors';
 import { verticalScale, scale } from 'react-native-size-matters';
 import { fetchMapboxRoute } from '@/utils/mapboxDirections';
 import { geocodeMapboxLocation } from '@/utils/mapboxGeocoding';
+import { exportRideReceipt, saveCapturedRideReceiptImage, shareReceiptFile, shareRideReceipt, RideReceiptFormat } from '@/utils/rideReceipt';
+import { RideReceiptExportModal } from '@/components/RideReceiptExportModal';
+import { RideReceiptTemplate } from '@/components/RideReceiptTemplate';
+import { captureRef } from 'react-native-view-shot';
 
 const { width } = Dimensions.get('window');
+const PLATFORM_FEE_PERCENTAGE = 0.15;
 
 export default function RideDetailsScreen() {
   const router = useRouter();
   const { rideId, rideData } = useLocalSearchParams();
   const { theme, mode } = useTheme();
+  const { showError, showSuccess } = useAlert();
   const insets = useSafeAreaInsets();
   const isLight = mode === 'light';
   const [ride, setRide] = useState<any>(null);
@@ -44,6 +50,8 @@ export default function RideDetailsScreen() {
   const [routeDurationMin, setRouteDurationMin] = useState(0);
   const [showFullMap, setShowFullMap] = useState(false);
   const [lastMapTap, setLastMapTap] = useState(0);
+  const [receiptModalMode, setReceiptModalMode] = useState<'share' | 'download' | null>(null);
+  const receiptRef = useRef<View>(null);
   const extractCoordinate = (source: any, latKeys: string[], lngKeys: string[]) => {
     if (!source) return null;
     const lat = latKeys.map((key) => Number(source[key])).find((value) => Number.isFinite(value));
@@ -60,6 +68,33 @@ export default function RideDetailsScreen() {
       } catch (error) { setRide(null); }
     }
   }, [rideData]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadRideById = async () => {
+      if (rideData || !rideId) return;
+
+      try {
+        const response = await apiService.getRide(String(rideId));
+        const nextRide = (response as any)?.ride || response;
+        if (!cancelled) {
+          setRide(nextRide || null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Failed to load driver ride details from notification:', error);
+          setRide(null);
+        }
+      }
+    };
+
+    loadRideById();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rideData, rideId]);
 
    useEffect(() => {
       let cancelled = false;
@@ -119,22 +154,39 @@ export default function RideDetailsScreen() {
   const handleUpdate = async (status: string) => {
     try {
       setUpdating(true);
-      const response = await apiService.updateRideStatus(rideId as string, status as 'in_progress' | 'completed');
+      const targetRideId = String(rideId || ride?.id || '');
+      const response = await apiService.updateRideStatus(targetRideId, status as 'in_progress' | 'completed');
       
       if (response) {
         // Update local state with the response data
         setRide(response);
         
         if (status === 'completed') {
-          Alert.alert('Success', 'Ride completed!');
+          showSuccess('Ride completed', 'The trip has been completed successfully.');
           router.back();
         } else {
-          Alert.alert('Success', 'Trip started!');
+          showSuccess('Trip started', 'The ride is now in progress.');
         }
       }
     } catch (error: any) {
       console.error('❌ [RIDE] Update failed:', error);
-      Alert.alert('Error', error?.message || 'Failed to update ride status');
+      showError('Could not update ride', error?.message || 'Failed to update ride status');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleAcceptRide = async () => {
+    try {
+      setUpdating(true);
+      const targetRideId = String(rideId || ride?.id || '');
+      const response = await apiService.acceptRide(targetRideId);
+      const nextRide = response?.ride || response;
+      setRide(nextRide || { ...ride, status: 'accepted' });
+      showSuccess('Ride accepted', 'The ride has been assigned to you. You can now start the trip.');
+    } catch (error: any) {
+      console.error('❌ [RIDE] Accept failed:', error);
+      showError('Could not accept ride', error?.message || 'This ride may already have been accepted by another driver.');
     } finally {
       setUpdating(false);
     }
@@ -163,12 +215,61 @@ export default function RideDetailsScreen() {
     extractCoordinate(ride, ['rider_current_latitude', 'riderLatitude', 'rider_latitude'], ['rider_current_longitude', 'riderLongitude', 'rider_longitude']) ||
     null;
   const routeFitCoordinates = routeCoordinates || [pickupCoordinate, dropoffCoordinate];
+  const fareAmount = Number(ride.fare_amount || ride.fare || 0);
+  const platformFee = Number(ride.platform_fee ?? fareAmount * PLATFORM_FEE_PERCENTAGE);
+  const driverEarnings = Number(ride.driver_earnings ?? fareAmount - platformFee);
+  const rideStatus = String(ride.status || '').toLowerCase();
+  const isAwaitingAcceptance = rideStatus === 'pending' || rideStatus === 'dispatched';
+  const isCompleted = rideStatus === 'completed';
+  const nextTripStatus = rideStatus === 'accepted' ? 'in_progress' : 'completed';
+  const primaryActionLabel = isAwaitingAcceptance ? 'Accept Ride' : rideStatus === 'accepted' ? 'Start Trip' : 'Complete Trip';
   const handleMapTap = () => {
     const now = Date.now();
     if (now - lastMapTap < 300) {
       setShowFullMap(true);
     }
     setLastMapTap(now);
+  };
+
+  const openReceiptModal = (action: 'share' | 'download') => {
+    if (!ride) return;
+    setReceiptModalMode(action);
+  };
+
+  const handleReceiptFormat = async (format: RideReceiptFormat) => {
+    if (!ride || !receiptModalMode) return;
+    const action = receiptModalMode;
+    setReceiptModalMode(null);
+
+    try {
+      if (format === 'pdf') {
+        const uri = action === 'share'
+          ? await shareRideReceipt(ride, 'driver', 'pdf')
+          : await exportRideReceipt(ride, 'driver', 'pdf');
+        if (action === 'download') {
+          showSuccess('Receipt saved', 'Your PDF ride sheet has been saved on this device.');
+        }
+        console.log('[RideReceipt] Generated:', uri);
+        return;
+      }
+
+      if (!receiptRef.current) throw new Error('Receipt template is not ready yet.');
+      const capturedUri = await captureRef(receiptRef, {
+        format: 'png',
+        quality: 1,
+        result: 'tmpfile',
+      });
+      const finalUri = await saveCapturedRideReceiptImage(capturedUri, ride);
+
+      if (action === 'share') {
+        await shareReceiptFile(finalUri, 'image');
+      } else {
+        showSuccess('Receipt image saved', 'Your PNG ride sheet has been saved on this device.');
+      }
+      console.log('[RideReceipt] Generated PNG:', finalUri);
+    } catch (error: any) {
+      showError('Receipt unavailable', error?.message || 'Could not generate this ride sheet.');
+    }
   };
 
   return (
@@ -226,6 +327,16 @@ export default function RideDetailsScreen() {
       </View>
 
       <ScrollView style={styles.contentContainer} showsVerticalScrollIndicator={false}>
+         <View style={styles.receiptActions}>
+            <TouchableOpacity onPress={() => openReceiptModal('share')} style={[styles.receiptBtn, { backgroundColor: BRAND.primary }]}>
+               <MaterialCommunityIcons name="share-variant" size={18} color="#000" />
+               <Text style={styles.receiptBtnText}>Share</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => openReceiptModal('download')} style={[styles.receiptBtn, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderWidth: 1 }]}>
+               <MaterialCommunityIcons name="download" size={18} color={theme.colors.textPrimary} />
+               <Text style={[styles.receiptBtnText, { color: theme.colors.textPrimary }]}>Download</Text>
+            </TouchableOpacity>
+         </View>
          
          {/* Rider Info */}
          <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
@@ -293,27 +404,27 @@ export default function RideDetailsScreen() {
             <Text style={[styles.sectionHeader, { color: theme.colors.textSecondary }]}>EARNINGS BREAKDOWN</Text>
             <View style={styles.financeRow}>
                <Text style={[styles.finLabel, { color: theme.colors.textSecondary }]}>Base Fare</Text>
-               <Text style={[styles.finValue, { color: theme.colors.textPrimary }]}>₦{ride.fare_amount || 0}</Text>
+               <Text style={[styles.finValue, { color: theme.colors.textPrimary }]}>₦{fareAmount.toFixed(0)}</Text>
             </View>
             <View style={styles.financeRow}>
-               <Text style={[styles.finLabel, { color: theme.colors.textSecondary }]}>Platform Fee (20%)</Text>
-               <Text style={[styles.finValue, { color: theme.colors.error }]}>- ₦{(ride.fare_amount * 0.2).toFixed(0)}</Text>
+               <Text style={[styles.finLabel, { color: theme.colors.textSecondary }]}>Platform Fee (15%)</Text>
+               <Text style={[styles.finValue, { color: theme.colors.error }]}>- ₦{platformFee.toFixed(0)}</Text>
             </View>
             <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
             <View style={styles.financeRow}>
                <Text style={[styles.totalLabel, { color: theme.colors.textPrimary }]}>Your Earning</Text>
-               <Text style={[styles.totalValue, { color: '#10B981' }]}>₦{(ride.driver_earnings || (ride.fare_amount * 0.8)).toFixed(0)}</Text>
+               <Text style={[styles.totalValue, { color: '#10B981' }]}>₦{driverEarnings.toFixed(0)}</Text>
             </View>
          </View>
 
          {/* Actions */}
-         {ride.status !== 'completed' && (
+         {!isCompleted && (
             <TouchableOpacity 
                style={[styles.mainBtn, { backgroundColor: BRAND.primary }]} 
-               onPress={() => handleUpdate(ride.status === 'accepted' ? 'in_progress' : 'completed')}
+               onPress={isAwaitingAcceptance ? handleAcceptRide : () => handleUpdate(nextTripStatus)}
                disabled={updating}
             >
-               {updating ? <ActivityIndicator color="#000" /> : <Text style={styles.btnText}>{ride.status === 'accepted' ? 'Start Trip' : 'Complete Trip'}</Text>}
+               {updating ? <ActivityIndicator color="#000" /> : <Text style={styles.btnText}>{primaryActionLabel}</Text>}
             </TouchableOpacity>
          )}
 
@@ -330,6 +441,24 @@ export default function RideDetailsScreen() {
         speedText={routeLoading ? 'Loading route...' : `ETA ${routeDurationMin || 0} min | ${routeDistanceKm || 0} km`}
         onClose={() => setShowFullMap(false)}
       />
+      <RideReceiptExportModal
+        visible={!!receiptModalMode}
+        mode={receiptModalMode || 'share'}
+        onClose={() => setReceiptModalMode(null)}
+        onSelect={handleReceiptFormat}
+        colors={{
+          surface: theme.colors.surface,
+          background: theme.colors.background,
+          border: theme.colors.border,
+          textPrimary: theme.colors.textPrimary,
+          textSecondary: theme.colors.textSecondary,
+        }}
+      />
+      <View pointerEvents="none" style={styles.hiddenReceipt}>
+        <View ref={receiptRef} collapsable={false}>
+          <RideReceiptTemplate ride={ride} audience="driver" />
+        </View>
+      </View>
     </View>
   );
 }
@@ -374,4 +503,8 @@ const styles = StyleSheet.create({
   totalValue: { fontSize: 18, fontWeight: '800' },
   mainBtn: { height: 56, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginBottom: 40 },
   btnText: { fontSize: 16, fontWeight: '800', color: '#000' },
+  receiptActions: { flexDirection: 'row', gap: 12, marginBottom: 16 },
+  receiptBtn: { flex: 1, minHeight: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
+  receiptBtnText: { color: '#000', fontWeight: '800', fontSize: 14 },
+  hiddenReceipt: { position: 'absolute', left: -1200, top: 0, opacity: 1 },
 });

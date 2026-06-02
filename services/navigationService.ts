@@ -12,6 +12,10 @@ export const getNavigationRef = (): Router | null => {
 
 export const navigate = (routeName: string, params?: any) => {
   if (navigationRef) {
+    if (!params && routeName.includes('?')) {
+      navigationRef.push(routeName as any);
+      return;
+    }
     navigationRef.push({
       pathname: routeName,
       params,

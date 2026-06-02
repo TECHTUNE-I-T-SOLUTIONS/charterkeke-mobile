@@ -1,6 +1,6 @@
 {
-  "version": "2.1.8",
-  "buildNumber": 218,
-  "releaseDate": "2026-05-25",
-  "changelog": "Migrated rider booking search to Google Places with Supabase caching, improved session-expiry handling, and updated API access security."
+  "version": "2.1.9",
+  "buildNumber": 219,
+  "releaseDate": "2026-06-02",
+  "changelog": "Improved ride notifications and deep links, ride receipts, daily resume verification, driver ride acceptance, payment return handling, and ride list swipe navigation."
 }

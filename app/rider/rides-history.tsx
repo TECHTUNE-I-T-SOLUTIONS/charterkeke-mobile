@@ -8,6 +8,7 @@ import {
   RefreshControl,
   StyleSheet,
   StatusBar,
+  PanResponder,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,18 +21,36 @@ import { apiService } from '@/services/api';
 import { ListScreenSkeleton } from '@/components/ListScreenSkeleton';
 import { useRideHistory } from '@/hooks/useLocationCache';
 
+const RIDER_RIDE_FILTERS = ['all', 'pending', 'dispatched', 'in_progress', 'accepted', 'completed', 'cancelled'] as const;
+type RiderRideFilter = typeof RIDER_RIDE_FILTERS[number];
 
 export default function RidesHistoryScreen() {
   const router = useRouter();
   const { theme } = useTheme();
   const { user, isLoading: authLoading } = useAuth();
   const { showConfirm, showError, showSuccess } = useAlert();
-  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterStatus, setFilterStatus] = useState<RiderRideFilter>('all');
   const [cancellingRideId, setCancellingRideId] = useState<string | null>(null);
 
   const { data: rides = [], isLoading: loading, isRefetching: refreshing, refetch } = useRideHistory();
 
   const isLight = theme.mode === 'light';
+  const swipeResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gesture) =>
+          Math.abs(gesture.dx) > 36 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.4,
+        onPanResponderRelease: (_, gesture) => {
+          if (Math.abs(gesture.dx) < 70) return;
+          const currentIndex = RIDER_RIDE_FILTERS.indexOf(filterStatus);
+          const nextIndex = gesture.dx < 0 ? currentIndex + 1 : currentIndex - 1;
+          if (nextIndex >= 0 && nextIndex < RIDER_RIDE_FILTERS.length) {
+            setFilterStatus(RIDER_RIDE_FILTERS[nextIndex]);
+          }
+        },
+      }),
+    [filterStatus]
+  );
 
   useEffect(() => { if (user && !authLoading) refetch(); }, [user, authLoading, refetch]);
 
@@ -85,7 +104,7 @@ export default function RidesHistoryScreen() {
 
         <View style={styles.tabsContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsContent}>
-            {['all', 'pending', 'dispatched', 'in_progress', 'accepted', 'completed', 'cancelled'].map(status => (
+            {RIDER_RIDE_FILTERS.map(status => (
               <TouchableOpacity
                 key={status}
                 onPress={() => setFilterStatus(status)}
@@ -102,6 +121,7 @@ export default function RidesHistoryScreen() {
           </ScrollView>
         </View>
 
+        <View style={styles.swipeArea} {...swipeResponder.panHandlers}>
         <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={BRAND.primary} />} contentContainerStyle={styles.listContent}>
           {filteredRides.length === 0 ? (
             <View style={styles.emptyState}>
@@ -173,6 +193,7 @@ export default function RidesHistoryScreen() {
             ))
           )}
         </ScrollView>
+        </View>
       </SafeAreaView>
     </View>
   );
@@ -187,6 +208,7 @@ const styles = StyleSheet.create({
   tabsContent: { paddingHorizontal: 20, gap: 8 },
   tab: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 100, borderWidth: 1 },
   tabText: { fontSize: 12, fontWeight: '600' },
+  swipeArea: { flex: 1 },
   listContent: { paddingHorizontal: 20, paddingBottom: 40, gap: 16 },
   emptyState: { padding: 40, alignItems: 'center' },
   emptyText: { marginTop: 16 },

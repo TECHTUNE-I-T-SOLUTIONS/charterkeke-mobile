@@ -32,6 +32,11 @@ interface Notification {
   read: boolean;
   is_read?: boolean;
   title?: string;
+  action_url?: string;
+  deep_link?: string;
+  deeplink?: string;
+  metadata?: any;
+  data?: any;
 }
 
 interface UserProfile {

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Charter Keke",
     "slug": "charter-keke-mobile",
-    "version": "2.1.8",
+    "version": "2.1.9",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -46,6 +46,13 @@
         {
           "cameraPermission": "Allow Charter Keke to access your camera"
         }
+      ],
+      [
+        "@react-native-voice/voice",
+        {
+          "microphonePermission": "Allow Charter Keke to use your microphone for voice location search.",
+          "speechRecognitionPermission": "Allow Charter Keke to transcribe your speech when searching for pickup and destination addresses."
+        }
       ]
     ],
     "web": {
@@ -60,7 +67,7 @@
     "ios": {
       "icon": "./assets/ios-app-icon-1024.png",
       "bundleIdentifier": "com.charterkeke.mobile",
-      "buildNumber": "19",
+      "buildNumber": "20",
       "config": {
         "usesNonExemptEncryption": false
       },
@@ -73,6 +80,8 @@
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Charter Keke needs your location for live tracking",
         "NSLocationAlwaysUsageDescription": "Charter Keke needs your location during active rides to support trip tracking and safety.",
         "NSCameraUsageDescription": "Charter Keke needs camera access for profile pictures and KYC",
+        "NSMicrophoneUsageDescription": "Charter Keke uses your microphone when you choose voice location search.",
+        "NSSpeechRecognitionUsageDescription": "Charter Keke uses speech recognition to turn your spoken pickup or destination into a location search.",
         "NSPhotoLibraryUsageDescription": "Allow Charter Keke to access your photos",
         "NSPhotoLibraryAddUsageDescription": "Allow Charter Keke to save ride-related images to your photo library when you choose to."
       }
@@ -83,7 +92,7 @@
         "backgroundColor": "#1a1a1a"
       },
       "package": "com.charterkeke.mobile",
-      "versionCode": 8,
+      "versionCode": 9,
       "permissions": [
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",

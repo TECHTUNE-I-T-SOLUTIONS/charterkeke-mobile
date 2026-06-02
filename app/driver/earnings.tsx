@@ -219,7 +219,7 @@ export default function DriverEarningsScreen() {
           <View style={[styles.infoBox, { backgroundColor: theme.colors.inputBackground }]}>
              <MaterialCommunityIcons name="information-outline" size={20} color={theme.colors.textSecondary} />
              <Text style={[styles.infoText, { color: theme.colors.textSecondary }]}>
-               Earnings are calculated after deducting the platform fee (13%).
+               Earnings are calculated after deducting the platform fee (15%).
              </Text>
           </View>
 
@@ -263,7 +263,7 @@ export default function DriverEarningsScreen() {
                   
                   <View style={styles.rideCardBottom}>
                     <View style={styles.breakdownItem}>
-                      <Text style={[styles.breakdownLabel, { color: theme.colors.textSecondary }]}>Platform Fee (13%)</Text>
+                      <Text style={[styles.breakdownLabel, { color: theme.colors.textSecondary }]}>Platform Fee (15%)</Text>
                       <Text style={[styles.breakdownValue, { color: theme.colors.error }]}>
                         -₦{Number(ride.platform_fee || 0).toLocaleString()}
                       </Text>

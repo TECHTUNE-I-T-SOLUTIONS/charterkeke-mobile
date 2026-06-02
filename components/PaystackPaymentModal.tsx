@@ -41,8 +41,13 @@ export const PaystackPaymentModal: React.FC<PaystackPaymentModalProps> = ({
 
       if (result.type === 'success') {
         console.log('✅ [PAYSTACK_BROWSER] Redirected back to app, verifying payment...');
+        const callbackUrl = result.url ? Linking.parse(result.url) : null;
+        const callbackReference =
+          callbackUrl?.queryParams?.reference?.toString() ||
+          callbackUrl?.path?.split('/').filter(Boolean).pop() ||
+          reference;
         await new Promise<void>(resolve => setTimeout(() => resolve(), 1000));
-        onSuccess(reference);
+        onSuccess(callbackReference);
         return;
       }
 

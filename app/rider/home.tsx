@@ -21,7 +21,6 @@ import { useAuth } from '@/context/AuthContext';
 import { useLocation } from '@/context/LocationContext';
 import { useTheme } from '@/context/ThemeContext';
 import { useNotificationBadge } from '@/context/NotificationContext';
-import { formatCurrency } from '@/utils/formatting';
 import { apiService } from '@/services/api';
 import { setNotificationCallbacks } from '@/services/notificationService';
 import { setNavigationRef } from '@/services/navigationService';
@@ -57,7 +56,7 @@ export default function RiderHomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [profileData, setProfileData] = useState<ProfileData | null>(null);  
-  const [rideStats, setRideStats] = useState({ totalRides: 0, averageRating: 0, walletBalance: 0 });
+  const [rideStats, setRideStats] = useState({ totalRides: 0, averageRating: 0, activeDrivers: 0 });
   const [recentRides, setRecentRides] = useState<any[]>([]);
   const { user, isAuthenticated, logout } = useAuth();
   const { currentLocation } = useLocation();
@@ -153,7 +152,7 @@ export default function RiderHomeScreen() {
       if (cached) {
         console.log('📦 [RIDER-HOME] Using cached home data');
         setProfileData(cached.profileData || null);
-        setRideStats(cached.rideStats || { totalRides: 0, averageRating: 0, walletBalance: 0 });
+        setRideStats(cached.rideStats || { totalRides: 0, averageRating: 0, activeDrivers: 0 });
         setRecentRides(cached.recentRides || []);
         setHasCached(true);
         setLoading(false);
@@ -212,14 +211,24 @@ export default function RiderHomeScreen() {
       if (!isMountedRef.current) return;
 
       try {
-        const walletRes = await apiService.get('/user/wallet');
+        const driversRes = await apiService.get('/drivers?summary=true');
         if (isMountedRef.current) {
-          nextStats = { ...nextStats, walletBalance: (walletRes as any)?.wallet?.balance || 0 };
+          const responseCount = Number((driversRes as any)?.activeDrivers ?? (driversRes as any)?.active_drivers);
+          const drivers = (driversRes as any)?.drivers || (driversRes as any)?.data || [];
+          const activeDrivers = Number.isFinite(responseCount)
+            ? responseCount
+            : Array.isArray(drivers)
+            ? drivers.filter((driver: any) => {
+                const status = String(driver.status || driver.availability_status || driver.driver_status || '').toLowerCase();
+                return driver.is_available === true || driver.is_online === true || ['online', 'available', 'active'].includes(status);
+              }).length
+            : 0;
+          nextStats = { ...nextStats, activeDrivers };
           setRideStats(nextStats);
-          console.log('✅ [RIDER-HOME] Wallet loaded:', { balance: nextStats.walletBalance });
+          console.log('Active drivers loaded:', { activeDrivers: nextStats.activeDrivers });
         }
       } catch (err) {
-        console.warn('⚠️  [RIDER-HOME] getWallet failed:', (err as any)?.message || err);
+        console.warn('[RIDER-HOME] getActiveDrivers failed:', (err as any)?.message || err);
       }
 
       if (isMountedRef.current && !DEBUG_DISABLE_CACHE) {
@@ -393,18 +402,22 @@ export default function RiderHomeScreen() {
         <View style={styles.statsRow}>
           <View style={[styles.statCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
              <View style={[styles.statIconBox, { backgroundColor: isLight ? '#FFF5E5' : '#2A1800' }]}>
-               <MaterialCommunityIcons name="wallet-outline" size={20} color={BRAND.primary} />
+               <MaterialCommunityIcons name="account-group-outline" size={20} color={BRAND.primary} />
              </View>
-             <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{formatCurrency(rideStats.walletBalance)}</Text>
-             <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Wallet Balance</Text>
+             <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{rideStats.activeDrivers}</Text>
+             <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Active Drivers</Text>
           </View>
-          <View style={[styles.statCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+          <TouchableOpacity
+            onPress={() => router.push('/rider/rides-history')}
+            activeOpacity={0.85}
+            style={[styles.statCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
+          >
              <View style={[styles.statIconBox, { backgroundColor: isLight ? '#F0F9FF' : '#001E2B' }]}>
                <MaterialCommunityIcons name="rickshaw" size={20} color="#0EA5E9" />
              </View>
              <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{rideStats.totalRides}</Text>
              <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Total Rides</Text>
-          </View>
+          </TouchableOpacity>
         </View>
 
         {/* Map Preview */}

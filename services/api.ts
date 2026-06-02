@@ -83,13 +83,16 @@ class APIService {
           return Promise.reject(error);
         }
 
-        const response = await axios.post<{ token: string }>(
+        const response = await axios.post<{ token: string; refreshToken?: string }>(
           `${API_CONFIG.url}/auth/refresh`,
           { refreshToken }
         );
 
-        const { token } = response.data;
+        const { token, refreshToken: nextRefreshToken } = response.data;
+        const effectiveRefreshToken = nextRefreshToken || refreshToken;
         await SecureStore.setItemAsync('authToken', token);
+        await SecureStore.setItemAsync('refreshToken', effectiveRefreshToken);
+        await SecureStore.setItemAsync('tokens', JSON.stringify({ accessToken: token, refreshToken: effectiveRefreshToken }));
         this.api.defaults.headers.common.Authorization = `Bearer ${token}`;
         originalRequest.headers.Authorization = `Bearer ${token}`;
 
@@ -106,7 +109,13 @@ class APIService {
       }
     }
 
-    return Promise.reject(error);
+    const responseData: any = error.response?.data || {};
+    const friendly = responseData.message || responseData.error || error.message || 'Request failed';
+    const apiError: any = new Error(friendly);
+    apiError.status = error.response?.status;
+    apiError.code = responseData.code;
+    apiError.details = responseData;
+    return Promise.reject(apiError);
   };
 
   async get<T>(url: string, config?: any): Promise<T> {
@@ -393,6 +402,15 @@ class APIService {
     }
   }
 
+  async getDriverEarningsStats(): Promise<any> {
+    try {
+      return this.get('/driver/earnings-stats');
+    } catch (error: any) {
+      console.warn('⚠️  [API] Failed to fetch driver earnings stats:', error?.message);
+      return { stats: { totalRides: 0, averageRating: 0 } };
+    }
+  }
+
   async verifyAllPendingPayments(driverId?: string): Promise<any> {
     try {
       // Try GET first, fall back to other endpoints if needed
@@ -426,8 +444,8 @@ class APIService {
     return this.post('/driver/payment-callback', { reference });
   }
 
-  async initiateDriverSettlementPayment(): Promise<any> {
-    return this.get('/driver/initiate-payment');
+  async initiateDriverSettlementPayment(payload?: { returnUrl?: string }): Promise<any> {
+    return this.post('/driver/settlement/initiate', payload || {});
   }
 
   // Chat endpoints
