@@ -122,18 +122,17 @@ export const configureNotifications = async () => {
       {
         identifier: 'RIDE_ACCEPT_ACTION',
         buttonTitle: 'Accept',
-        options: { opensAppToForeground: true },
+        options: { opensAppToForeground: false },
       },
       {
         identifier: 'RIDE_REJECT_ACTION',
         buttonTitle: 'Reject',
-        options: { opensAppToForeground: true, isDestructive: true },
+        options: { opensAppToForeground: false, isDestructive: true },
       },
     ]);
 
     Notifications.setNotificationHandler({
       handleNotification: async () => ({
-        shouldShowAlert: true,
         shouldPlaySound: true,
         shouldSetBadge: true,
         shouldShowBanner: true,
@@ -487,7 +486,6 @@ const handleNotificationResponse = async (response: Notifications.NotificationRe
     try {
       await apiService.post('/driver/accept-ride', { rideId: data.rideId });
       console.log('✅ [NOTIFICATIONS] Ride accepted from notification action:', data.rideId);
-      navigate(`/driver/available-rides?focusRide=${data.rideId}`);
     } catch (error) {
       console.error('❌ [NOTIFICATIONS] Failed to accept ride from notification action:', error);
       const message = (error as any)?.message || 'Unable to accept ride.';

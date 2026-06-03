@@ -1,5 +1,6 @@
 import React from 'react';
-import { Modal, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
 import { useTheme } from '@/context/ThemeContext';

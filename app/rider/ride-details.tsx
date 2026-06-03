@@ -20,6 +20,8 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
 import { RideMapFullscreenModal } from '@/components/RideMapFullscreenModal';
 import { apiService } from '@/services/api';
+import { supabaseService } from '@/services/supabase';
+import { useLocation } from '@/context/LocationContext';
 import { BRAND } from '@/utils/colors';
 import { verticalScale, scale } from 'react-native-size-matters';
 import { fetchMapboxRoute } from '@/utils/mapboxDirections';
@@ -107,6 +109,7 @@ export default function RideDetailsScreen() {
   const params = useLocalSearchParams();
   const { theme } = useTheme();
   const { showError, showSuccess } = useAlert();
+  const { currentLocation, watchLocation } = useLocation();
   const insets = useSafeAreaInsets();
   const isLight = theme.mode === 'light';
   
@@ -121,6 +124,8 @@ export default function RideDetailsScreen() {
   const [routeDistanceKm, setRouteDistanceKm] = useState(0);
   const [routeDurationMin, setRouteDurationMin] = useState(0);
   const [showFullMap, setShowFullMap] = useState(false);
+  const [liveRiderLocation, setLiveRiderLocation] = useState<[number, number] | null>(null);
+  const [liveDriverLocation, setLiveDriverLocation] = useState<[number, number] | null>(null);
   const [receiptModalMode, setReceiptModalMode] = useState<'share' | 'download' | null>(null);
   const receiptRef = useRef<View>(null);
   const parseMapCoordinate = (value: any): [number, number] | null => {
@@ -255,6 +260,66 @@ export default function RideDetailsScreen() {
     };
   }, [rideDetails, pickupCoords, destCoords]);
 
+  useEffect(() => {
+    const rideId = rideDetails?.id || rideIdParam;
+    const status = String(rideDetails?.status || '').toLowerCase();
+    const shouldTrack = !!rideId && (status === 'accepted' || status === 'in_progress');
+    if (!shouldTrack) return;
+
+    let mounted = true;
+    let unwatch: undefined | (() => void);
+
+    const startLiveTracking = async () => {
+      await supabaseService.subscribeToRideLocationUpdates(String(rideId), (payload) => {
+        if (!mounted || !payload) return;
+        const coordinate: [number, number] | null =
+          Number.isFinite(Number(payload.longitude)) && Number.isFinite(Number(payload.latitude))
+            ? [Number(payload.longitude), Number(payload.latitude)]
+            : null;
+        if (!coordinate) return;
+
+        if (payload.role === 'driver') {
+          setLiveDriverLocation(coordinate);
+        }
+        if (payload.role === 'rider') {
+          setLiveRiderLocation(coordinate);
+        }
+      });
+
+      if (currentLocation) {
+        const initial: [number, number] = [currentLocation.longitude, currentLocation.latitude];
+        setLiveRiderLocation(initial);
+        await supabaseService.broadcastRideLocation(String(rideId), {
+          role: 'rider',
+          latitude: currentLocation.latitude,
+          longitude: currentLocation.longitude,
+          accuracy: (currentLocation as any).accuracy,
+          timestamp: Date.now(),
+        });
+      }
+
+      unwatch = await watchLocation((location) => {
+        if (!mounted) return;
+        setLiveRiderLocation([location.longitude, location.latitude]);
+        supabaseService.broadcastRideLocation(String(rideId), {
+          role: 'rider',
+          latitude: location.latitude,
+          longitude: location.longitude,
+          accuracy: (location as any).accuracy,
+          timestamp: Date.now(),
+        }).catch((error) => console.log('Failed to broadcast rider ride location:', error));
+      });
+    };
+
+    startLiveTracking().catch((error) => console.log('Failed to start rider live tracking:', error));
+
+    return () => {
+      mounted = false;
+      if (unwatch) unwatch();
+      supabaseService.unsubscribeRideLocation(String(rideId)).catch(() => undefined);
+    };
+  }, [rideDetails?.id, rideDetails?.status, rideIdParam]);
+
   const routeFitCoordinates = routeCoordinates || (pickupCoords && destCoords
     ? [
         [pickupCoords.longitude, pickupCoords.latitude] as [number, number],
@@ -264,11 +329,13 @@ export default function RideDetailsScreen() {
 
   const rideAny = rideDetails as any;
   const riderCurrentLocation =
+    liveRiderLocation ||
     parseMapCoordinate(rideAny?.rider_current_location) ||
     parseMapCoordinate(rideAny?.rider_location) ||
     parseMapCoordinate(rideAny?.current_location) ||
     null;
   const driverCurrentLocation =
+    liveDriverLocation ||
     parseMapCoordinate(rideAny?.driver_current_location) ||
     parseMapCoordinate(rideAny?.driver_location) ||
     null;
@@ -409,6 +476,12 @@ export default function RideDetailsScreen() {
               color={isLight ? 'black' : 'white'}
             />
           )}
+          {riderCurrentLocation ? (
+            <MapboxMarker id="rider-current" coordinate={riderCurrentLocation} title="Your live location" color="#2563EB" />
+          ) : null}
+          {driverCurrentLocation ? (
+            <MapboxMarker id="driver-current" coordinate={driverCurrentLocation} title="Driver live location" color="#10B981" />
+          ) : null}
         </MapboxMap>
         <TouchableOpacity onPress={() => setShowFullMap(true)} style={styles.fullMapBtn}>
           <MaterialCommunityIcons name="fullscreen" size={18} color="#000" />

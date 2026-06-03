@@ -10,6 +10,7 @@ import {
   StyleSheet,
   StatusBar,
   PanResponder,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -48,6 +49,7 @@ export default function RidesListScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<DriverRideTab>('available');
   const [hasCached, setHasCached] = useState(false);
+  const [acceptingRideId, setAcceptingRideId] = useState<string | null>(null);
 
   const isLight = theme.mode === 'light';
   const swipeResponder = useMemo(
@@ -118,18 +120,25 @@ export default function RidesListScreen() {
   };
 
   const handleAcceptRide = async (ride: RideItem) => {
+    if (acceptingRideId) return;
+
     try {
+      setAcceptingRideId(ride.id);
       await apiService.acceptRide(ride.id);
       showSuccess('Ride accepted', 'The ride has been assigned to you. You can now start the trip from your active rides.');
-      fetchRides();
+      setRides((current) => current.filter((item) => item.id !== ride.id));
+      await fetchRides(false, `driver_rides_${activeTab}`);
     } catch (error: any) {
       showError('Could not accept ride', error?.message || 'This ride may already have been accepted by another driver.');
+    } finally {
+      setAcceptingRideId(null);
     }
   };
 
   const renderRideCard = ({ item }: { item: RideItem }) => {
     const fare = item.driver_earnings || item.fare_amount || 0;
     const isAvailable = activeTab === 'available';
+    const isAccepting = acceptingRideId === item.id;
 
     return (
       <TouchableOpacity 
@@ -188,11 +197,22 @@ export default function RidesListScreen() {
 
         {isAvailable && (
           <View style={styles.actionRow}>
-            <TouchableOpacity onPress={() => {}} style={[styles.actionBtn, { borderColor: theme.colors.border }]}>
+            <TouchableOpacity disabled={isAccepting} onPress={() => {}} style={[styles.actionBtn, { borderColor: theme.colors.border, opacity: isAccepting ? 0.55 : 1 }]}>
                <Text style={[styles.actionText, { color: theme.colors.textSecondary }]}>Decline</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => handleAcceptRide(item)} style={[styles.actionBtn, { backgroundColor: BRAND.primary, borderColor: BRAND.primary }]}>
-               <Text style={[styles.actionText, { color: '#000', fontWeight: '700' }]}>Accept Ride</Text>
+            <TouchableOpacity
+              disabled={isAccepting}
+              onPress={() => handleAcceptRide(item)}
+              style={[styles.actionBtn, { backgroundColor: BRAND.primary, borderColor: BRAND.primary, opacity: isAccepting ? 0.78 : 1 }]}
+            >
+               {isAccepting ? (
+                 <View style={styles.acceptingRow}>
+                   <ActivityIndicator size="small" color="#000" />
+                   <Text style={[styles.actionText, { color: '#000', fontWeight: '700' }]}>Accepting...</Text>
+                 </View>
+               ) : (
+                 <Text style={[styles.actionText, { color: '#000', fontWeight: '700' }]}>Accept Ride</Text>
+               )}
             </TouchableOpacity>
           </View>
         )}
@@ -285,6 +305,7 @@ const styles = StyleSheet.create({
   metaValue: { fontSize: 13, fontWeight: '600' },
   actionRow: { flexDirection: 'row', gap: 12, marginTop: 16 },
   actionBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 1, alignItems: 'center' },
+  acceptingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   actionText: { fontSize: 14, fontWeight: '600' },
   emptyState: { alignItems: 'center', padding: 40 },
   emptyText: { marginTop: 12 },

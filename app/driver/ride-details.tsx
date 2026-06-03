@@ -21,7 +21,9 @@ import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
 import { RideMapFullscreenModal } from '@/components/RideMapFullscreenModal';
 import { useTheme } from '@/context/ThemeContext';
 import { useAlert } from '@/context/AlertContext';
+import { useLocation } from '@/context/LocationContext';
 import { apiService } from '@/services/api';
+import { supabaseService } from '@/services/supabase';
 import { ListScreenSkeleton } from '@/components/ListScreenSkeleton';
 import { BRAND, COLORS } from '@/utils/colors';
 import { verticalScale, scale } from 'react-native-size-matters';
@@ -40,6 +42,7 @@ export default function RideDetailsScreen() {
   const { rideId, rideData } = useLocalSearchParams();
   const { theme, mode } = useTheme();
   const { showError, showSuccess } = useAlert();
+  const { currentLocation, watchLocation } = useLocation();
   const insets = useSafeAreaInsets();
   const isLight = mode === 'light';
   const [ride, setRide] = useState<any>(null);
@@ -49,9 +52,21 @@ export default function RideDetailsScreen() {
   const [routeDistanceKm, setRouteDistanceKm] = useState(0);
   const [routeDurationMin, setRouteDurationMin] = useState(0);
   const [showFullMap, setShowFullMap] = useState(false);
+  const [liveDriverLocation, setLiveDriverLocation] = useState<[number, number] | null>(null);
+  const [liveRiderLocation, setLiveRiderLocation] = useState<[number, number] | null>(null);
   const [lastMapTap, setLastMapTap] = useState(0);
   const [receiptModalMode, setReceiptModalMode] = useState<'share' | 'download' | null>(null);
   const receiptRef = useRef<View>(null);
+  const parseDescriptionCoordinate = (description?: string | null) => {
+    if (!description) return null;
+    const latMatch = description.match(/Lat:\s*([-\d.]+)/i);
+    const lngMatch = description.match(/Lng:\s*([-\d.]+)/i);
+    if (!latMatch || !lngMatch) return null;
+    const latitude = Number(latMatch[1]);
+    const longitude = Number(lngMatch[1]);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+    return [longitude, latitude] as [number, number];
+  };
   const extractCoordinate = (source: any, latKeys: string[], lngKeys: string[]) => {
     if (!source) return null;
     const lat = latKeys.map((key) => Number(source[key])).find((value) => Number.isFinite(value));
@@ -107,12 +122,18 @@ export default function RideDetailsScreen() {
          setRouteLoading(true);
 
          try {
-            const pickupQuery = ride.pickup_description || ride.pickup_zone || '';
-            const destinationQuery = ride.destination_description || ride.destination_zone || '';
+            const explicitPickup =
+              parseDescriptionCoordinate(ride.pickup_description) ||
+              extractCoordinate(ride, ['pickup_latitude', 'pickupLat', 'pickup_lat'], ['pickup_longitude', 'pickupLng', 'pickup_lon']);
+            const explicitDestination =
+              parseDescriptionCoordinate(ride.destination_description) ||
+              extractCoordinate(ride, ['dropoff_latitude', 'dropoffLat', 'dropoff_lat'], ['dropoff_longitude', 'dropoffLng', 'dropoff_lon']);
+            const pickupQuery = ride.pickup_zone || ride.pickup_description || '';
+            const destinationQuery = ride.destination_zone || ride.destination_description || '';
 
             const [pickupResult, destinationResult] = await Promise.all([
-               pickupQuery ? geocodeMapboxLocation(pickupQuery) : null,
-               destinationQuery ? geocodeMapboxLocation(destinationQuery) : null,
+               explicitPickup ? Promise.resolve({ coordinate: explicitPickup }) : pickupQuery ? geocodeMapboxLocation(pickupQuery) : null,
+               explicitDestination ? Promise.resolve({ coordinate: explicitDestination }) : destinationQuery ? geocodeMapboxLocation(destinationQuery) : null,
             ]);
 
             if (cancelled || !pickupResult || !destinationResult) {
@@ -135,8 +156,23 @@ export default function RideDetailsScreen() {
             }
 
             setRouteCoordinates([pickupResult.coordinate, destinationResult.coordinate]);
+            setRouteDistanceKm(Number(ride.distance_km || 0));
+            setRouteDurationMin(Number(ride.duration_minutes || 0));
          } catch (error) {
             console.log('Failed to load Mapbox route for driver ride details:', error);
+            if (!cancelled) {
+              const fallbackPickup =
+                parseDescriptionCoordinate(ride.pickup_description) ||
+                extractCoordinate(ride, ['pickup_latitude', 'pickupLat', 'pickup_lat'], ['pickup_longitude', 'pickupLng', 'pickup_lon']);
+              const fallbackDestination =
+                parseDescriptionCoordinate(ride.destination_description) ||
+                extractCoordinate(ride, ['dropoff_latitude', 'dropoffLat', 'dropoff_lat'], ['dropoff_longitude', 'dropoffLng', 'dropoff_lon']);
+              if (fallbackPickup && fallbackDestination) {
+                setRouteCoordinates([fallbackPickup, fallbackDestination]);
+              }
+              setRouteDistanceKm(Number(ride.distance_km || 0));
+              setRouteDurationMin(Number(ride.duration_minutes || 0));
+            }
          } finally {
             if (!cancelled) {
                setRouteLoading(false);
@@ -151,10 +187,76 @@ export default function RideDetailsScreen() {
       };
    }, [ride]);
 
+  useEffect(() => {
+    const targetRideId = String(rideId || ride?.id || '');
+    const status = String(ride?.status || '').toLowerCase();
+    const shouldTrack = !!targetRideId && (status === 'accepted' || status === 'in_progress');
+    if (!shouldTrack) return;
+
+    let mounted = true;
+    let unwatch: undefined | (() => void);
+
+    const startLiveTracking = async () => {
+      await supabaseService.subscribeToRideLocationUpdates(targetRideId, (payload) => {
+        if (!mounted || !payload) return;
+        const coordinate: [number, number] | null =
+          Number.isFinite(Number(payload.longitude)) && Number.isFinite(Number(payload.latitude))
+            ? [Number(payload.longitude), Number(payload.latitude)]
+            : null;
+        if (!coordinate) return;
+
+        if (payload.role === 'rider') {
+          setLiveRiderLocation(coordinate);
+        }
+        if (payload.role === 'driver') {
+          setLiveDriverLocation(coordinate);
+        }
+      });
+
+      if (currentLocation) {
+        const initial: [number, number] = [currentLocation.longitude, currentLocation.latitude];
+        setLiveDriverLocation(initial);
+        await supabaseService.broadcastRideLocation(targetRideId, {
+          role: 'driver',
+          latitude: currentLocation.latitude,
+          longitude: currentLocation.longitude,
+          accuracy: (currentLocation as any).accuracy,
+          timestamp: Date.now(),
+        });
+      }
+
+      unwatch = await watchLocation((location) => {
+        if (!mounted) return;
+        setLiveDriverLocation([location.longitude, location.latitude]);
+        supabaseService.broadcastRideLocation(targetRideId, {
+          role: 'driver',
+          latitude: location.latitude,
+          longitude: location.longitude,
+          accuracy: (location as any).accuracy,
+          timestamp: Date.now(),
+        }).catch((error) => console.log('Failed to broadcast driver ride location:', error));
+      });
+    };
+
+    startLiveTracking().catch((error) => console.log('Failed to start driver live tracking:', error));
+
+    return () => {
+      mounted = false;
+      if (unwatch) unwatch();
+      supabaseService.unsubscribeRideLocation(targetRideId).catch(() => undefined);
+    };
+  }, [ride?.id, ride?.status, rideId]);
+
   const handleUpdate = async (status: string) => {
+    if (updating) return;
+
     try {
       setUpdating(true);
       const targetRideId = String(rideId || ride?.id || '');
+      if (!targetRideId) {
+        showError('Ride unavailable', 'We could not identify this ride yet. Please reopen the ride and try again.');
+        return;
+      }
       const response = await apiService.updateRideStatus(targetRideId, status as 'in_progress' | 'completed');
       
       if (response) {
@@ -177,9 +279,15 @@ export default function RideDetailsScreen() {
   };
 
   const handleAcceptRide = async () => {
+    if (updating) return;
+
     try {
       setUpdating(true);
       const targetRideId = String(rideId || ride?.id || '');
+      if (!targetRideId) {
+        showError('Ride unavailable', 'We could not identify this ride yet. Please reopen the ride and try again.');
+        return;
+      }
       const response = await apiService.acceptRide(targetRideId);
       const nextRide = response?.ride || response;
       setRide(nextRide || { ...ride, status: 'accepted' });
@@ -202,19 +310,29 @@ export default function RideDetailsScreen() {
 
   const pickupCoordinate =
     extractCoordinate(ride, ['pickup_latitude', 'pickupLat', 'pickup_lat'], ['pickup_longitude', 'pickupLng', 'pickup_lon']) ||
+    parseDescriptionCoordinate(ride.pickup_description) ||
     routeCoordinates?.[0] ||
     [3.3792, 6.5244];
   const dropoffCoordinate =
     extractCoordinate(ride, ['dropoff_latitude', 'dropoffLat', 'dropoff_lat'], ['dropoff_longitude', 'dropoffLng', 'dropoff_lon']) ||
+    parseDescriptionCoordinate(ride.destination_description) ||
     routeCoordinates?.[routeCoordinates.length - 1] ||
     [3.4292, 6.5844];
   const driverCoordinate =
+    liveDriverLocation ||
     extractCoordinate(ride, ['driver_current_latitude', 'driverLatitude', 'driver_latitude'], ['driver_current_longitude', 'driverLongitude', 'driver_longitude']) ||
     null;
   const riderCoordinate =
+    liveRiderLocation ||
     extractCoordinate(ride, ['rider_current_latitude', 'riderLatitude', 'rider_latitude'], ['rider_current_longitude', 'riderLongitude', 'rider_longitude']) ||
     null;
-  const routeFitCoordinates = routeCoordinates || [pickupCoordinate, dropoffCoordinate];
+  const routeFitCoordinates = [
+    ...(routeCoordinates || [pickupCoordinate, dropoffCoordinate]),
+    ...(riderCoordinate ? [riderCoordinate] : []),
+    ...(driverCoordinate ? [driverCoordinate] : []),
+  ];
+  const displayDistanceKm = routeDistanceKm || Number(ride.distance_km || 0);
+  const displayDurationMin = routeDurationMin || Number(ride.duration_minutes || 0);
   const fareAmount = Number(ride.fare_amount || ride.fare || 0);
   const platformFee = Number(ride.platform_fee ?? fareAmount * PLATFORM_FEE_PERCENTAGE);
   const driverEarnings = Number(ride.driver_earnings ?? fareAmount - platformFee);
@@ -390,11 +508,11 @@ export default function RideDetailsScreen() {
                   <View style={[styles.routeSummary, { borderTopColor: theme.colors.border }]}>
                      <View>
                         <Text style={[styles.routeSummaryLabel, { color: theme.colors.textSecondary }]}>Distance</Text>
-                        <Text style={[styles.routeSummaryValue, { color: theme.colors.textPrimary }]}>{routeLoading ? 'Calculating...' : `${routeDistanceKm || 0} km`}</Text>
+                        <Text style={[styles.routeSummaryValue, { color: theme.colors.textPrimary }]}>{routeLoading ? 'Calculating...' : `${displayDistanceKm || 0} km`}</Text>
                      </View>
                      <View style={{ alignItems: 'flex-end' }}>
                         <Text style={[styles.routeSummaryLabel, { color: theme.colors.textSecondary }]}>ETA</Text>
-                        <Text style={[styles.routeSummaryValue, { color: theme.colors.textPrimary }]}>{routeLoading ? 'Calculating...' : `${routeDurationMin || 0} min`}</Text>
+                        <Text style={[styles.routeSummaryValue, { color: theme.colors.textPrimary }]}>{routeLoading ? 'Calculating...' : `${displayDurationMin || 0} min`}</Text>
                      </View>
                   </View>
          </View>
@@ -438,7 +556,7 @@ export default function RideDetailsScreen() {
         dropoff={dropoffCoordinate}
         riderLocation={riderCoordinate}
         driverLocation={driverCoordinate}
-        speedText={routeLoading ? 'Loading route...' : `ETA ${routeDurationMin || 0} min | ${routeDistanceKm || 0} km`}
+        speedText={routeLoading ? 'Loading route...' : `ETA ${displayDurationMin || 0} min | ${displayDistanceKm || 0} km`}
         onClose={() => setShowFullMap(false)}
       />
       <RideReceiptExportModal

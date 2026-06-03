@@ -47,7 +47,7 @@ import {
 
 // Fare calculation constants
 const BASE_FARE_PER_KM = 600;
-// const PLATFORM_FEE_PERCENTAGE = 0.15;
+const PLATFORM_FEE_PERCENTAGE = 0.15;
 // const DRIVER_COMMISSION_PERCENTAGE = 0.85;
 
 // Storage keys
@@ -372,6 +372,8 @@ export default function BookingScreen() {
   }>({});
   const [showPickupTimeModal, setShowPickupTimeModal] = useState(false);
   const [selectedPickupTime, setSelectedPickupTime] = useState<string | null>(null);
+  const [pendingPickupTime, setPendingPickupTime] = useState<string | null>(null);
+  const [bookingConfirmationVisible, setBookingConfirmationVisible] = useState(false);
   const [currentLocationPrompt, setCurrentLocationPrompt] = useState<'pickup' | 'dropoff' | null>(null);
   const [currentLocationUnavailableVisible, setCurrentLocationUnavailableVisible] = useState(false);
   const [currentLocationUsedAs, setCurrentLocationUsedAs] = useState<'pickup' | 'dropoff' | null>(null);
@@ -913,9 +915,19 @@ export default function BookingScreen() {
     if (!pickupLocation || !dropoffLocation) return;
 
     setShowPickupTimeModal(false);
+    setPendingPickupTime(pickupTime);
+    setBookingConfirmationVisible(true);
+  };
+
+  const handleConfirmBooking = async () => {
+    if (!pickupLocation || !dropoffLocation || !pendingPickupTime) return;
+
+    setBookingConfirmationVisible(false);
     setIsBooking(true);
 
     try {
+      const totalFare = Number.isFinite(estimatedFare) ? estimatedFare : 0;
+      const platformFee = Math.round(totalFare * PLATFORM_FEE_PERCENTAGE);
       const rideData = {
         pickup_location: {
           lat: pickupLocation.lat,
@@ -929,10 +941,10 @@ export default function BookingScreen() {
         },
         estimated_distance: Number.isFinite(estimatedDistance) ? estimatedDistance : 0,
         number_of_seats: 1,
-        pickup_time: pickupTime, // Use the selected time from modal
-        fare_amount: Number.isFinite(estimatedFare) ? estimatedFare : 0,
-        platform_fee: 0,
-        driver_earnings: Number.isFinite(estimatedFare) ? estimatedFare : 0,
+        pickup_time: pendingPickupTime,
+        fare_amount: totalFare,
+        platform_fee: platformFee,
+        driver_earnings: Math.max(0, totalFare - platformFee),
         seats_available: 4,
       };
       const response = await apiService.createRide(rideData);
@@ -943,6 +955,7 @@ export default function BookingScreen() {
       setDropoffLocation(null);
       setEstimatedFare(0);
       setEstimatedDistance(0);
+      setPendingPickupTime(null);
       setBookingSuccessVisible(true);
 
       await sendLocalNotification(
@@ -961,6 +974,11 @@ export default function BookingScreen() {
     } finally {
       setIsBooking(false);
     }
+  };
+
+  const handleCancelBookingConfirmation = () => {
+    setBookingConfirmationVisible(false);
+    setPendingPickupTime(null);
   };
 
   const handleViewBookedRide = () => {
@@ -999,6 +1017,9 @@ export default function BookingScreen() {
     return coordinates;
   }, [currentLocation, pickupLocation, dropoffLocation]);
 
+  const bookingTotalFare = Number.isFinite(estimatedFare) ? estimatedFare : 0;
+  const bookingPlatformFee = Math.round(bookingTotalFare * PLATFORM_FEE_PERCENTAGE);
+  const bookingEstimatedDriverFare = Math.max(0, bookingTotalFare - bookingPlatformFee);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -1178,7 +1199,7 @@ export default function BookingScreen() {
             <View style={[styles.fareCard, { backgroundColor: isLight ? '#FFF5E5' : '#2A1800', borderColor: BRAND.primary }]}>
               <View style={styles.fareRow}>
                  <View>
-                   <Text style={[styles.fareLabel, { color: theme.colors.textSecondary }]}>{routeLoading ? 'Calculating route...' : 'Estimated Fare'}</Text>
+                   <Text style={[styles.fareLabel, { color: theme.colors.textSecondary }]}>{routeLoading ? 'Calculating route...' : 'Total fare'}</Text>
                    <Text style={[styles.fareValue, { color: BRAND.primary }]}>₦{estimatedFare.toLocaleString()}</Text>
                  </View>
                  <View style={{ alignItems: 'flex-end' }}>
@@ -1189,6 +1210,16 @@ export default function BookingScreen() {
               <View style={[styles.fareMetaRow, { marginTop: 8 }]}>
                 <Text style={[styles.fareMetaText, { color: theme.colors.textSecondary }]}>ETA</Text>
                 <Text style={[styles.fareMetaText, { color: theme.colors.textPrimary }]}>{estimatedDuration > 0 ? `${estimatedDuration} min` : '—'}</Text>
+              </View>
+              <View style={[styles.fareBreakdown, { borderTopColor: theme.colors.border }]}>
+                <View style={styles.fareMetaRow}>
+                  <Text style={[styles.fareMetaText, { color: theme.colors.textSecondary }]}>Platform fee deducted (15%)</Text>
+                  <Text style={[styles.fareMetaText, { color: theme.colors.textPrimary }]}>₦{bookingPlatformFee.toLocaleString()}</Text>
+                </View>
+                <View style={styles.fareMetaRow}>
+                  <Text style={[styles.fareTotalLabel, { color: theme.colors.textPrimary }]}>Estimated driver fare</Text>
+                  <Text style={[styles.fareTotalValue, { color: BRAND.primary }]}>₦{bookingEstimatedDriverFare.toLocaleString()}</Text>
+                </View>
               </View>
             </View>
           )}
@@ -1308,6 +1339,52 @@ export default function BookingScreen() {
         onConfirm={handlePickupTimeConfirmed}
         onCancel={() => setShowPickupTimeModal(false)}
       />
+
+      <Modal
+        visible={bookingConfirmationVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={handleCancelBookingConfirmation}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.confirmModal, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+            <View style={[styles.confirmIcon, { backgroundColor: `${BRAND.primary}22` }]}>
+              <MaterialCommunityIcons name="receipt-text-check-outline" size={30} color={BRAND.primary} />
+            </View>
+            <Text style={[styles.confirmTitle, { color: theme.colors.textPrimary }]}>Confirm your ride</Text>
+            <Text style={[styles.confirmCopy, { color: theme.colors.textSecondary }]}>
+              Review the fare breakdown before we send this request to nearby drivers.
+            </Text>
+            <View style={[styles.confirmRoute, { borderColor: theme.colors.border, backgroundColor: theme.colors.inputBackground }]}>
+              <Text numberOfLines={2} style={[styles.confirmAddress, { color: theme.colors.textPrimary }]}>{sanitizeAddress(pickupLocation?.address || '')}</Text>
+              <MaterialCommunityIcons name="arrow-down" size={18} color={BRAND.primary} />
+              <Text numberOfLines={2} style={[styles.confirmAddress, { color: theme.colors.textPrimary }]}>{sanitizeAddress(dropoffLocation?.address || '')}</Text>
+            </View>
+            <View style={styles.confirmRows}>
+              <View style={styles.confirmRow}>
+                <Text style={[styles.confirmLabel, { color: theme.colors.textSecondary }]}>Estimated driver fare</Text>
+                <Text style={[styles.confirmValue, { color: theme.colors.textPrimary }]}>₦{bookingEstimatedDriverFare.toLocaleString()}</Text>
+              </View>
+              <View style={styles.confirmRow}>
+                <Text style={[styles.confirmLabel, { color: theme.colors.textSecondary }]}>Platform fee deducted</Text>
+                <Text style={[styles.confirmValue, { color: theme.colors.textPrimary }]}>₦{bookingPlatformFee.toLocaleString()}</Text>
+              </View>
+              <View style={[styles.confirmRow, styles.confirmTotalRow, { borderTopColor: theme.colors.border }]}>
+                <Text style={[styles.confirmTotalLabel, { color: theme.colors.textPrimary }]}>Total payable fare</Text>
+                <Text style={[styles.confirmTotalValue, { color: BRAND.primary }]}>₦{bookingTotalFare.toLocaleString()}</Text>
+              </View>
+            </View>
+            <View style={styles.confirmActions}>
+              <TouchableOpacity onPress={handleCancelBookingConfirmation} style={[styles.confirmButton, { borderColor: theme.colors.border }]}>
+                <Text style={[styles.confirmButtonText, { color: theme.colors.textPrimary }]}>Go Back</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleConfirmBooking} style={[styles.confirmButton, { backgroundColor: BRAND.primary, borderColor: BRAND.primary }]}>
+                <Text style={[styles.confirmButtonText, { color: '#000' }]}>Confirm Booking</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal visible={!!voiceLocationTarget} transparent animationType="fade" onRequestClose={closeVoiceLocation}>
         <View style={styles.modalBackdrop}>
@@ -1511,6 +1588,9 @@ const styles = StyleSheet.create({
   fareValueSmall: { fontSize: 16, fontWeight: '600', marginTop: 2 },
   fareMetaRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   fareMetaText: { fontSize: 12, fontWeight: '500' },
+  fareBreakdown: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, gap: 8 },
+  fareTotalLabel: { fontSize: 13, fontWeight: '800' },
+  fareTotalValue: { fontSize: 15, fontWeight: '900' },
   bookBtn: {
     marginTop: 24,
     height: 56,
@@ -1570,6 +1650,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 22,
   },
+  confirmModal: {
+    width: '100%',
+    maxWidth: 430,
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 20,
+  },
+  confirmIcon: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginBottom: 12,
+  },
+  confirmTitle: { fontSize: 22, fontWeight: '900', textAlign: 'center' },
+  confirmCopy: { marginTop: 8, fontSize: 13, lineHeight: 19, textAlign: 'center' },
+  confirmRoute: { marginTop: 16, borderWidth: 1, borderRadius: 16, padding: 14, gap: 8 },
+  confirmAddress: { fontSize: 13, fontWeight: '700', lineHeight: 18 },
+  confirmRows: { marginTop: 16, gap: 10 },
+  confirmRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
+  confirmLabel: { fontSize: 13, flex: 1 },
+  confirmValue: { fontSize: 14, fontWeight: '800' },
+  confirmTotalRow: { marginTop: 2, paddingTop: 12, borderTopWidth: 1 },
+  confirmTotalLabel: { fontSize: 15, fontWeight: '900', flex: 1 },
+  confirmTotalValue: { fontSize: 20, fontWeight: '900' },
+  confirmActions: { flexDirection: 'row', gap: 10, marginTop: 20 },
+  confirmButton: { flex: 1, minHeight: 48, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
+  confirmButtonText: { fontSize: 14, fontWeight: '900', textAlign: 'center' },
   voiceModal: {
     width: '100%',
     borderRadius: 22,
@@ -1711,4 +1821,3 @@ const mapDarkStyle = [
   { "featureType": "water", "elementType": "labels.text.fill", "stylers": [{ "color": "#515c6d" }] },
   { "featureType": "water", "elementType": "labels.text.stroke", "stylers": [{ "color": "#17263c" }] }
 ];
-

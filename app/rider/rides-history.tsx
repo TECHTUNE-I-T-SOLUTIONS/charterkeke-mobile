@@ -160,7 +160,7 @@ export default function RidesHistoryScreen() {
                   <Text style={[styles.dateText, { color: theme.colors.textSecondary }]}>
                     {new Date(ride.created_at).toLocaleDateString()} • {new Date(ride.created_at).toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' })}
                   </Text>
-                  {ride.status === 'pending' && (
+                  {(ride.status === 'pending' || ride.status === 'dispatched') && (
                     <TouchableOpacity onPress={() => handleCancelRide(ride.id)} disabled={cancellingRideId === ride.id}>
                       <Text style={{ color: '#EF4444', fontWeight: '600', fontSize: 12 }}>
                         {cancellingRideId === ride.id ? 'Cancelling...' : 'Cancel'}

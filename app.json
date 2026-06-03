@@ -2,10 +2,8 @@
   "expo": {
     "name": "Charter Keke",
     "slug": "charter-keke-mobile",
-    "version": "2.1.9",
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
+    "version": "2.1.10",
+    "runtimeVersion": "2",
     "orientation": "portrait",
     "icon": "./assets/charter keke.png",
     "userInterfaceStyle": "automatic",
@@ -19,6 +17,7 @@
         "expo-router",
         {}
       ],
+      "./plugins/with-androidx-support-excludes.js",
       [
         "@rnmapbox/maps",
         {
@@ -67,7 +66,7 @@
     "ios": {
       "icon": "./assets/ios-app-icon-1024.png",
       "bundleIdentifier": "com.charterkeke.mobile",
-      "buildNumber": "20",
+      "buildNumber": "220",
       "config": {
         "usesNonExemptEncryption": false
       },
@@ -92,7 +91,7 @@
         "backgroundColor": "#1a1a1a"
       },
       "package": "com.charterkeke.mobile",
-      "versionCode": 9,
+      "versionCode": 220,
       "permissions": [
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",

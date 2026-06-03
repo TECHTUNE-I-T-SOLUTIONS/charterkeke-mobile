@@ -1,6 +1,6 @@
 {
-  "version": "2.1.9",
-  "buildNumber": 219,
-  "releaseDate": "2026-06-02",
-  "changelog": "Improved ride notifications and deep links, ride receipts, daily resume verification, driver ride acceptance, payment return handling, and ride list swipe navigation."
+  "version": "2.1.10",
+  "buildNumber": 220,
+  "releaseDate": "2026-06-03",
+  "changelog": "Improved OTA compatibility, Android build stability, ride booking fee clarity, realtime ride tracking, driver ETA display, notification actions, and ride receipt delivery."
 }
