@@ -12,6 +12,7 @@ import {
   Alert,
   Pressable,
   Linking,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -32,7 +33,7 @@ export default function ChatScreen() {
   const { user } = useAuth();
   const colors = mode === 'dark' ? COLORS.dark : COLORS.light;
   const router = useRouter();
-  const { rideId } = useLocalSearchParams<{ rideId: string }>();
+  const { rideId, chatId } = useLocalSearchParams<{ rideId?: string; chatId?: string }>();
 
   const [chat, setChat] = useState<Chat | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -50,11 +51,22 @@ export default function ChatScreen() {
   const flatListRef = useRef<FlatList>(null);
   const locationSubscriptionRef = useRef<any>(null);
 
+  const getPersonName = (person?: any, fallback = 'Ride partner') => {
+    const fullName = [person?.first_name, person?.last_name].filter(Boolean).join(' ').trim();
+    return person?.name || fullName || fallback;
+  };
+
+  const currentUserName = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim() || 'You';
+  const currentUserAvatar = user?.avatar;
+  const otherPerson = chat?.rider;
+  const otherPersonName = getPersonName(otherPerson, 'Rider');
+  const otherPersonAvatar = otherPerson?.profile_picture_url;
+
   useEffect(() => {
-    if (rideId && user?.id) {
+    if ((rideId || chatId) && user?.id) {
       initializeChat();
     }
-  }, [rideId, user?.id]);
+  }, [rideId, chatId, user?.id]);
 
   useEffect(() => {
     if (chat?.id) {
@@ -80,10 +92,10 @@ export default function ChatScreen() {
       setLoading(true);
       setError(null);
 
-      if (!rideId) {
-        console.error('[CHAT] No ride ID provided');
-        setError('No ride ID available');
-        Alert.alert('Error', 'No ride ID available');
+      if (!rideId && !chatId) {
+        console.error('[CHAT] No ride or chat ID provided');
+        setError('No chat available');
+        Alert.alert('Error', 'No chat available');
         return;
       }
 
@@ -99,13 +111,13 @@ export default function ChatScreen() {
       setCurrentUserId(userId);
 
       // Get or create chat
-      console.log('[CHAT] Fetching chat for ride:', rideId);
-      let response = await apiService.getChat(rideId);
+      console.log('[CHAT] Fetching chat:', { rideId, chatId });
+      let response = chatId ? await apiService.getChatById(chatId) : await apiService.getChat(rideId as string);
       console.log('[CHAT] Get chat response:', response);
 
       let chatData = response?.chat || response?.data?.chat;
       
-      if (!chatData?.id) {
+      if (!chatData?.id && rideId) {
         console.log('[CHAT] Chat not found, creating new one');
         try {
           const createResponse = await apiService.createChat(rideId);
@@ -148,6 +160,12 @@ export default function ChatScreen() {
         }
       }
       
+      if (!chatData?.id) {
+        setError('Chat not found');
+        Alert.alert('Chat Unavailable', 'This chat could not be found. Please open it from the messages screen.');
+        return;
+      }
+
       console.log('[CHAT] Chat initialized successfully:', { id: chatData.id, rideId: chatData.ride_id });
       setChat(chatData);
 
@@ -460,6 +478,8 @@ export default function ChatScreen() {
       isRider={false}
       chatId={chat?.id}
       currentUserId={currentUserId}
+      senderName={item.sender_id === currentUserId ? currentUserName : otherPersonName}
+      senderAvatar={item.sender_id === currentUserId ? currentUserAvatar : otherPersonAvatar}
       onLocationShare={(locationData) => {
         // Live location update - broadcast to rider
         supabaseService.shareLocation(chat?.id || '', {
@@ -543,7 +563,25 @@ export default function ChatScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Chat</Text>
+        <View style={styles.headerProfile}>
+          <View style={[styles.headerAvatar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            {otherPersonAvatar ? (
+              <Image source={{ uri: otherPersonAvatar }} style={styles.headerAvatarImage} />
+            ) : (
+              <Text style={[styles.headerAvatarInitial, { color: colors.primary }]}>
+                {otherPersonName.charAt(0).toUpperCase()}
+              </Text>
+            )}
+          </View>
+          <View style={styles.headerTextWrap}>
+            <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
+              {otherPersonName}
+            </Text>
+            <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
+              Rider
+            </Text>
+          </View>
+        </View>
         <View style={styles.headerSpacer} />
       </View>
 
@@ -725,10 +763,40 @@ const styles = StyleSheet.create({
     padding: scale(8),
   },
   headerTitle: {
-    fontSize: moderateScale(18),
-    fontWeight: '600',
+    fontSize: moderateScale(15),
+    fontWeight: '800',
+  },
+  headerProfile: {
     flex: 1,
-    textAlign: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: scale(8),
+  },
+  headerAvatar: {
+    width: scale(42),
+    height: scale(42),
+    borderRadius: scale(21),
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    marginRight: scale(10),
+  },
+  headerAvatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  headerAvatarInitial: {
+    fontSize: moderateScale(16),
+    fontWeight: '900',
+  },
+  headerTextWrap: {
+    flex: 1,
+  },
+  headerSubtitle: {
+    fontSize: moderateScale(11),
+    fontWeight: '600',
+    marginTop: verticalScale(1),
   },
   headerSpacer: {
     width: scale(40),

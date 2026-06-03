@@ -75,6 +75,11 @@ export const resolveNotificationRoute = (data: any, userRole?: 'driver' | 'rider
   const chatId = payload?.chatId || payload?.chat_id;
   const role = userRole || payload?.userRole || payload?.user_role || payload?.role;
   const type = String(payload?.type || payload?.notification_type || '').toLowerCase();
+  const relatedTable = String(payload?.related_table || payload?.table || '').toLowerCase();
+
+  if (relatedTable === 'messages' || chatId) {
+    return `/${role === 'driver' ? 'driver' : 'rider'}/chat${rideId ? `?rideId=${rideId}` : chatId ? `?chatId=${chatId}` : ''}`;
+  }
 
   switch (type) {
     case 'ride':

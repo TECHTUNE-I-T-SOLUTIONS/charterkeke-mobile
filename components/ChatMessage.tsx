@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Platform, Linking } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Platform, Linking, Image } from 'react-native';
 import { Message } from '@/types';
 import { COLORS } from '@/utils/colors';
 import { moderateScale, scale, verticalScale } from 'react-native-size-matters';
@@ -15,6 +15,8 @@ interface ChatMessageProps {
   isRider?: boolean;
   chatId?: string;
   currentUserId?: string;
+  senderName?: string;
+  senderAvatar?: string | null;
   onLocationShare?: (location: any) => void;
 }
 
@@ -24,6 +26,8 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
   isRider = true,
   chatId,
   currentUserId,
+  senderName,
+  senderAvatar,
   onLocationShare,
 }) => {
   const { theme, mode } = useTheme();
@@ -273,6 +277,30 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
       styles.container,
       isOwnMessage ? styles.ownMessage : styles.otherMessage
     ]}>
+      {!isOwnMessage && (
+        <View style={[styles.senderMeta, { marginLeft: scale(40) }]}>
+          {!!senderName && (
+            <Text style={[styles.senderName, { color: colors.textSecondary }]} numberOfLines={1}>
+              {senderName}
+            </Text>
+          )}
+        </View>
+      )}
+      <View style={[
+        styles.messageLine,
+        isOwnMessage ? styles.ownMessageLine : styles.otherMessageLine,
+      ]}>
+        {!isOwnMessage && (
+          <View style={[styles.avatar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            {senderAvatar ? (
+              <Image source={{ uri: senderAvatar }} style={styles.avatarImage} />
+            ) : (
+              <Text style={[styles.avatarInitial, { color: colors.primary }]}>
+                {(senderName || 'U').trim().charAt(0).toUpperCase()}
+              </Text>
+            )}
+          </View>
+        )}
       <View style={[
         styles.messageBubble,
         {
@@ -290,6 +318,18 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
           </Text>
           {getReadStatusIcon()}
         </View>
+      </View>
+        {isOwnMessage && (
+          <View style={[styles.avatar, { backgroundColor: colors.primary + '22', borderColor: colors.primary + '55' }]}>
+            {senderAvatar ? (
+              <Image source={{ uri: senderAvatar }} style={styles.avatarImage} />
+            ) : (
+              <Text style={[styles.avatarInitial, { color: colors.primary }]}>
+                {(senderName || 'You').trim().charAt(0).toUpperCase()}
+              </Text>
+            )}
+          </View>
+        )}
       </View>
 
       {message.message_type === 'location' && message.location_data && (
@@ -325,8 +365,45 @@ const styles = StyleSheet.create({
   otherMessage: {
     alignItems: 'flex-start',
   },
+  senderMeta: {
+    maxWidth: '72%',
+    marginBottom: verticalScale(2),
+  },
+  senderName: {
+    fontSize: moderateScale(11),
+    fontWeight: '700',
+  },
+  messageLine: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: scale(8),
+    width: '100%',
+  },
+  ownMessageLine: {
+    justifyContent: 'flex-end',
+  },
+  otherMessageLine: {
+    justifyContent: 'flex-start',
+  },
+  avatar: {
+    width: scale(32),
+    height: scale(32),
+    borderRadius: scale(16),
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarInitial: {
+    fontSize: moderateScale(13),
+    fontWeight: '800',
+  },
   messageBubble: {
-    maxWidth: '80%',
+    maxWidth: '74%',
     paddingHorizontal: scale(12),
     paddingVertical: verticalScale(8),
     borderRadius: moderateScale(16),

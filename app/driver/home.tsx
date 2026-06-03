@@ -10,7 +10,7 @@ import {
   Image,
   Switch,
   ActivityIndicator,
-  Alert,
+  Modal,
   Dimensions,
   StatusBar,
   Animated,
@@ -46,6 +46,17 @@ interface DriverData {
   is_online?: boolean;
 }
 
+function formatRemittanceCountdown(ms: number) {
+  const safe = Math.max(Number(ms || 0), 0);
+  const hours = Math.floor(safe / 3600000);
+  const minutes = Math.floor((safe % 3600000) / 60000);
+  const seconds = Math.floor((safe % 60000) / 1000);
+
+  if (hours <= 0 && minutes <= 0 && seconds <= 0) return 'due now';
+  if (hours <= 0) return `${minutes}m ${seconds}s`;
+  return `${hours}h ${minutes}m ${seconds}s`;
+}
+
 export default function DriverHomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -70,6 +81,11 @@ export default function DriverHomeScreen() {
   const [hasCached, setHasCached] = useState(false);
   const [settlementBlocked, setSettlementBlocked] = useState(false);
   const [settlementOutstanding, setSettlementOutstanding] = useState(0);
+  const [todayRemittanceDue, setTodayRemittanceDue] = useState(0);
+  const [remittanceDueAt, setRemittanceDueAt] = useState<string | null>(null);
+  const [countdownNow, setCountdownNow] = useState(Date.now());
+  const [remittanceModalVisible, setRemittanceModalVisible] = useState(false);
+  const [remittanceModalAmount, setRemittanceModalAmount] = useState(0);
   const [driverStats, setDriverStats] = useState({ completedTrips: 0, averageRating: 0 });
   
   // Refs to prevent state updates on unmounted component
@@ -134,6 +150,11 @@ export default function DriverHomeScreen() {
     }).start();
   }, [isOnline]);
 
+  useEffect(() => {
+    const timer = setInterval(() => setCountdownNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   const loadDashboard = async () => {
     if (!isMountedRef.current || isLoadingRef.current) return;
     
@@ -154,6 +175,8 @@ export default function DriverHomeScreen() {
         setRecentRides(cached.recentRides || []);
         setSettlementBlocked(!!cached.settlementBlocked);
         setSettlementOutstanding(cached.settlementOutstanding || 0);
+        setTodayRemittanceDue(cached.todayRemittanceDue || 0);
+        setRemittanceDueAt(cached.remittanceDueAt || null);
         setDriverStats(cached.driverStats || { completedTrips: 0, averageRating: 0 });
         setHasCached(true);
         setLoading(false);
@@ -223,6 +246,18 @@ export default function DriverHomeScreen() {
       const nextAvailableRides = available.rides?.slice(0, 3) || [];
       const nextRecentRides = ((history as any)?.rides || (history as any)?.data || []).slice(0, 5);
       const nextTodayEarnings = Number(dailyEarnings?.settlement?.totalDriverEarnings || dailyEarnings?.totals?.netDriverEarnings || 0);
+      const nextTodayRemittanceDue = Number(
+        settlement?.totalDueNow ||
+        (Number(settlement?.totalOutstanding || 0) + Number(settlement?.todayRemittance?.totalDue || 0)) ||
+        dailyEarnings?.totals?.unremittedPlatformFee ||
+        dailyEarnings?.settlement?.outstandingPlatformFees ||
+        0
+      );
+      const nextRemittanceDueAt = (
+        settlement?.todayRemittance?.dueAt ||
+        dailyEarnings?.due?.dueAt ||
+        null
+      );
       const nextStats = {
         completedTrips: Number(earningsStats?.stats?.totalRides || nextDriverData?.total_rides_completed || 0),
         averageRating: Number(earningsStats?.stats?.averageRating || nextDriverData?.average_rating || 0),
@@ -243,7 +278,9 @@ export default function DriverHomeScreen() {
       setAvailableRides(nextAvailableRides);
       setRecentRides(nextRecentRides);
       setSettlementBlocked(!!settlement?.blocked);
-      setSettlementOutstanding(settlement?.totalOutstanding || 0);
+      setSettlementOutstanding(settlement?.totalDueNow || settlement?.totalOutstanding || 0);
+      setTodayRemittanceDue(nextTodayRemittanceDue);
+      setRemittanceDueAt(nextRemittanceDueAt);
       setDriverStats(nextStats);
 
       await cacheService.set('driver_home_dashboard', {
@@ -255,7 +292,9 @@ export default function DriverHomeScreen() {
         availableRides: nextAvailableRides,
         recentRides: nextRecentRides,
         settlementBlocked: !!settlement?.blocked,
-        settlementOutstanding: settlement?.totalOutstanding || 0,
+        settlementOutstanding: settlement?.totalDueNow || settlement?.totalOutstanding || 0,
+        todayRemittanceDue: nextTodayRemittanceDue,
+        remittanceDueAt: nextRemittanceDueAt,
         driverStats: nextStats,
       });
     } catch (error) {
@@ -282,17 +321,12 @@ export default function DriverHomeScreen() {
       setIsOnline(!value); // Revert on failure
       const err: any = error;
       if (err?.status === 403 || err?.code === 'settlement_overdue' || settlementBlocked) {
-        Alert.alert(
-          'Remittance Required',
-          `Please pay your outstanding remittance${settlementOutstanding ? ` of ${formatCurrency(settlementOutstanding)}` : ''} before accepting new rides.`,
-          [
-            { text: 'Not Now', style: 'cancel' },
-            { text: 'Pay Now', onPress: () => router.push('/driver/wallet') },
-          ]
-        );
+        setRemittanceModalAmount(Number(err?.totalOutstanding || err?.details?.totalOutstanding || settlementOutstanding || 0));
+        setRemittanceModalVisible(true);
         return;
       }
-      Alert.alert('Unable to Update Status', err?.message || 'Failed to update status');
+      setRemittanceModalAmount(0);
+      setRemittanceModalVisible(true);
     }
   };
 
@@ -301,6 +335,10 @@ export default function DriverHomeScreen() {
     inputRange: [0, 1],
     outputRange: [theme.colors.textSecondary, '#10B981']
   });
+
+  const remittanceCountdownMs = remittanceDueAt
+    ? Math.max(new Date(remittanceDueAt).getTime() - countdownNow, 0)
+    : 0;
 
   const mapRides = useMemo(() => {
     const source = activeRides.length > 0 ? activeRides : recentRides;
@@ -394,11 +432,19 @@ export default function DriverHomeScreen() {
                <View style={styles.statusInfo}>
                   <Text style={[styles.statusLabel, { color: theme.colors.textSecondary }]}>Current Status</Text>
                   <Animated.Text style={[styles.statusValue, { color: statusColor }]}>
-                    {isOnline ? 'Online • Receiving Requests' : 'Offline'}
+                    {isOnline ? 'Online - Receiving Requests' : 'Offline'}
                   </Animated.Text>
-                  {settlementBlocked && (
+                  {settlementBlocked ? (
                     <Text style={[styles.statusNote, { color: '#EF4444' }]}>
-                      Settlement due: ₦{(settlementOutstanding || 0).toLocaleString()}
+                      Remittance due: {formatCurrency(settlementOutstanding || 0)}
+                    </Text>
+                  ) : todayRemittanceDue > 0 ? (
+                    <Text style={[styles.statusNote, { color: BRAND.primary }]}>
+                      Remittance due in {formatRemittanceCountdown(remittanceCountdownMs)} - {formatCurrency(todayRemittanceDue)}
+                    </Text>
+                  ) : (
+                    <Text style={[styles.statusNote, { color: theme.colors.textSecondary }]}>
+                      No remittance due right now
                     </Text>
                   )}
                </View>
@@ -594,6 +640,50 @@ export default function DriverHomeScreen() {
       )}
 
       <SupportFloatingWidget route="/driver/help-and-support" />
+
+      <Modal
+        visible={remittanceModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRemittanceModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+            <View style={styles.modalIconWrap}>
+              <MaterialCommunityIcons name="alert-circle-outline" size={28} color="#EF4444" />
+            </View>
+            <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>
+              Remittance Overdue
+            </Text>
+            <Text style={[styles.modalText, { color: theme.colors.textSecondary }]}>
+              You can only go online after paying overdue platform fees. Today&apos;s remittance stays open until midnight; this lock only applies to overdue balances.
+            </Text>
+            {remittanceModalAmount > 0 && (
+              <View style={[styles.modalAmountBox, { backgroundColor: theme.colors.inputBackground }]}>
+                <Text style={[styles.modalAmountLabel, { color: theme.colors.textSecondary }]}>Amount to remit</Text>
+                <Text style={styles.modalAmount}>{formatCurrency(remittanceModalAmount)}</Text>
+              </View>
+            )}
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                onPress={() => setRemittanceModalVisible(false)}
+                style={[styles.modalBtn, { borderColor: theme.colors.border, borderWidth: 1 }]}
+              >
+                <Text style={[styles.modalBtnSecondaryText, { color: theme.colors.textPrimary }]}>Not Now</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  setRemittanceModalVisible(false);
+                  router.push('/driver/wallet');
+                }}
+                style={[styles.modalBtn, { backgroundColor: BRAND.primary }]}
+              >
+                <Text style={styles.modalBtnPrimaryText}>Pay Now</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -668,6 +758,77 @@ const styles = StyleSheet.create({
   emptyState: { margin: 20, padding: 30, borderRadius: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   emptyText: { marginTop: 8, fontSize: 13 },
   paddingH: { paddingHorizontal: 20 },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    width: '100%',
+    borderRadius: 22,
+    borderWidth: 1,
+    padding: 22,
+    alignItems: 'center',
+  },
+  modalIconWrap: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  modalText: {
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: 'center',
+  },
+  modalAmountBox: {
+    width: '100%',
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  modalAmountLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  modalAmount: {
+    color: '#EF4444',
+    fontSize: 24,
+    fontWeight: '900',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 18,
+    width: '100%',
+  },
+  modalBtn: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBtnSecondaryText: {
+    fontWeight: '800',
+  },
+  modalBtnPrimaryText: {
+    color: '#000',
+    fontWeight: '900',
+  },
 });
 
 const mapDarkStyle = [

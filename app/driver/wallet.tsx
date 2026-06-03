@@ -122,10 +122,17 @@ export default function WalletScreen() {
     return parsed.toDateString();
   };
 
-  // Prefer settlementInfo.totalOutstanding when present (even if 0), otherwise fall back to today's computed remittance
-  const totalOutstandingDisplay = settlementInfo && typeof settlementInfo.totalOutstanding !== 'undefined'
-    ? Number(settlementInfo.totalOutstanding || 0)
-    : getDailyRemittanceDue();
+  const todayRemittanceDue = Number(
+    settlementInfo?.todayRemittance?.totalDue ??
+    earningsData?.outstanding_platform_fee ??
+    earningsData?.settlement?.outstandingPlatformFees ??
+    getDailyRemittanceDue() ??
+    0
+  );
+  const overdueRemittanceDue = Number(settlementInfo?.totalOutstanding || 0);
+  const totalOutstandingDisplay = settlementInfo && typeof settlementInfo.totalDueNow !== 'undefined'
+    ? Number(settlementInfo.totalDueNow || 0)
+    : overdueRemittanceDue + todayRemittanceDue;
 
   useFocusEffect(
     React.useCallback(() => {
@@ -296,11 +303,25 @@ export default function WalletScreen() {
       console.error('Settlement status error:', error);
       try {
         const daily = await apiService.getDriverDailySettlement();
+        const dailyDue = Number(
+          daily?.totals?.unremittedPlatformFee ||
+          daily?.settlement?.outstandingPlatformFees ||
+          daily?.paymentSummary?.outstandingPlatformFees ||
+          0
+        );
         const fallback = {
-          blocked: Number(daily?.totals?.platformFee || 0) > 0,
-          totalOutstanding: Number(daily?.totals?.platformFee || 0),
+          blocked: false,
+          totalOutstanding: 0,
+          totalDueNow: dailyDue,
+          todayRemittance: {
+            totalDue: dailyDue,
+            ridesDue: Number(daily?.totals?.acceptedRides || 0),
+            dueAt: daily?.due?.dueAt,
+            millisecondsRemaining: daily?.due?.millisecondsRemaining,
+            isOverdue: !!daily?.due?.isOverdue,
+          },
           currentSettlement: daily?.settlement || null,
-          outstandingSettlements: daily?.settlement ? [daily.settlement] : [],
+          outstandingSettlements: [],
           source: 'daily-fallback',
         };
         setSettlementInfo(fallback);
@@ -397,7 +418,10 @@ export default function WalletScreen() {
     try {
       // Check total outstanding (including all past unpaid settlements)
       const settlementStatus = settlementInfo || await apiService.getDriverSettlementStatus();
-      const totalOutstanding = Number(settlementStatus?.totalOutstanding || 0);
+      const totalOutstanding = Number(
+        settlementStatus?.totalDueNow ??
+        (Number(settlementStatus?.totalOutstanding || 0) + Number(settlementStatus?.todayRemittance?.totalDue || 0))
+      );
       
       if (totalOutstanding <= 0) {
         Alert.alert('No Remittance Due', 'All settlement fees have been paid.');
@@ -408,6 +432,7 @@ export default function WalletScreen() {
       // Don't pass date - let backend determine all outstanding settlements
       const data = await apiService.initiateDriverSettlementPayment({
         returnUrl: ExpoLinking.createURL('payment-callback'),
+        includeToday: true,
       });
       const authUrl = data?.authUrl;
       const reference = data?.reference;

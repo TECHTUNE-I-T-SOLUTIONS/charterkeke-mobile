@@ -328,7 +328,7 @@ export default function BookingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
-  const { currentLocation, reverseGeocodeLocation } = useLocation();
+  const { currentLocation, getCurrentLocation, reverseGeocodeLocation } = useLocation();
   // State
   const [pickupLocation, setPickupLocation] = useState<Location | null>(null);
   const [dropoffLocation, setDropoffLocation] = useState<Location | null>(null);
@@ -478,23 +478,27 @@ export default function BookingScreen() {
   };
 
   const promptForCurrentLocation = (type: 'pickup' | 'dropoff') => {
-    if (!currentLocation) {
-      setCurrentLocationUnavailableVisible(true);
-      return;
-    }
-
     setCurrentLocationPrompt(type);
   };
 
   const useCurrentLocationForPrompt = async () => {
-    if (!currentLocation || !currentLocationPrompt) return;
+    if (!currentLocationPrompt) return;
+
+    const freshLocation = await getCurrentLocation().catch(() => null);
+    const locationSource = freshLocation || currentLocation;
+
+    if (!locationSource) {
+      setCurrentLocationPrompt(null);
+      setCurrentLocationUnavailableVisible(true);
+      return;
+    }
 
     const type = currentLocationPrompt;
     setCurrentLocationPrompt(null);
-    const resolvedLocation = await resolveCurrentLocationAddress(currentLocation, reverseGeocodeLocation);
+    const resolvedLocation = await resolveCurrentLocationAddress(locationSource, reverseGeocodeLocation);
     const location: Location = {
-      lat: Number(resolvedLocation.lat) || currentLocation.latitude,
-      lng: Number(resolvedLocation.lng) || currentLocation.longitude,
+      lat: Number(resolvedLocation.lat) || locationSource.latitude,
+      lng: Number(resolvedLocation.lng) || locationSource.longitude,
       address: sanitizeAddress(resolvedLocation.address),
     };
 

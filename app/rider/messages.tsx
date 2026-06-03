@@ -282,7 +282,7 @@ export default function MessagesScreen() {
   };
 
   const handleChatPress = (chat: Chat) => {
-    router.push(`/rider/chat?rideId=${chat.ride_id}`);
+    router.push(`/rider/chat?chatId=${chat.id}&rideId=${chat.ride_id}`);
   };
 
   const renderChat = ({ item }: { item: Chat & { lastMessage?: any; unreadCount?: number } }) => (

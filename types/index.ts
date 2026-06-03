@@ -246,12 +246,18 @@ export interface Chat {
   };
   rider?: {
     id: string;
-    name: string;
+    name?: string;
+    first_name?: string;
+    last_name?: string;
+    profile_picture_url?: string | null;
     phone?: string;
   };
   driver?: {
     id: string;
-    name: string;
+    name?: string;
+    first_name?: string;
+    last_name?: string;
+    profile_picture_url?: string | null;
     phone?: string;
   };
 }

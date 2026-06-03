@@ -444,13 +444,17 @@ class APIService {
     return this.post('/driver/payment-callback', { reference });
   }
 
-  async initiateDriverSettlementPayment(payload?: { returnUrl?: string }): Promise<any> {
+  async initiateDriverSettlementPayment(payload?: { returnUrl?: string; includeToday?: boolean; date?: string; rideId?: string }): Promise<any> {
     return this.post('/driver/settlement/initiate', payload || {});
   }
 
   // Chat endpoints
   async getChat(rideId: string): Promise<any> {
     return this.get('/chat', { params: { rideId } });
+  }
+
+  async getChatById(chatId: string): Promise<any> {
+    return this.get('/chat', { params: { chatId } });
   }
 
   async createChat(rideId: string): Promise<any> {

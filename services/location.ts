@@ -34,15 +34,24 @@ class LocationService {
       let location: any = null;
       try {
         location = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
+          accuracy: Location.Accuracy.BestForNavigation,
           mayShowUserSettingsDialog: true,
+          timeInterval: 1000,
         });
       } catch (primaryError) {
-        console.warn('Primary location fetch failed, falling back to last known position:', primaryError);
-        location = await Location.getLastKnownPositionAsync({
-          maxAge: 60_000,
-          requiredAccuracy: 500,
-        });
+        console.warn('High accuracy location fetch failed, trying balanced accuracy:', primaryError);
+        try {
+          location = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.High,
+            mayShowUserSettingsDialog: true,
+          });
+        } catch (secondaryError) {
+          console.warn('Balanced location fetch failed, falling back to recent last known position:', secondaryError);
+          location = await Location.getLastKnownPositionAsync({
+            maxAge: 15_000,
+            requiredAccuracy: 100,
+          });
+        }
       }
 
       if (!location) {

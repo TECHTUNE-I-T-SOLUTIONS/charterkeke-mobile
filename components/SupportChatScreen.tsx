@@ -17,7 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import * as ImagePicker from 'expo-image-picker';
 import * as SecureStore from 'expo-secure-store';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
 import { apiService } from '@/services/api';
@@ -60,16 +60,20 @@ interface SupportChatScreenProps {
 
 export default function SupportChatScreen({ category }: SupportChatScreenProps) {
   const router = useRouter();
+  const params = useLocalSearchParams<{ ticketId?: string }>();
   const { theme, mode } = useTheme();
   const { user } = useAuth();
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [activeTicket, setActiveTicket] = useState<SupportTicket | null>(null);
+  const [isCreatingNewTicket, setIsCreatingNewTicket] = useState(false);
   const [messages, setMessages] = useState<SupportMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [text, setText] = useState('');
   const [attachment, setAttachment] = useState<any | null>(null);
   const [confirmVisible, setConfirmVisible] = useState(false);
+  const [previewImage, setPreviewImage] = useState<{ url: string; name?: string | null } | null>(null);
+  const [ticketDrawerVisible, setTicketDrawerVisible] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isDark = mode === 'dark';
@@ -77,18 +81,29 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
   const isWaitingForConfirmation =
     activeTicket?.status === 'resolved' && !activeTicket?.resolution_confirmed_at;
 
-  const loadTickets = async () => {
+  const requestedTicketId = typeof params.ticketId === 'string' ? params.ticketId : undefined;
+
+  const loadTickets = async (preferredTicketId?: string) => {
     const response = await apiService.get<{ tickets: SupportTicket[] }>(
       '/support/tickets?includeClosed=true&limit=20'
     );
     const ticketList = response?.tickets || [];
     setTickets(ticketList);
 
-    if (!activeTicket && ticketList.length > 0) {
-      setActiveTicket(ticketList[0]);
+    if (isCreatingNewTicket) {
+      return;
+    }
+
+    const nextTicket =
+      (preferredTicketId ? ticketList.find((t) => t.id === preferredTicketId) : null) ||
+      (activeTicket ? ticketList.find((t) => t.id === activeTicket.id) : null) ||
+      ticketList[0] ||
+      null;
+
+    if (nextTicket) {
+      setActiveTicket(nextTicket);
     } else if (activeTicket) {
-      const refreshed = ticketList.find((t) => t.id === activeTicket.id) || null;
-      setActiveTicket(refreshed);
+      setActiveTicket(null);
     }
   };
 
@@ -101,6 +116,7 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
         `/support/tickets/${ticketId}`
       );
       setActiveTicket(response.ticket);
+      setIsCreatingNewTicket(false);
       setMessages(response.messages || []);
     } finally {
       if (!silent) setLoading(false);
@@ -110,7 +126,7 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
   const bootstrap = async () => {
     try {
       setLoading(true);
-      await loadTickets();
+      await loadTickets(requestedTicketId);
     } catch (error) {
       console.error('[SUPPORT] bootstrap error', error);
       Alert.alert('Error', 'Failed to load support tickets');
@@ -127,7 +143,13 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
   }, []);
 
   useEffect(() => {
-    if (!activeTicket?.id) {
+    if (requestedTicketId) {
+      loadThread(requestedTicketId);
+    }
+  }, [requestedTicketId]);
+
+  useEffect(() => {
+    if (!activeTicket?.id || isCreatingNewTicket) {
       setMessages([]);
       return;
     }
@@ -156,8 +178,36 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
 
     const response = await apiService.post<{ ticket: SupportTicket }>('/support/tickets', payload);
     setActiveTicket(response.ticket);
+    setIsCreatingNewTicket(false);
     await loadTickets();
     return response.ticket;
+  };
+
+  const startNewTicket = () => {
+    setIsCreatingNewTicket(true);
+    setActiveTicket(null);
+    setMessages([]);
+    setText('');
+    setAttachment(null);
+    setTicketDrawerVisible(false);
+  };
+
+  const getReplyTargetTicket = async () => {
+    if (isCreatingNewTicket) {
+      return null;
+    }
+
+    if (activeTicket) {
+      return activeTicket;
+    }
+
+    const latestTicket = tickets[0];
+    if (latestTicket) {
+      setActiveTicket(latestTicket);
+      return latestTicket;
+    }
+
+    return null;
   };
 
   const pickAttachment = async () => {
@@ -209,7 +259,7 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
 
     try {
       setSending(true);
-      let ticket = activeTicket;
+      let ticket = await getReplyTargetTicket();
       if (!ticket) {
         ticket = await createTicket(text.trim() || 'Support request with attachment');
       }
@@ -238,6 +288,7 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
 
       setText('');
       setAttachment(null);
+      setIsCreatingNewTicket(false);
       await loadTickets();
       await loadThread(ticket.id, true);
     } catch (error) {
@@ -289,7 +340,10 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
           </Text>
 
           {item.attachment_url ? (
-            <TouchableOpacity onPress={() => {}} activeOpacity={0.8}>
+            <TouchableOpacity
+              onPress={() => setPreviewImage({ url: item.attachment_url!, name: item.attachment_name })}
+              activeOpacity={0.82}
+            >
               <Image source={{ uri: item.attachment_url }} style={styles.attachmentPreview} />
               <Text style={{ color: isMine ? '#000' : theme.colors.primary, fontSize: 12 }}>
                 {item.attachment_name || 'Attachment'}
@@ -314,50 +368,69 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
         <View style={{ flex: 1 }}>
           <Text style={[styles.title, { color: theme.colors.textPrimary }]}>Customer Support</Text>
           <Text style={{ color: theme.colors.textSecondary, fontSize: 12 }}>
-            {activeTicket ? `Ticket: ${activeTicket.subject}` : 'Create a new support request'}
+            {activeTicket && !isCreatingNewTicket ? `Ticket: ${activeTicket.subject}` : 'Create a new support request'}
           </Text>
         </View>
+        <TouchableOpacity
+          onPress={() => setTicketDrawerVisible(true)}
+          style={[styles.newTicketBtn, { backgroundColor: theme.colors.primary }]}
+          activeOpacity={0.85}
+        >
+          <MaterialCommunityIcons name="ticket-confirmation-outline" size={16} color="#000" />
+          <Text style={styles.newTicketText}>Tickets</Text>
+          <View style={styles.ticketCountBadge}>
+            <Text style={styles.ticketCountText}>{tickets.length}</Text>
+          </View>
+        </TouchableOpacity>
       </View>
 
-      {activeTicket ? (
-        <View style={styles.statusWrap}>
-          <View style={[styles.statusBadge, { backgroundColor: theme.colors.inputBackground }]}> 
-            <Text style={{ color: theme.colors.textPrimary, fontWeight: '600' }}>
-              Status: {activeTicket.status.replace('_', ' ')}
-            </Text>
-          </View>
-        </View>
-      ) : null}
-
-      {isWaitingForConfirmation ? (
-        <TouchableOpacity
-          style={[styles.resolveBox, { borderColor: '#10B981', backgroundColor: '#10B98120' }]}
-          onPress={() => setConfirmVisible(true)}
-        >
-          <MaterialCommunityIcons name="check-circle" size={18} color="#10B981" />
-          <Text style={{ color: theme.colors.textPrimary, flex: 1 }}>
-            Support marked this ticket as resolved. Tap to confirm.
-          </Text>
-        </TouchableOpacity>
-      ) : null}
-
-      {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={theme.colors.primary} />
-        </View>
-      ) : (
-        <FlatList
-          data={messages}
-          renderItem={renderMessage}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
-          ListEmptyComponent={
-            <View style={styles.center}> 
-              <Text style={{ color: theme.colors.textSecondary }}>No messages yet. Start by sending one.</Text>
+      <View style={styles.chatShell}>
+        <View style={styles.threadPane}>
+          {activeTicket && !isCreatingNewTicket ? (
+            <View style={styles.statusWrap}>
+              <View style={[styles.statusBadge, { backgroundColor: theme.colors.inputBackground }]}> 
+                <Text style={{ color: theme.colors.textPrimary, fontWeight: '600' }}>
+                  Status: {activeTicket.status.replace('_', ' ')}
+                </Text>
+              </View>
             </View>
-          }
-        />
-      )}
+          ) : null}
+
+          {isWaitingForConfirmation && !isCreatingNewTicket ? (
+            <TouchableOpacity
+              style={[styles.resolveBox, { borderColor: '#10B981', backgroundColor: '#10B98120' }]}
+              onPress={() => setConfirmVisible(true)}
+            >
+              <MaterialCommunityIcons name="check-circle" size={18} color="#10B981" />
+              <Text style={{ color: theme.colors.textPrimary, flex: 1 }}>
+                Support marked this ticket as resolved. Tap to confirm.
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+
+          {loading ? (
+            <View style={styles.center}>
+              <ActivityIndicator color={theme.colors.primary} />
+            </View>
+          ) : (
+            <FlatList
+              data={messages}
+              renderItem={renderMessage}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={{ padding: 12, paddingBottom: 80 }}
+              ListEmptyComponent={
+                <View style={styles.center}> 
+                  <Text style={{ color: theme.colors.textSecondary, textAlign: 'center' }}>
+                    {isCreatingNewTicket || !activeTicket
+                      ? 'Send a message to create a new ticket.'
+                      : 'No messages yet. Start by sending one.'}
+                  </Text>
+                </View>
+              }
+            />
+          )}
+        </View>
+      </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         {attachment ? (
@@ -419,6 +492,117 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={ticketDrawerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setTicketDrawerVisible(false)}
+      >
+        <View style={styles.drawerOverlay}>
+          <TouchableOpacity
+            activeOpacity={1}
+            style={styles.drawerBackdrop}
+            onPress={() => setTicketDrawerVisible(false)}
+          />
+          <View style={[styles.ticketDrawer, { backgroundColor: theme.colors.background, borderColor: theme.colors.border }]}>
+            <View style={styles.drawerHeader}>
+              <View>
+                <Text style={[styles.drawerTitle, { color: theme.colors.textPrimary }]}>Support Tickets</Text>
+                <Text style={[styles.drawerSubtitle, { color: theme.colors.textSecondary }]}>
+                  Switch threads or start a new request
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setTicketDrawerVisible(false)} style={[styles.drawerClose, { backgroundColor: theme.colors.inputBackground }]}>
+                <MaterialCommunityIcons name="close" size={20} color={theme.colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              onPress={startNewTicket}
+              style={[
+                styles.drawerNewTicket,
+                {
+                  borderColor: isCreatingNewTicket ? theme.colors.primary : theme.colors.border,
+                  backgroundColor: isCreatingNewTicket ? `${theme.colors.primary}22` : theme.colors.inputBackground,
+                },
+              ]}
+            >
+              <View style={[styles.drawerTicketIcon, { backgroundColor: `${theme.colors.primary}22` }]}>
+                <MaterialCommunityIcons name="plus" size={18} color={theme.colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.drawerTicketTitle, { color: theme.colors.textPrimary }]}>Create new ticket</Text>
+                <Text style={[styles.drawerTicketMeta, { color: theme.colors.textSecondary }]}>Start a fresh support thread</Text>
+              </View>
+            </TouchableOpacity>
+
+            <FlatList
+              data={tickets}
+              keyExtractor={(item) => item.id}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.drawerList}
+              renderItem={({ item }) => {
+                const selected = activeTicket?.id === item.id && !isCreatingNewTicket;
+                return (
+                  <TouchableOpacity
+                    onPress={() => {
+                      setIsCreatingNewTicket(false);
+                      setActiveTicket(item);
+                      setTicketDrawerVisible(false);
+                    }}
+                    style={[
+                      styles.drawerTicket,
+                      {
+                        borderColor: selected ? theme.colors.primary : theme.colors.border,
+                        backgroundColor: selected ? `${theme.colors.primary}22` : theme.colors.inputBackground,
+                      },
+                    ]}
+                  >
+                    <View style={[styles.drawerTicketIcon, { backgroundColor: selected ? theme.colors.primary : `${theme.colors.primary}18` }]}>
+                      <MaterialCommunityIcons
+                        name={selected ? 'chat-processing' : 'chat-outline'}
+                        size={18}
+                        color={selected ? '#000' : theme.colors.primary}
+                      />
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text numberOfLines={2} style={[styles.drawerTicketTitle, { color: theme.colors.textPrimary }]}>
+                        {item.subject}
+                      </Text>
+                      <Text numberOfLines={1} style={[styles.drawerTicketMeta, { color: theme.colors.textSecondary }]}>
+                        {item.status.replace('_', ' ')} • {new Date(item.updated_at).toLocaleDateString()}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              }}
+              ListEmptyComponent={
+                <View style={styles.drawerEmpty}>
+                  <MaterialCommunityIcons name="ticket-outline" size={30} color={theme.colors.textSecondary} />
+                  <Text style={[styles.sidebarEmpty, { color: theme.colors.textSecondary }]}>No support tickets yet</Text>
+                </View>
+              }
+            />
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={!!previewImage} animationType="fade" onRequestClose={() => setPreviewImage(null)}>
+        <SafeAreaView style={styles.imagePreviewScreen}>
+          <View style={styles.imagePreviewHeader}>
+            <TouchableOpacity onPress={() => setPreviewImage(null)} style={styles.imagePreviewClose}>
+              <MaterialCommunityIcons name="close" size={24} color="#fff" />
+            </TouchableOpacity>
+            <Text numberOfLines={1} style={styles.imagePreviewTitle}>
+              {previewImage?.name || 'Support image'}
+            </Text>
+          </View>
+          {previewImage?.url ? (
+            <Image source={{ uri: previewImage.url }} style={styles.imagePreviewFull} resizeMode="contain" />
+          ) : null}
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -435,6 +619,28 @@ const styles = StyleSheet.create({
   },
   backBtn: { padding: 6 },
   title: { fontSize: 18, fontWeight: '700' },
+  newTicketBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 14,
+  },
+  newTicketText: { color: '#000', fontSize: 12, fontWeight: '800' },
+  ticketCountBadge: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: 'rgba(0,0,0,0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 5,
+  },
+  ticketCountText: { color: '#000', fontSize: 10, fontWeight: '900' },
+  chatShell: { flex: 1, minHeight: 0 },
+  sidebarEmpty: { fontSize: 11, textAlign: 'center', marginTop: 10 },
+  threadPane: { flex: 1, minWidth: 0 },
   statusWrap: { paddingHorizontal: 16, paddingTop: 10 },
   statusBadge: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
   resolveBox: {
@@ -458,7 +664,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
-  attachmentPreview: { width: 150, height: 100, borderRadius: 8, marginBottom: 6 },
+  attachmentPreview: { width: 170, height: 120, borderRadius: 10, marginBottom: 6 },
   inputRow: {
     borderTopWidth: 1,
     flexDirection: 'row',
@@ -509,4 +715,91 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  drawerOverlay: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: 'rgba(0,0,0,0.48)',
+  },
+  drawerBackdrop: {
+    flex: 1,
+  },
+  ticketDrawer: {
+    width: '82%',
+    maxWidth: 360,
+    borderLeftWidth: 1,
+    paddingTop: 14,
+    paddingHorizontal: 16,
+    paddingBottom: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: -6, height: 0 },
+    shadowOpacity: 0.18,
+    shadowRadius: 18,
+    elevation: 18,
+  },
+  drawerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 14,
+  },
+  drawerTitle: { fontSize: 20, fontWeight: '900' },
+  drawerSubtitle: { fontSize: 12, marginTop: 2 },
+  drawerClose: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  drawerNewTicket: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 12,
+  },
+  drawerList: {
+    paddingBottom: 24,
+    gap: 10,
+  },
+  drawerTicket: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 10,
+  },
+  drawerTicketIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  drawerTicketTitle: { fontSize: 14, lineHeight: 18, fontWeight: '800' },
+  drawerTicketMeta: { fontSize: 11, marginTop: 4, textTransform: 'capitalize' },
+  drawerEmpty: { alignItems: 'center', justifyContent: 'center', paddingVertical: 28 },
+  imagePreviewScreen: { flex: 1, backgroundColor: '#000' },
+  imagePreviewHeader: {
+    minHeight: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    gap: 10,
+  },
+  imagePreviewClose: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  imagePreviewTitle: { flex: 1, color: '#fff', fontSize: 14, fontWeight: '700' },
+  imagePreviewFull: { flex: 1, width: '100%', height: '100%' },
 });

@@ -90,7 +90,7 @@ export default function NotificationsScreen() {
     try {
       if (!notification.read) {
         await apiService.patch('/driver/notifications', { notificationId: notification.id, markAsRead: true });
-        setNotifications(notifications.map(n => 
+        setNotifications((current) => current.map(n => 
           n.id === notification.id 
             ? { ...n, read: true, read_at: new Date().toISOString() }
             : n
@@ -122,7 +122,7 @@ export default function NotificationsScreen() {
     }
   };
 
-  const renderNotificationItem = ({ item }: { item: Notification }) => {
+  const renderNotificationItem = React.useCallback(({ item }: { item: Notification }) => {
     const config = getNotificationConfig(item.type);
     
     return (
@@ -161,7 +161,7 @@ export default function NotificationsScreen() {
         </View>
       </TouchableOpacity>
     );
-  };
+  }, [theme.colors.border, theme.colors.inputBackground, theme.colors.surface, theme.colors.textPrimary, theme.colors.textSecondary, theme.colors.textTertiary]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -185,6 +185,11 @@ export default function NotificationsScreen() {
             data={notifications}
             renderItem={renderNotificationItem}
             keyExtractor={(item) => item.id}
+            initialNumToRender={10}
+            maxToRenderPerBatch={8}
+            updateCellsBatchingPeriod={80}
+            windowSize={7}
+            removeClippedSubviews
             contentContainerStyle={styles.listContent}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={BRAND.primary} />}
             ListEmptyComponent={
