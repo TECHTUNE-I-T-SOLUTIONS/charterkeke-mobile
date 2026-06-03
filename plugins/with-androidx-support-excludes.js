@@ -1,4 +1,10 @@
-const { withProjectBuildGradle } = require('@expo/config-plugins');
+let withProjectBuildGradle;
+
+try {
+  ({ withProjectBuildGradle } = require('expo/config-plugins'));
+} catch {
+  ({ withProjectBuildGradle } = require('@expo/config-plugins'));
+}
 
 const EXCLUSION_BLOCK = `
 // Charter Keke: keep AndroidX and legacy support libraries from entering
