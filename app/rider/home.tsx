@@ -27,6 +27,7 @@ import { setNavigationRef } from '@/services/navigationService';
 import { HomeSkeleton } from '@/components/HomeSkeleton';
 import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
 import CtaCarousel, { CtaCard } from '@/components/CtaCarousel';
+import HomePromoCarousel, { HomePromoSlide } from '@/components/HomePromoCarousel';
 import SupportFloatingWidget from '@/components/SupportFloatingWidget';
 import { ErrorDialog } from '@/components/ErrorDialog';
 import { useAutoUpdateCheck } from '@/hooks/useAutoUpdateCheck';
@@ -312,6 +313,21 @@ export default function RiderHomeScreen() {
     return coordinates;
   }, [mapboxMarkers, currentLocation]);
 
+  const promoSlides = useMemo<HomePromoSlide[]>(() => ([
+    {
+      id: 'rider-promo-1',
+      image: require('@assets/Carousel1.png'),
+      onPress: () => router.push('/rider/booking'),
+      accessibilityLabel: 'Book a Charter Keke ride',
+    },
+    {
+      id: 'rider-promo-2',
+      image: require('@assets/Carousel2.png'),
+      onPress: () => router.push('/rider/booking'),
+      accessibilityLabel: 'Open rider booking',
+    },
+  ]), [router]);
+
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
@@ -397,6 +413,8 @@ export default function RiderHomeScreen() {
             </LinearGradient>
           </TouchableOpacity>
         </View>
+
+        <HomePromoCarousel slides={promoSlides} />
 
         {/* Quick Stats */}
         <View style={styles.statsRow}>

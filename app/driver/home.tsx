@@ -22,6 +22,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
 import CtaCarousel, { CtaCard } from '@/components/CtaCarousel';
+import HomePromoCarousel, { HomePromoSlide } from '@/components/HomePromoCarousel';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/context/AuthContext';
 import { useLocation } from '@/context/LocationContext';
@@ -427,6 +428,21 @@ export default function DriverHomeScreen() {
     return coordinates;
   }, [currentLocation, mapRides]);
 
+  const promoSlides = useMemo<HomePromoSlide[]>(() => ([
+    {
+      id: 'driver-promo-1',
+      image: require('@assets/Carousel1.png'),
+      onPress: () => router.push('/driver/rides'),
+      accessibilityLabel: 'Open driver ride requests',
+    },
+    {
+      id: 'driver-promo-2',
+      image: require('@assets/Carousel2.png'),
+      onPress: () => router.push('/driver/rides'),
+      accessibilityLabel: 'View Charter Keke driver rides',
+    },
+  ]), [router]);
+
   return (
     <View style={[styles.container, { backgroundColor: isLight ? COLORS.light.background : COLORS.dark.background }]}>
       <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
@@ -506,6 +522,8 @@ export default function DriverHomeScreen() {
                />
             </View>
           </LinearGradient>
+
+          <HomePromoCarousel slides={promoSlides} />
 
           {/* Stats Grid */}
           <View style={styles.statsContainer}>
