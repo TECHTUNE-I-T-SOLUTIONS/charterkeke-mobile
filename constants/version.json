@@ -1,6 +1,6 @@
 {
-  "version": "2.1.10",
-  "buildNumber": 220,
-  "releaseDate": "2026-06-03",
-  "changelog": "Improved OTA compatibility, Android build stability, ride booking fee clarity, realtime ride tracking, driver ETA display, notification actions, and ride receipt delivery."
+  "version": "2.1.11",
+  "buildNumber": 223,
+  "releaseDate": "2026-06-04",
+  "changelog": "Addresses App Store privacy review requirements, removes required demographic collection, clarifies photo library permissions, and adds permanent in-app account deletion."
 }
