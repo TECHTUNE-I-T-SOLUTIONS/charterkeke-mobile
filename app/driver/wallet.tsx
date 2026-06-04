@@ -123,15 +123,25 @@ export default function WalletScreen() {
   };
 
   const todayRemittanceDue = Number(
+    settlementInfo?.remittanceSummary?.todayTotal ??
+    settlementInfo?.totalTodayDue ??
     settlementInfo?.todayRemittance?.totalDue ??
     earningsData?.outstanding_platform_fee ??
     earningsData?.settlement?.outstandingPlatformFees ??
     getDailyRemittanceDue() ??
     0
   );
-  const overdueRemittanceDue = Number(settlementInfo?.totalOutstanding || 0);
-  const totalOutstandingDisplay = settlementInfo && typeof settlementInfo.totalDueNow !== 'undefined'
-    ? Number(settlementInfo.totalDueNow || 0)
+  const overdueRemittanceDue = Number(
+    settlementInfo?.remittanceSummary?.overdueTotal ??
+    settlementInfo?.totalOverdue ??
+    settlementInfo?.totalOutstanding ??
+    0
+  );
+  const totalOutstandingDisplay = settlementInfo && (
+    typeof settlementInfo?.remittanceSummary?.grandTotal !== 'undefined' ||
+    typeof settlementInfo.totalDueNow !== 'undefined'
+  )
+    ? Number(settlementInfo?.remittanceSummary?.grandTotal ?? settlementInfo.totalDueNow ?? 0)
     : overdueRemittanceDue + todayRemittanceDue;
 
   useFocusEffect(
@@ -595,6 +605,12 @@ export default function WalletScreen() {
               {(totalOutstandingDisplay > 0) && ((settlementInfo?.outstandingSettlements?.length) > 0) && (
                 <Text style={[styles.settlementSub, { color: '#FF9101', marginBottom: 10 }]}>
                   { (settlementInfo?.outstandingSettlements?.length ?? 0) } overdue settlement(s): ₦{Number(settlementInfo?.totalOutstanding ?? 0).toLocaleString('en-US')}
+                </Text>
+              )}
+
+              {totalOutstandingDisplay > 0 && (
+                <Text style={[styles.settlementSub, { color: theme.colors.textSecondary, marginBottom: 10 }]}>
+                  Breakdown: previous overdue NGN {overdueRemittanceDue.toLocaleString('en-US')} + today NGN {todayRemittanceDue.toLocaleString('en-US')}
                 </Text>
               )}
 

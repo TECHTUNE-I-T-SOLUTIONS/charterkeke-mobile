@@ -57,6 +57,36 @@ function formatRemittanceCountdown(ms: number) {
   return `${hours}h ${minutes}m ${seconds}s`;
 }
 
+function getRemittanceGrandTotal(payload: any, fallback = 0) {
+  if (typeof payload?.remittanceSummary?.grandTotal !== 'undefined') {
+    return Number(payload.remittanceSummary.grandTotal || 0);
+  }
+  if (typeof payload?.totalDueNow !== 'undefined') {
+    return Number(payload.totalDueNow || 0);
+  }
+
+  const computed =
+    Number(payload?.totalOutstanding ?? payload?.totalOverdue ?? payload?.remittanceSummary?.overdueTotal ?? 0) +
+    Number(payload?.todayRemittance?.totalDue ?? payload?.totalTodayDue ?? payload?.remittanceSummary?.todayTotal ?? 0);
+
+  if (computed > 0) return computed;
+
+  return Number(
+    fallback ??
+    0
+  );
+}
+
+function getRemittanceOverdueTotal(payload: any, fallback = 0) {
+  return Number(
+    payload?.remittanceSummary?.overdueTotal ??
+    payload?.totalOverdue ??
+    payload?.totalOutstanding ??
+    fallback ??
+    0
+  );
+}
+
 export default function DriverHomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -246,13 +276,16 @@ export default function DriverHomeScreen() {
       const nextAvailableRides = available.rides?.slice(0, 3) || [];
       const nextRecentRides = ((history as any)?.rides || (history as any)?.data || []).slice(0, 5);
       const nextTodayEarnings = Number(dailyEarnings?.settlement?.totalDriverEarnings || dailyEarnings?.totals?.netDriverEarnings || 0);
+      const nextOverdueTotal = getRemittanceOverdueTotal(settlement);
       const nextTodayRemittanceDue = Number(
-        settlement?.totalDueNow ||
-        (Number(settlement?.totalOutstanding || 0) + Number(settlement?.todayRemittance?.totalDue || 0)) ||
+        settlement?.todayRemittance?.totalDue ||
+        settlement?.totalTodayDue ||
+        settlement?.remittanceSummary?.todayTotal ||
         dailyEarnings?.totals?.unremittedPlatformFee ||
         dailyEarnings?.settlement?.outstandingPlatformFees ||
         0
       );
+      const nextGrandTotal = getRemittanceGrandTotal(settlement, nextOverdueTotal + nextTodayRemittanceDue);
       const nextRemittanceDueAt = (
         settlement?.todayRemittance?.dueAt ||
         dailyEarnings?.due?.dueAt ||
@@ -278,7 +311,7 @@ export default function DriverHomeScreen() {
       setAvailableRides(nextAvailableRides);
       setRecentRides(nextRecentRides);
       setSettlementBlocked(!!settlement?.blocked);
-      setSettlementOutstanding(settlement?.totalDueNow || settlement?.totalOutstanding || 0);
+      setSettlementOutstanding(nextGrandTotal);
       setTodayRemittanceDue(nextTodayRemittanceDue);
       setRemittanceDueAt(nextRemittanceDueAt);
       setDriverStats(nextStats);
@@ -292,7 +325,7 @@ export default function DriverHomeScreen() {
         availableRides: nextAvailableRides,
         recentRides: nextRecentRides,
         settlementBlocked: !!settlement?.blocked,
-        settlementOutstanding: settlement?.totalDueNow || settlement?.totalOutstanding || 0,
+        settlementOutstanding: nextGrandTotal,
         todayRemittanceDue: nextTodayRemittanceDue,
         remittanceDueAt: nextRemittanceDueAt,
         driverStats: nextStats,
@@ -315,13 +348,30 @@ export default function DriverHomeScreen() {
 
   const handleOnlineToggle = async (value: boolean) => {
     try {
-      setIsOnline(value); // Optimistic update
-      await apiService.setDriverStatus(value ? 'online' : 'offline');
+      if (value && settlementBlocked) {
+        setIsOnline(false);
+        setRemittanceModalAmount(settlementOutstanding);
+        setRemittanceModalVisible(true);
+        return;
+      }
+
+      if (!value) setIsOnline(false);
+      const result = await apiService.setDriverStatus(value ? 'online' : 'offline');
+      const nextStatus = String(result?.status || '').toLowerCase();
+      setIsOnline(nextStatus ? nextStatus === 'online' : value);
     } catch (error) {
-      setIsOnline(!value); // Revert on failure
+      if (value) {
+        setIsOnline(false);
+      } else {
+        setIsOnline(true);
+      }
       const err: any = error;
       if (err?.status === 403 || err?.code === 'settlement_overdue' || settlementBlocked) {
-        setRemittanceModalAmount(Number(err?.totalOutstanding || err?.details?.totalOutstanding || settlementOutstanding || 0));
+        const apiPayload = err?.details || err?.response?.data || err;
+        const amount = getRemittanceGrandTotal(apiPayload, settlementOutstanding);
+        setSettlementOutstanding(amount);
+        setSettlementBlocked(true);
+        setRemittanceModalAmount(amount);
         setRemittanceModalVisible(true);
         return;
       }
@@ -436,7 +486,7 @@ export default function DriverHomeScreen() {
                   </Animated.Text>
                   {settlementBlocked ? (
                     <Text style={[styles.statusNote, { color: '#EF4444' }]}>
-                      Remittance due: {formatCurrency(settlementOutstanding || 0)}
+                      Overdue remittance lock: {formatCurrency(settlementOutstanding || 0)}
                     </Text>
                   ) : todayRemittanceDue > 0 ? (
                     <Text style={[styles.statusNote, { color: BRAND.primary }]}>
@@ -660,7 +710,7 @@ export default function DriverHomeScreen() {
             </Text>
             {remittanceModalAmount > 0 && (
               <View style={[styles.modalAmountBox, { backgroundColor: theme.colors.inputBackground }]}>
-                <Text style={[styles.modalAmountLabel, { color: theme.colors.textSecondary }]}>Amount to remit</Text>
+                <Text style={[styles.modalAmountLabel, { color: theme.colors.textSecondary }]}>Total amount to remit</Text>
                 <Text style={styles.modalAmount}>{formatCurrency(remittanceModalAmount)}</Text>
               </View>
             )}
