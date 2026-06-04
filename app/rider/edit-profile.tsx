@@ -27,8 +27,6 @@ interface ProfileData {
   last_name: string;
   email: string;
   phone_number: string;
-  dob?: string;
-  gender?: string;
   role?: string;
   status?: string;
   profile_complete?: boolean;
@@ -56,8 +54,6 @@ export default function EditProfileScreen() {
     email: '',
     phone: '',
     profileImage: '',
-    dob: '',
-    gender: '',
     role: '',
     status: '',
     emergencyContact: '',
@@ -91,8 +87,6 @@ export default function EditProfileScreen() {
         email: user.email || '',
         phone: user.phone_number || '',
         profileImage: user.profile_picture_url || `https://avatar.vercel.sh/${user.first_name}?size=100`,
-        dob: user.dob || '',
-        gender: user.gender || '',
         role: user.role || '',
         status: user.status || '',
         emergencyContact: user.emergency_contact || '',
@@ -293,8 +287,6 @@ export default function EditProfileScreen() {
             <DetailRow label="Last Name" value={formData.lastName || 'N/A'} colors={colors} />
             <DetailRow label="Email" value={formData.email || 'N/A'} colors={colors} />
             <DetailRow label="Phone" value={formData.phone || 'N/A'} colors={colors} />
-            <DetailRow label="DOB" value={formData.dob || 'N/A'} colors={colors} />
-            <DetailRow label="Gender" value={formData.gender || 'N/A'} colors={colors} />
             <DetailRow label="Role" value={formData.role || 'user'} colors={colors} />
             <DetailRow label="Status" value={formData.status || 'pending'} colors={colors} />
             <DetailRow label="Emergency Contact" value={formData.emergencyContact || 'N/A'} colors={colors} />

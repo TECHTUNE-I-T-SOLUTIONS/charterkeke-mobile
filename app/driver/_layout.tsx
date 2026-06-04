@@ -33,6 +33,7 @@ export default function DriverLayout() {
           <Stack.Screen name="bank-accounts" />
           <Stack.Screen name="edit-profile" />
           <Stack.Screen name="vehicle" />
+          <Stack.Screen name="privacy-settings" />
           <Stack.Screen name="help-and-support" />
         </Stack>
 

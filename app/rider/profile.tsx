@@ -34,8 +34,6 @@ interface ProfileData {
   last_name: string;
   email: string;
   phone_number: string;
-  dob?: string;
-  gender?: string;
   role?: string;
   status?: string;
   profile_complete?: boolean;

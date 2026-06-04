@@ -331,6 +331,7 @@ export default function DriverProfileScreen() {
              <MenuItem icon="message-outline" label="Messages" onPress={() => router.push('/driver/messages')} theme={theme} />
 
              <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary, marginTop: 24 }]}>SETTINGS</Text>
+             <MenuItem icon="shield-check-outline" label="Privacy & Security" onPress={() => router.push('/driver/privacy-settings')} theme={theme} />
              <View style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
                 <View style={styles.menuLeft}>
                    <View style={[styles.iconBox, { backgroundColor: theme.colors.inputBackground }]}>

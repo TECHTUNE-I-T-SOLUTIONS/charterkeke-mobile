@@ -26,8 +26,6 @@ export default function ProfileCompletionScreen() {
   const userType = Array.isArray(params.userType) ? params.userType[0] : params.userType || 'rider';
 
   const [formData, setFormData] = useState({
-    dateOfBirth: '',
-    gender: 'male',
     city: 'Lagos',
     address: '',
     emergencyContact: '',
@@ -74,58 +72,6 @@ export default function ProfileCompletionScreen() {
       <Text style={{ fontSize: 14, color: colors.textSecondary, marginBottom: 24 }}>
         Help us know you better
       </Text>
-
-      <Input
-        label="Date of Birth"
-        placeholder="1990-01-15"
-        value={formData.dateOfBirth}
-        onChangeText={(text) =>
-          setFormData({ ...formData, dateOfBirth: text })
-        }
-        error={errors.dateOfBirth}
-        isDark={isDark}
-      />
-
-      <View style={{ marginBottom: 16 }}>
-        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text, marginBottom: 12 }}>
-          Gender
-        </Text>
-        <View style={{ flexDirection: 'row', gap: 12 }}>
-          {['Male', 'Female', 'Other'].map((gender) => (
-            <TouchableOpacity
-              key={gender}
-              onPress={() => setFormData({ ...formData, gender: gender.toLowerCase() })}
-              style={{
-                flex: 1,
-                paddingVertical: 12,
-                borderRadius: 8,
-                borderWidth: 2,
-                borderColor:
-                  formData.gender === gender.toLowerCase()
-                    ? colors.primary
-                    : colors.border,
-                backgroundColor:
-                  formData.gender === gender.toLowerCase()
-                    ? colors.primary + '15'
-                    : 'transparent',
-              }}
-            >
-              <Text
-                style={{
-                  textAlign: 'center',
-                  fontWeight: '600',
-                  color:
-                    formData.gender === gender.toLowerCase()
-                      ? colors.primary
-                      : colors.textSecondary,
-                }}
-              >
-                {gender}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
 
       <Input
         label="City"

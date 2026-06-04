@@ -60,21 +60,21 @@ export default function PrivacySettingsScreen() {
 
   const deleteAccount = () => {
     Alert.alert(
-      'Deactivate account',
-      'This will mark your account as inactive and sign you out. You can contact support to restore access.',
+      'Delete account permanently?',
+      'This permanently removes your login access and personal profile details from Charter Keke. Ride, payment, and safety records may be retained only where legally or operationally required.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Deactivate',
+          text: 'Delete Account',
           style: 'destructive',
           onPress: async () => {
             try {
               setBusy(true);
-              await apiService.patch('/user/profile/status', { status: 'inactive' });
+              await apiService.delete('/user/account');
               await logout();
               router.replace('/auth/welcome');
             } catch {
-              Alert.alert('Failed', 'We could not deactivate your account.');
+              Alert.alert('Failed', 'We could not delete your account. Please try again.');
             } finally {
               setBusy(false);
             }
@@ -98,7 +98,7 @@ export default function PrivacySettingsScreen() {
         <View style={[styles.hero, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <MaterialCommunityIcons name="shield-lock" size={34} color={colors.primary} />
           <Text style={[styles.heroTitle, { color: colors.text }]}>Your data, your control</Text>
-          <Text style={[styles.heroText, { color: colors.textSecondary }]}>Download your data anytime or deactivate your account with confirmation.</Text>
+          <Text style={[styles.heroText, { color: colors.textSecondary }]}>Download your data anytime or permanently delete your account with confirmation.</Text>
         </View>
 
         <View style={styles.section}>
@@ -118,7 +118,7 @@ export default function PrivacySettingsScreen() {
 
           <TouchableOpacity style={[styles.actionBtn, { borderColor: colors.error || '#ef4444', backgroundColor: colors.card }]} onPress={deleteAccount} disabled={busy}>
             <MaterialCommunityIcons name="delete" size={20} color={colors.error || '#ef4444'} />
-            <Text style={[styles.actionText, { color: colors.error || '#ef4444' }]}>Deactivate Account</Text>
+            <Text style={[styles.actionText, { color: colors.error || '#ef4444' }]}>Delete Account</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

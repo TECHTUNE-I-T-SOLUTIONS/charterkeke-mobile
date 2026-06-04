@@ -21,7 +21,6 @@ import {
   StatusBar,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -68,8 +67,6 @@ export default function SignupMultiStepScreen() {
     phone: '+234',
     homeAddress: '',
     workAddress: '',
-    dob: '',
-    gender: '',
     password: '',
     confirmPassword: '',
     profileImage: null as any,
@@ -100,7 +97,6 @@ export default function SignupMultiStepScreen() {
   const [bankSearch, setBankSearch] = useState('');
   const [verifyingAccount, setVerifyingAccount] = useState(false);
   const [accountVerified, setAccountVerified] = useState(false);
-  const [showDatePicker, setShowDatePicker] = useState(false);
   const [signupErrorVisible, setSignupErrorVisible] = useState(false);
   const [signupErrorTitle, setSignupErrorTitle] = useState('Signup Error');
   const [signupErrorMessage, setSignupErrorMessage] = useState('');
@@ -594,8 +590,6 @@ export default function SignupMultiStepScreen() {
         if (!formData.lastName.trim()) newErrors.lastName = 'Last name required';
         if (!formData.email.includes('@')) newErrors.email = 'Valid email required';
         if (formData.phone.length < 11) newErrors.phone = 'Valid phone number required';
-        if (!formData.dob) newErrors.dob = 'Date of birth required';
-        if (!formData.gender) newErrors.gender = 'Gender required';
         break;
 
       case 'emergency':
@@ -743,8 +737,6 @@ export default function SignupMultiStepScreen() {
       if (formData.workAddress) {
         formDataObj.append('workAddress', formData.workAddress);
       }
-      formDataObj.append('dob', formData.dob);
-      formDataObj.append('gender', formData.gender);
       if (formData.emergencyContactName) {
         formDataObj.append('emergencyContactName', formData.emergencyContactName);
       }
@@ -1214,145 +1206,6 @@ export default function SignupMultiStepScreen() {
                       icon="briefcase-outline"
                     />
 
-                    {/* Date of Birth */}
-                    <View>
-                      <Text style={[styles.label, { color: theme.colors.textSecondary }]}>Date of Birth *</Text>
-                      <TouchableOpacity
-                        onPress={() => setShowDatePicker(true)}
-                        activeOpacity={0.8}
-                        style={[
-                          styles.inputWrapper,
-                          {
-                            borderColor: errors.dob ? theme.colors.error : theme.colors.border,
-                            backgroundColor: theme.colors.inputBackground,
-                          },
-                          errors.dob ? styles.inputWrapperError : null,
-                        ]}
-                      >
-                        <MaterialCommunityIcons
-                          name="calendar-outline"
-                          size={moderateScale(16)}
-                          color={theme.colors.textSecondary}
-                          style={styles.inputIcon}
-                        />
-                        <Text
-                          style={[
-                            styles.input,
-                            {
-                              color: formData.dob ? theme.colors.textPrimary : theme.colors.inputPlaceholder,
-                            },
-                          ]}
-                        >
-                          {formData.dob
-                            ? new Date(formData.dob).toLocaleDateString('en-US', {
-                                year: 'numeric',
-                                month: 'long',
-                                day: 'numeric',
-                              })
-                            : 'Select your date of birth'}
-                        </Text>
-                      </TouchableOpacity>
-                      {errors.dob && (
-                        <Text style={[styles.errorText, { color: theme.colors.error }]}>
-                          {errors.dob}
-                        </Text>
-                      )}
-                    </View>
-
-                    {/* Date Picker Modal for iOS */}
-                    {Platform.OS === 'ios' && showDatePicker && (
-                      <Modal
-                        visible={showDatePicker}
-                        transparent
-                        animationType="slide"
-                        onRequestClose={() => setShowDatePicker(false)}
-                      >
-                        <View style={styles.datePickerModal}>
-                          <View style={[styles.datePickerContainer, { backgroundColor: theme.colors.card }]}>
-                            <View style={styles.datePickerHeader}>
-                              <TouchableOpacity onPress={() => setShowDatePicker(false)}>
-                                <Text style={[styles.datePickerButton, { color: theme.colors.primary }]}>
-                                  Done
-                                </Text>
-                              </TouchableOpacity>
-                            </View>
-                            <DateTimePicker
-                              value={formData.dob ? new Date(formData.dob) : new Date()}
-                              mode="date"
-                              display="spinner"
-                              maximumDate={new Date()}
-                              onChange={(event, date) => {
-                                if (date) {
-                                  handleFieldChange('dob', date.toISOString().split('T')[0]);
-                                }
-                              }}
-                              textColor={theme.colors.textPrimary}
-                            />
-                          </View>
-                        </View>
-                      </Modal>
-                    )}
-
-                    {/* Date Picker for Android */}
-                    {Platform.OS === 'android' && showDatePicker && (
-                      <DateTimePicker
-                        value={formData.dob ? new Date(formData.dob) : new Date()}
-                        mode="date"
-                        display="default"
-                        maximumDate={new Date()}
-                        onChange={(event, date) => {
-                          setShowDatePicker(false);
-                          if (date && event.type === 'set') {
-                            handleFieldChange('dob', date.toISOString().split('T')[0]);
-                          }
-                        }}
-                      />
-                    )}
-
-
-                    {/* Gender */}
-                    <View>
-                      <Text style={[styles.label, { color: theme.colors.textSecondary }]}>Gender *</Text>
-                      <View style={styles.genderRow}>
-                        {['male', 'female', 'other'].map((g) => (
-                          <TouchableOpacity
-                            key={g}
-                            onPress={() => setFormData({ ...formData, gender: g })}
-                            activeOpacity={0.8}
-                            style={[
-                              styles.genderBtn,
-                              formData.gender === g && styles.genderBtnActive,
-                            ]}
-                          >
-                            <MaterialCommunityIcons
-                              name={
-                                g === 'male'
-                                  ? 'gender-male'
-                                  : g === 'female'
-                                  ? 'gender-female'
-                                  : 'gender-non-binary'
-                              }
-                              size={moderateScale(14)}
-                              color={formData.gender === g ? theme.colors.primary : theme.colors.textTertiary}
-                              style={{ marginRight: scale(4) }}
-                            />
-                            <Text
-                              style={[
-                                styles.genderText,
-                                {
-                                  color: formData.gender === g
-                                    ? theme.colors.primary
-                                    : theme.colors.textTertiary,
-                                },
-                                formData.gender === g && styles.genderTextActive,
-                              ]}
-                            >
-                              {g.charAt(0).toUpperCase() + g.slice(1)}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    </View>
                   </View>
                 </View>
               )}
