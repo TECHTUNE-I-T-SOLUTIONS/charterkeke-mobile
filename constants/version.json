@@ -1,6 +1,6 @@
 {
-  "version": "2.1.11",
-  "buildNumber": 223,
+  "version": "2.1.12",
+  "buildNumber": 224,
   "releaseDate": "2026-06-04",
-  "changelog": "Addresses App Store privacy review requirements, removes required demographic collection, clarifies photo library permissions, and adds permanent in-app account deletion."
+  "changelog": "Refreshes the mobile binary with the latest remittance fixes, production environment sync, and animated home promotional carousel."
 }
