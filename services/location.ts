@@ -9,6 +9,27 @@ class LocationService {
   private isTracking = false;
   private currentLocation: any = null;
 
+  private normalizeLocation(location: Location.LocationObject) {
+    return {
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+      accuracy: location.coords.accuracy || 0,
+      altitude: location.coords.altitude || 0,
+      timestamp: location.timestamp,
+    };
+  }
+
+  private chooseBestLocation(locations: Location.LocationObject[]) {
+    return locations
+      .filter(Boolean)
+      .sort((a, b) => {
+        const accuracyA = a.coords.accuracy ?? Number.MAX_SAFE_INTEGER;
+        const accuracyB = b.coords.accuracy ?? Number.MAX_SAFE_INTEGER;
+        if (accuracyA !== accuracyB) return accuracyA - accuracyB;
+        return b.timestamp - a.timestamp;
+      })[0] || null;
+  }
+
   async requestPermissions(): Promise<boolean> {
     try {
       const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
@@ -31,13 +52,23 @@ class LocationService {
         throw new Error('Location permission not granted');
       }
 
-      let location: any = null;
+      let location: Location.LocationObject | null = null;
       try {
-        location = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.BestForNavigation,
-          mayShowUserSettingsDialog: true,
-          timeInterval: 1000,
-        });
+        const samples = await Promise.allSettled([
+          Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.BestForNavigation,
+            mayShowUserSettingsDialog: true,
+          }),
+          Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Highest,
+            mayShowUserSettingsDialog: true,
+          }),
+        ]);
+        location = this.chooseBestLocation(
+          samples
+            .filter((sample): sample is PromiseFulfilledResult<Location.LocationObject> => sample.status === 'fulfilled')
+            .map((sample) => sample.value)
+        );
       } catch (primaryError) {
         console.warn('High accuracy location fetch failed, trying balanced accuracy:', primaryError);
         try {
@@ -62,13 +93,7 @@ class LocationService {
         return null;
       }
 
-      const locationData = {
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-        accuracy: location.coords.accuracy || 0,
-        altitude: location.coords.altitude || 0,
-        timestamp: location.timestamp,
-      };
+      const locationData = this.normalizeLocation(location);
 
       this.currentLocation = locationData;
       await cacheService.saveLastLocation(locationData);

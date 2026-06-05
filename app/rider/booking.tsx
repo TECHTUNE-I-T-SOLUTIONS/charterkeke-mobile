@@ -766,12 +766,12 @@ export default function BookingScreen() {
 
   const scheduleClosePickupResults = () => {
     if (pickupBlurTimer.current) clearTimeout(pickupBlurTimer.current);
-    pickupBlurTimer.current = setTimeout(() => setShowPickupResults(Boolean(pickupSearchResults.length)), 180);
+    pickupBlurTimer.current = setTimeout(() => setShowPickupResults(true), 180);
   };
 
   const scheduleCloseDropoffResults = () => {
     if (dropoffBlurTimer.current) clearTimeout(dropoffBlurTimer.current);
-    dropoffBlurTimer.current = setTimeout(() => setShowDropoffResults(Boolean(dropoffSearchResults.length)), 180);
+    dropoffBlurTimer.current = setTimeout(() => setShowDropoffResults(true), 180);
   };
 
   const selectSearchResult = async (result: SearchResult, type: 'pickup' | 'dropoff') => {
@@ -1135,7 +1135,7 @@ export default function BookingScreen() {
                 </View>
               )}
             </View>
-            <TouchableOpacity onPress={() => setActiveLocationPicker('pickup')} style={styles.mapIconBtn}>
+            <TouchableOpacity onPress={openPickupSearch} style={styles.mapIconBtn}>
               <MaterialCommunityIcons name="crosshairs-gps" size={22} color={activeLocationPicker === 'pickup' ? BRAND.primary : theme.colors.textSecondary} />
             </TouchableOpacity>
             <TouchableOpacity onPress={() => openVoiceLocation('pickup')} style={styles.mapIconBtn}>
@@ -1186,7 +1186,7 @@ export default function BookingScreen() {
                 </View>
               )}
             </View>
-            <TouchableOpacity onPress={() => setActiveLocationPicker('dropoff')} style={styles.mapIconBtn}>
+            <TouchableOpacity onPress={openDropoffSearch} style={styles.mapIconBtn}>
               <MaterialCommunityIcons name="crosshairs-gps" size={22} color={activeLocationPicker === 'dropoff' ? BRAND.primary : theme.colors.textSecondary} />
             </TouchableOpacity>
             <TouchableOpacity onPress={() => openVoiceLocation('dropoff')} style={styles.mapIconBtn}>
