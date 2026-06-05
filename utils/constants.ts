@@ -20,6 +20,7 @@ const getApiUrl = (): string => {
 
 export const API_CONFIG = {
   url: getApiUrl(),
+  fallbackUrl: normalizeApiUrl(process.env.EXPO_PUBLIC_API_FALLBACK_URL || 'https://charterkeke.vercel.app/api'),
   timeout: parseInt(process.env.EXPO_PUBLIC_API_TIMEOUT || '30000'),
   retryAttempts: 3,
   retryDelay: 1000,
