@@ -22,7 +22,8 @@ class APIService {
     // Request interceptor
     this.api.interceptors.request.use(
       async (config: InternalAxiosRequestConfig) => {
-        const token = await SecureStore.getItemAsync('authToken');
+        const skipAuth = (config as any).skipAuth || String(config.url || '').startsWith('/auth/') || String(config.url || '').startsWith('/otp/');
+        const token = skipAuth ? null : await SecureStore.getItemAsync('authToken');
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
         }
@@ -58,7 +59,12 @@ class APIService {
       return Promise.reject(networkError);
     }
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    const isAuthRoute =
+      String(originalRequest?.url || '').startsWith('/auth/') ||
+      String(originalRequest?.url || '').startsWith('/otp/') ||
+      (originalRequest as any)?.skipAuth;
+
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthRoute) {
       if (this.isRefreshing) {
         return new Promise((resolve, reject) => {
           this.failedQueue.push({
@@ -165,7 +171,7 @@ class APIService {
       ? { phone: emailOrPhone, password }
       : { email: emailOrPhone, password };
     
-    return this.post('/auth/login', payload);
+    return this.post('/auth/login', payload, { skipAuth: true });
   }
 
   async signup(data: any): Promise<any> {

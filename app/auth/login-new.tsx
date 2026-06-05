@@ -121,8 +121,8 @@ export default function LoginScreen() {
       const loggedInUser = await login(phone, password);
       if (loggedInUser?.role === 'driver') router.push('/driver/home');
       else if (loggedInUser?.role === 'rider') router.push('/rider/home');
-    } catch (error) {
-      setErrors({ submit: 'Invalid credentials. Please try again.' });
+    } catch (error: any) {
+      setErrors({ submit: error?.message || 'Invalid credentials. Please try again.' });
     }
   };
 

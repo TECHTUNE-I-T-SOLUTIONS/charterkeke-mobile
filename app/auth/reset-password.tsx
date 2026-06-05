@@ -100,7 +100,7 @@ export default function ResetPasswordScreen() {
   const normalizePhone = (value: string) => value.replace(/[^\d+]/g, '');
   const validatePhone = (value: string) => /^\+?[0-9]{7,15}$/.test(normalizePhone(value));
   const deliveryLabel = deliveryMethod === 'email' ? 'Email' : 'SMS';
-  const identifierLabel = deliveryMethod === 'email' ? 'Email Address' : 'Phone Number';
+  const identifierLabel = deliveryMethod === 'email' ? 'Email Address' : 'Phone Number (add +234)';
   const identifierPlaceholder = deliveryMethod === 'email' ? 'john@example.com' : '+2348012345678';
   const currentConfig = currentStep === 'email'
     ? {
@@ -355,7 +355,7 @@ export default function ResetPasswordScreen() {
                         key={method}
                         onPress={() => {
                           setDeliveryMethod(method);
-                          setIdentifier('');
+                          setIdentifier(method === 'sms' ? '+234' : '');
                           setErrors({});
                         }}
                         style={[
