@@ -143,6 +143,17 @@ export default function WalletScreen() {
   )
     ? Number(settlementInfo?.remittanceSummary?.grandTotal ?? settlementInfo.totalDueNow ?? 0)
     : overdueRemittanceDue + todayRemittanceDue;
+  const todayUnremittedRides = (earningsData?.rides || []).filter(
+    (ride: any) => !ride.remitted && Number(ride.platform_fee || 0) > 0
+  );
+  const todayUnremittedGross = todayUnremittedRides.reduce(
+    (sum: number, ride: any) => sum + Number(ride.fare_amount || 0),
+    0
+  );
+  const todayUnremittedFee = todayUnremittedRides.reduce(
+    (sum: number, ride: any) => sum + Number(ride.platform_fee || 0),
+    0
+  );
 
   useFocusEffect(
     React.useCallback(() => {
@@ -726,22 +737,22 @@ export default function WalletScreen() {
               <View style={styles.rideSummaryRow}>
                 <View>
                   <Text style={[styles.summaryLabel, { color: theme.colors.textSecondary }]}>Accepted</Text>
-                  <Text style={[styles.summaryValue, { color: theme.colors.textPrimary }]}>{earningsData?.total_rides_accepted || 0}</Text>
+                  <Text style={[styles.summaryValue, { color: theme.colors.textPrimary }]}>{todayUnremittedRides.length}</Text>
                 </View>
                 <View>
                   <Text style={[styles.summaryLabel, { color: theme.colors.textSecondary }]}>Gross</Text>
-                  <Text style={[styles.summaryValue, { color: theme.colors.textPrimary }]}>₦{Number(earningsData?.total_ride_earnings || 0).toLocaleString('en-US')}</Text>
+                  <Text style={[styles.summaryValue, { color: theme.colors.textPrimary }]}>₦{todayUnremittedGross.toLocaleString('en-US')}</Text>
                 </View>
                 <View>
                   <Text style={[styles.summaryLabel, { color: theme.colors.textSecondary }]}>Fee</Text>
-                  <Text style={[styles.summaryValue, { color: '#FF9101' }]}>₦{Number(earningsData?.total_platform_fee || 0).toLocaleString('en-US')}</Text>
+                  <Text style={[styles.summaryValue, { color: '#FF9101' }]}>₦{todayUnremittedFee.toLocaleString('en-US')}</Text>
                 </View>
               </View>
 
               {/* Use today's earnings data for rides list */}
-              {((earningsData?.rides?.length ?? 0)) > 0 ? (
+              {todayUnremittedRides.length > 0 ? (
                 <View style={styles.ridesListWrap}>
-                  {(earningsData?.rides || []).slice(0, 10).map((ride: any) => (
+                  {todayUnremittedRides.slice(0, 10).map((ride: any) => (
                     <View key={ride.id} style={[styles.rideItem, { borderBottomColor: theme.colors.border }]}>
                       <View style={{ flex: 1 }}>
                         <Text numberOfLines={1} style={[styles.rideRoute, { color: theme.colors.textPrimary }]}>
@@ -760,7 +771,7 @@ export default function WalletScreen() {
                 </View>
               ) : (
                 <View style={styles.emptyState}>
-                  <Text style={{ color: theme.colors.textSecondary }}>No accepted rides for today yet.</Text>
+                  <Text style={{ color: theme.colors.textSecondary }}>No unremitted rides for today.</Text>
                 </View>
               )}
 
@@ -896,3 +907,4 @@ const styles = StyleSheet.create({
   outstandingDate: { fontSize: 13, fontWeight: '700' },
   outstandingAmount: { fontSize: 13, fontWeight: '800' },
 });
+
