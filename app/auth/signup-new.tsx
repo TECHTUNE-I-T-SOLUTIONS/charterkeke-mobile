@@ -101,6 +101,8 @@ export default function SignupMultiStepScreen() {
   const [signupErrorTitle, setSignupErrorTitle] = useState('Signup Error');
   const [signupErrorMessage, setSignupErrorMessage] = useState('');
   const [signupErrorDetails, setSignupErrorDetails] = useState('');
+  const [signupSuccessVisible, setSignupSuccessVisible] = useState(false);
+  const [signupSuccessRole, setSignupSuccessRole] = useState<UserRole | null>(null);
 
   // Memoized handler to prevent keyboard focus loss
   const handleFieldChange = useCallback((field: string, value: string) => {
@@ -792,9 +794,8 @@ export default function SignupMultiStepScreen() {
         uploadProfilePictureInBackground(deferredProfileImage);
       }
 
-      // Navigate based on role
-      const targetRoute = role === 'driver' ? '/driver/home' : '/rider/home';
-      router.replace(targetRoute);
+      setSignupSuccessRole(role);
+      setSignupSuccessVisible(true);
     } catch (error) {
       showSignupError(error);
     }
@@ -1814,6 +1815,47 @@ export default function SignupMultiStepScreen() {
               style={[styles.errorModalButton, { backgroundColor: BRAND.primary }]}
             >
               <Text style={styles.errorModalButtonText}>Okay</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={signupSuccessVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSignupSuccessVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.errorModalCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+            <View style={styles.errorModalHeader}>
+              <View style={[styles.errorIconBubble, { backgroundColor: 'rgba(16, 185, 129, 0.14)' }]}>
+                <MaterialCommunityIcons name="check-circle-outline" size={30} color="#10B981" />
+              </View>
+              <TouchableOpacity
+                onPress={() => {
+                  setSignupSuccessVisible(false);
+                  router.replace('/auth/login-new');
+                }}
+                style={styles.errorCloseButton}
+              >
+                <MaterialCommunityIcons name="close" size={22} color={theme.colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <Text style={[styles.errorModalTitle, { color: theme.colors.textPrimary }]}>Account Created</Text>
+            <Text style={[styles.errorModalMessage, { color: theme.colors.textSecondary }]}>
+              {signupSuccessRole === 'driver'
+                ? 'Your driver account has been created successfully. Sign in to continue to your driver dashboard.'
+                : 'Your account has been created successfully. Sign in to start booking Charter Keke rides.'}
+            </Text>
+            <Pressable
+              onPress={() => {
+                setSignupSuccessVisible(false);
+                router.replace('/auth/login-new');
+              }}
+              style={[styles.errorModalButton, { backgroundColor: BRAND.primary }]}
+            >
+              <Text style={styles.errorModalButtonText}>Continue to Login</Text>
             </Pressable>
           </View>
         </View>

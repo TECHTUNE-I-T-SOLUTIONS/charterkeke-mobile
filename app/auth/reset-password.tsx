@@ -25,16 +25,6 @@ import { BRAND, COLORS } from '@utils/colors';
 type ResetStep = 'email' | 'otp' | 'password';
 
 const STEP_CONFIG = {
-  email: {
-    icon: 'email-outline' as const,
-    title: 'Enter Your Email',
-    description: "We'll send you an OTP to verify your account",
-  },
-  otp: {
-    icon: 'shield-key-outline' as const,
-    title: 'Verify OTP',
-    description: 'Enter the 6-digit code sent to your email',
-  },
   password: {
     icon: 'lock-reset' as const,
     title: 'Create New Password',
@@ -56,7 +46,7 @@ export default function ResetPasswordScreen() {
 
   const [currentStep, setCurrentStep] = useState<ResetStep>('email');
   const [isLoading, setIsLoading] = useState(false);
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [deliveryMethod, setDeliveryMethod] = useState<'email' | 'sms'>('email');
   const [otp, setOtp] = useState('');
   const [password, setPassword] = useState('');
@@ -107,11 +97,37 @@ export default function ResetPasswordScreen() {
   }, [resendTimer]);
 
   const validateEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  const normalizePhone = (value: string) => value.replace(/[^\d+]/g, '');
+  const validatePhone = (value: string) => /^\+?[0-9]{7,15}$/.test(normalizePhone(value));
+  const deliveryLabel = deliveryMethod === 'email' ? 'Email' : 'SMS';
+  const identifierLabel = deliveryMethod === 'email' ? 'Email Address' : 'Phone Number';
+  const identifierPlaceholder = deliveryMethod === 'email' ? 'john@example.com' : '+2348012345678';
+  const currentConfig = currentStep === 'email'
+    ? {
+        icon: deliveryMethod === 'email' ? 'email-outline' as const : 'message-text-outline' as const,
+        title: deliveryMethod === 'email' ? 'Enter Your Email' : 'Enter Your Phone Number',
+        description: `We'll send a ${deliveryLabel} OTP to verify your account`,
+      }
+    : currentStep === 'otp'
+      ? {
+          icon: 'shield-key-outline' as const,
+          title: `Verify ${deliveryLabel} OTP`,
+          description: `Enter the 6-digit code sent by ${deliveryMethod === 'email' ? 'email' : 'SMS'}`,
+        }
+      : STEP_CONFIG.password;
+
+  const buildIdentifierPayload = () => {
+    const value = identifier.trim();
+    return deliveryMethod === 'email'
+      ? { email: value.toLowerCase() }
+      : { phone_number: normalizePhone(value) };
+  };
 
   const handleSendOtp = async () => {
     const newErrors: Record<string, string> = {};
-    if (!email.trim()) newErrors.email = 'Email is required';
-    else if (!validateEmail(email)) newErrors.email = 'Enter a valid email';
+    if (!identifier.trim()) newErrors.email = `${identifierLabel} is required`;
+    else if (deliveryMethod === 'email' && !validateEmail(identifier)) newErrors.email = 'Enter a valid email';
+    else if (deliveryMethod === 'sms' && !validatePhone(identifier)) newErrors.email = 'Enter a valid phone number';
     if (Object.keys(newErrors).length > 0) return setErrors(newErrors);
 
     setIsLoading(true);
@@ -121,7 +137,7 @@ export default function ResetPasswordScreen() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: email.trim().toLowerCase(),
+          ...buildIdentifierPayload(),
           type: 'forgot_password',
           deliveryMethod,
         }),
@@ -157,7 +173,7 @@ export default function ResetPasswordScreen() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: email.trim().toLowerCase(),
+          ...buildIdentifierPayload(),
           code: otp.trim(),
           type: 'forgot_password',
         }),
@@ -193,7 +209,7 @@ export default function ResetPasswordScreen() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: email.trim().toLowerCase(),
+          ...buildIdentifierPayload(),
           newPassword: password,
           method: deliveryMethod,
         }),
@@ -225,7 +241,6 @@ export default function ResetPasswordScreen() {
     [password]
   );
 
-  const currentConfig = STEP_CONFIG[currentStep];
   const isDark = colors.background === COLORS.dark.background;
 
   return (
@@ -314,18 +329,18 @@ export default function ResetPasswordScreen() {
             >
               {currentStep === 'email' && (
                 <View style={styles.section}>
-                  <Text style={[styles.label, { color: colors.textSecondary }]}>Email Address</Text>
+                  <Text style={[styles.label, { color: colors.textSecondary }]}>{identifierLabel}</Text>
                   <View style={[styles.inputContainer, { backgroundColor: colors.inputBackground, borderColor: errors.email ? colors.error : colors.border }]}>
-                    <MaterialCommunityIcons name="email-outline" size={18} color={colors.textSecondary} style={styles.inputIcon} />
+                    <MaterialCommunityIcons name={deliveryMethod === 'email' ? 'email-outline' : 'phone-outline'} size={18} color={colors.textSecondary} style={styles.inputIcon} />
                     <TextInput
                       style={[styles.input, { color: colors.textPrimary }]}
-                      placeholder="john@example.com"
+                      placeholder={identifierPlaceholder}
                       placeholderTextColor={colors.textTertiary}
-                      keyboardType="email-address"
+                      keyboardType={deliveryMethod === 'email' ? 'email-address' : 'phone-pad'}
                       editable={!isLoading}
-                      value={email}
+                      value={identifier}
                       onChangeText={(text) => {
-                        setEmail(text);
+                        setIdentifier(deliveryMethod === 'sms' ? normalizePhone(text) : text);
                         if (text.trim()) setErrors((prev) => ({ ...prev, email: '' }));
                       }}
                       autoCapitalize="none"
@@ -338,7 +353,11 @@ export default function ResetPasswordScreen() {
                     {(['email', 'sms'] as const).map((method) => (
                       <TouchableOpacity
                         key={method}
-                        onPress={() => setDeliveryMethod(method)}
+                        onPress={() => {
+                          setDeliveryMethod(method);
+                          setIdentifier('');
+                          setErrors({});
+                        }}
                         style={[
                           styles.deliveryOption,
                           {
@@ -366,7 +385,7 @@ export default function ResetPasswordScreen() {
                         <ActivityIndicator size="small" color="#000" />
                       ) : (
                         <>
-                          <Text style={styles.buttonText}>Send {deliveryMethod === 'email' ? 'Email' : 'SMS'} OTP</Text>
+                          <Text style={styles.buttonText}>Send {deliveryLabel} OTP</Text>
                           <View style={styles.btnArrowBg}>
                             <MaterialCommunityIcons name="send" size={14} color="#000" />
                           </View>
