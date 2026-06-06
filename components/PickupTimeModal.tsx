@@ -179,6 +179,13 @@ export function PickupTimeModal({
         </View>
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          <View style={[styles.doneHint, { backgroundColor: BRAND.primary + '10', borderColor: BRAND.primary + '35' }]}>
+            <MaterialCommunityIcons name="arrow-up-right-bold" size={17} color={BRAND.primary} />
+            <Text style={[styles.doneHintText, { color: theme.colors.textSecondary }]}>
+              Select a time, then tap Done at the top-right to continue booking.
+            </Text>
+          </View>
+
           {/* Current Selection Card */}
           <LinearGradient
             colors={[BRAND.primary + '15', BRAND.primary + '08']}
@@ -447,6 +454,22 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 8,
+  },
+  doneHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 14,
+  },
+  doneHintText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
   },
   selectionCard: {
     borderRadius: 16,

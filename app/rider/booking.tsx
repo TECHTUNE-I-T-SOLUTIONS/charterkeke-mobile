@@ -5,6 +5,7 @@ import {
   Text,
   TouchableOpacity,
   TextInput,
+  Keyboard,
   ActivityIndicator,
   StyleSheet,
   ScrollView,
@@ -1452,9 +1453,15 @@ export default function BookingScreen() {
 const SearchResultsList = ({ results, onSelect, theme, title }: any) => (
   <View style={[styles.resultsList, { backgroundColor: theme.colors.inputBackground }]}>
     <Text style={[styles.resultsTitle, { color: theme.colors.textSecondary }]}>{title}</Text>
+    <View style={[styles.resultsHint, { borderColor: theme.colors.border }]}>
+      <MaterialCommunityIcons name="gesture-tap" size={14} color={BRAND.primary} />
+      <Text style={[styles.resultsHintText, { color: theme.colors.textSecondary }]}>Tap a location once to select it.</Text>
+    </View>
     <ScrollView 
       style={styles.resultsScrollView}
       nestedScrollEnabled={true}
+      keyboardShouldPersistTaps="always"
+      keyboardDismissMode="none"
       showsVerticalScrollIndicator={true}
       contentContainerStyle={{ paddingBottom: 8 }}
     >
@@ -1468,7 +1475,9 @@ const SearchResultsList = ({ results, onSelect, theme, title }: any) => (
               borderBottomWidth: idx < results.length - 1 ? 1 : 0 
             }
           ]} 
+          onPressIn={() => Keyboard.dismiss()}
           onPress={() => onSelect(item)}
+          activeOpacity={0.75}
         >
           <MaterialCommunityIcons name="map-marker" size={18} color={BRAND.primary} />
           <Text numberOfLines={2} style={[styles.resultText, { color: theme.colors.textPrimary }]}>
@@ -1576,6 +1585,17 @@ const styles = StyleSheet.create({
     maxHeight: 220,
   },
   resultsTitle: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', marginBottom: 8, letterSpacing: 0.5 },
+  resultsHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    marginBottom: 8,
+  },
+  resultsHintText: { flex: 1, fontSize: 11, fontWeight: '600', lineHeight: 15 },
   resultItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 12, paddingHorizontal: 4 },
   resultText: { fontSize: 14, flex: 1, lineHeight: 20 },
   emptyResults: { alignItems: 'center', paddingVertical: 32 },

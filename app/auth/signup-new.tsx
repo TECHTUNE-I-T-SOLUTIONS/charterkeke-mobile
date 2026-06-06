@@ -44,6 +44,17 @@ const moderateScale = (size: number, factor = 0.5) =>
 type SignupStep = 'role' | 'basic' | 'emergency' | 'security';
 type UserRole = 'rider' | 'driver';
 
+const normalizeEmail = (value: string) => value.trim().toLowerCase();
+const normalizePhone = (value: string) => {
+  const compact = String(value || '').replace(/[^\d+]/g, '');
+  const digits = compact.replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('234')) return `+${digits}`;
+  if (digits.startsWith('0')) return `+234${digits.slice(1)}`;
+  if (digits.length === 10) return `+234${digits}`;
+  return compact.startsWith('+') ? compact : `+${digits}`;
+};
+
 const STEPS: Record<SignupStep, { number: number; label: string; icon: string }> = {
   role: { number: 1, label: 'Role', icon: 'account-switch' },
   basic: { number: 2, label: 'Basic Info', icon: 'card-account-details' },
@@ -107,7 +118,13 @@ export default function SignupMultiStepScreen() {
   // Memoized handler to prevent keyboard focus loss
   const handleFieldChange = useCallback((field: string, value: string) => {
     const normalizedValue =
-      field === 'bankAccountNumber' ? value.replace(/\D/g, '').slice(0, 10) : value;
+      field === 'bankAccountNumber'
+        ? value.replace(/\D/g, '').slice(0, 10)
+        : field === 'email'
+          ? normalizeEmail(value)
+          : field === 'phone' || field === 'emergencyContactPhone'
+            ? normalizePhone(value)
+            : value;
 
     setFormData((prev) => {
       const next = { ...prev, [field]: normalizedValue };
@@ -590,8 +607,8 @@ export default function SignupMultiStepScreen() {
       case 'basic':
         if (!formData.firstName.trim()) newErrors.firstName = 'First name required';
         if (!formData.lastName.trim()) newErrors.lastName = 'Last name required';
-        if (!formData.email.includes('@')) newErrors.email = 'Valid email required';
-        if (formData.phone.length < 11) newErrors.phone = 'Valid phone number required';
+        if (!normalizeEmail(formData.email).includes('@')) newErrors.email = 'Valid email required';
+        if (normalizePhone(formData.phone).replace(/\D/g, '').length < 13) newErrors.phone = 'Valid phone number required';
         break;
 
       case 'emergency':
@@ -599,13 +616,13 @@ export default function SignupMultiStepScreen() {
           // Rider validation
           if (!formData.emergencyContactName.trim())
             newErrors.emergencyContactName = 'Emergency contact name required';
-          if (formData.emergencyContactPhone.length < 11)
+          if (normalizePhone(formData.emergencyContactPhone).replace(/\D/g, '').length < 13)
             newErrors.emergencyContactPhone = 'Valid phone number required';
         } else if (role === 'driver') {
           // Driver validation
           if (!formData.emergencyContactName.trim())
             newErrors.emergencyContactName = 'Emergency contact name required';
-          if (formData.emergencyContactPhone.length < 11)
+          if (normalizePhone(formData.emergencyContactPhone).replace(/\D/g, '').length < 13)
             newErrors.emergencyContactPhone = 'Valid emergency phone required';
           if (!formData.bankCode.trim()) newErrors.bankCode = 'Select a bank';
           if (!formData.bankAccountNumber.trim())
@@ -731,8 +748,8 @@ export default function SignupMultiStepScreen() {
       // Common fields for all users
       formDataObj.append('firstName', formData.firstName);
       formDataObj.append('lastName', formData.lastName);
-      formDataObj.append('email', formData.email);
-      formDataObj.append('phone', formData.phone);
+      formDataObj.append('email', normalizeEmail(formData.email));
+      formDataObj.append('phone', normalizePhone(formData.phone));
       if (formData.homeAddress) {
         formDataObj.append('homeAddress', formData.homeAddress);
       }
@@ -743,7 +760,7 @@ export default function SignupMultiStepScreen() {
         formDataObj.append('emergencyContactName', formData.emergencyContactName);
       }
       if (formData.emergencyContactPhone) {
-        formDataObj.append('emergencyContactPhone', formData.emergencyContactPhone);
+        formDataObj.append('emergencyContactPhone', normalizePhone(formData.emergencyContactPhone));
       }
       formDataObj.append('password', formData.password);
       if (role) {
@@ -1099,6 +1116,15 @@ export default function SignupMultiStepScreen() {
 
                   {errors.role && (
                     <Text style={styles.errorText}>{errors.role}</Text>
+                  )}
+
+                  {role && (
+                    <View style={[styles.stepGuideBox, { borderColor: theme.colors.border, backgroundColor: theme.colors.inputBackground }]}>
+                      <MaterialCommunityIcons name="arrow-down-right-bold" size={moderateScale(16)} color={BRAND.primary} />
+                      <Text style={[styles.stepGuideText, { color: theme.colors.textSecondary }]}>
+                        {role === 'driver' ? 'Driver selected.' : 'Passenger selected.'} Tap Next below to continue.
+                      </Text>
+                    </View>
                   )}
                 </View>
               )}
@@ -2021,6 +2047,22 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(4),
     fontWeight: '500',
     letterSpacing: 0.1,
+  },
+  stepGuideBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scale(8),
+    borderWidth: 1,
+    borderRadius: scale(12),
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(10),
+    marginTop: verticalScale(12),
+  },
+  stepGuideText: {
+    flex: 1,
+    fontSize: moderateScale(12),
+    fontWeight: '700',
+    lineHeight: moderateScale(17),
   },
   imageUploadContainer: {
     borderWidth: 1.5,
