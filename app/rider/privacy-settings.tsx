@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet, ActivityIndicator, Share } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -9,14 +9,25 @@ import { COLORS } from '@/utils/colors';
 import { apiService } from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
 import { sendLocalNotification } from '@/services/notificationService';
+import ConfirmationDialog from '@/components/ui/ConfirmationDialog';
 
 export default function PrivacySettingsScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ delete?: string }>();
   const { theme, mode } = useTheme();
-  const { logout } = useAuth();
+  const { logout, clearCache } = useAuth();
   const isDark = mode === 'dark';
   const colors = isDark ? COLORS.dark : COLORS.light;
   const [busy, setBusy] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const openedDeletePrompt = useRef(false);
+
+  useEffect(() => {
+    if (params.delete === '1' && !openedDeletePrompt.current) {
+      openedDeletePrompt.current = true;
+      setShowDeleteConfirm(true);
+    }
+  }, [params.delete]);
 
   const items = [
     { title: 'Data use', desc: 'We only use your profile and ride data to run the app safely.' },
@@ -58,30 +69,19 @@ export default function PrivacySettingsScreen() {
     }
   };
 
-  const deleteAccount = () => {
-    Alert.alert(
-      'Delete account permanently?',
-      'This permanently removes your login access and personal profile details from Charter Keke. Ride, payment, and safety records may be retained only where legally or operationally required.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete Account',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setBusy(true);
-              await apiService.delete('/user/account');
-              await logout();
-              router.replace('/auth/welcome');
-            } catch {
-              Alert.alert('Failed', 'We could not delete your account. Please try again.');
-            } finally {
-              setBusy(false);
-            }
-          },
-        },
-      ]
-    );
+  const confirmDeleteAccount = async () => {
+    try {
+      setBusy(true);
+      setShowDeleteConfirm(false);
+      await apiService.delete('/user/account');
+      if (clearCache) await clearCache();
+      await logout();
+      router.replace('/auth/welcome');
+    } catch {
+      Alert.alert('Deletion failed', 'We could not delete your account. Please try again.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -116,12 +116,24 @@ export default function PrivacySettingsScreen() {
             <Text style={[styles.actionText, { color: colors.primary }]}>Download My Data</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.actionBtn, { borderColor: colors.error || '#ef4444', backgroundColor: colors.card }]} onPress={deleteAccount} disabled={busy}>
+          <TouchableOpacity style={[styles.actionBtn, { borderColor: colors.error || '#ef4444', backgroundColor: colors.card }]} onPress={() => setShowDeleteConfirm(true)} disabled={busy}>
             <MaterialCommunityIcons name="delete" size={20} color={colors.error || '#ef4444'} />
             <Text style={[styles.actionText, { color: colors.error || '#ef4444' }]}>Delete Account</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <ConfirmationDialog
+        visible={showDeleteConfirm}
+        title="Delete Account Permanently"
+        message="This permanently deletes your Charter Keke account, removes your login access, clears your personal profile details, and logs you out. Ride, payment, and safety records may only be retained where required."
+        onCancel={() => setShowDeleteConfirm(false)}
+        onConfirm={confirmDeleteAccount}
+        cancelText="Keep Account"
+        confirmText={busy ? 'Deleting...' : 'Delete Account'}
+        isDark={isDark}
+        type="danger"
+      />
     </SafeAreaView>
   );
 }

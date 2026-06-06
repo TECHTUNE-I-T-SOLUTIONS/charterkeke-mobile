@@ -52,6 +52,8 @@ export default function ProfileScreen() {
   const [profileData, setProfileData] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [showLogout, setShowLogout] = useState(false);
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [notifEnabled, setNotifEnabled] = useState(true);
   const renderedOnce = useRef(false);
@@ -167,6 +169,21 @@ export default function ProfileScreen() {
       await logout();
       router.replace('/auth/welcome');
     } catch (e) { Alert.alert('Error', 'Logout failed'); }
+  };
+
+  const handleDeleteAccount = async () => {
+    try {
+      setDeletingAccount(true);
+      setShowDeleteAccount(false);
+      await apiService.delete('/user/account');
+      if (clearCache) await clearCache();
+      await logout();
+      router.replace('/auth/welcome');
+    } catch (error) {
+      Alert.alert('Deletion failed', 'We could not delete your account. Please try again.');
+    } finally {
+      setDeletingAccount(false);
+    }
   };
 
   const handleCheckUpdates = async () => {
@@ -310,6 +327,14 @@ export default function ProfileScreen() {
                 />
              </View>
             <MenuItem icon="shield-check-outline" label="Privacy & Security" onPress={() => router.push('/rider/privacy-settings')} theme={theme} />
+            <MenuItem
+              icon="delete-outline"
+              label="Delete Account"
+              onPress={() => setShowDeleteAccount(true)}
+              theme={theme}
+              danger
+              loading={deletingAccount}
+            />
 
              <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary, marginTop: 24 }]}>SUPPORT</Text>
              <MenuItem icon="help-circle-outline" label="Help & Support" onPress={() => router.push('/rider/help-and-support')} theme={theme} />
@@ -341,6 +366,18 @@ export default function ProfileScreen() {
         type="danger"
       />
 
+      <ConfirmationDialog
+        visible={showDeleteAccount}
+        title="Delete Account Permanently"
+        message="This permanently deletes your Charter Keke account, removes your login access, clears your personal profile details, and logs you out. Ride, payment, and safety records may only be retained where required."
+        onCancel={() => setShowDeleteAccount(false)}
+        onConfirm={handleDeleteAccount}
+        cancelText="Keep Account"
+        confirmText={deletingAccount ? 'Deleting...' : 'Delete Account'}
+        isDark={!isLight}
+        type="danger"
+      />
+
       <UpdateCheckerModal
         visible={showUpdateModal}
         updateInfo={updateInfo}
@@ -357,19 +394,19 @@ export default function ProfileScreen() {
   );
 }
 
-const MenuItem = ({ icon, label, onPress, theme, loading }: any) => (
+const MenuItem = ({ icon, label, onPress, theme, loading, danger }: any) => (
   <TouchableOpacity onPress={onPress} disabled={loading} style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
     <View style={styles.menuLeft}>
        <View style={[styles.iconBox, { backgroundColor: theme.colors.inputBackground }]}>
           {loading ? (
-            <ActivityIndicator size="small" color={theme.colors.textPrimary} />
+            <ActivityIndicator size="small" color={danger ? COLORS.light.destructive : theme.colors.textPrimary} />
           ) : (
-            <MaterialCommunityIcons name={icon} size={20} color={theme.colors.textPrimary} />
+            <MaterialCommunityIcons name={icon} size={20} color={danger ? COLORS.light.destructive : theme.colors.textPrimary} />
           )}
        </View>
-       <Text style={[styles.menuText, { color: theme.colors.textPrimary }]}>{label}</Text>
+       <Text style={[styles.menuText, { color: danger ? COLORS.light.destructive : theme.colors.textPrimary }]}>{label}</Text>
     </View>
-    <MaterialCommunityIcons name="chevron-right" size={20} color={theme.colors.textSecondary} />
+    <MaterialCommunityIcons name="chevron-right" size={20} color={danger ? COLORS.light.destructive : theme.colors.textSecondary} />
   </TouchableOpacity>
 );
 
