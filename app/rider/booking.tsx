@@ -1145,7 +1145,7 @@ export default function BookingScreen() {
           </View>
 
           {showPickupResults && activeLocationPicker === 'pickup' && !pickupLocation && (
-             <SearchResultsList results={pickupSearch ? pickupSearchResults : recentLocations} onSelect={(r: SearchResult) => selectSearchResult(r, 'pickup')} theme={theme} title={pickupSearch ? "Search Results" : "Recent Locations"} />
+             <SearchResultsList results={pickupSearch ? pickupSearchResults : recentLocations} onSelect={(r: SearchResult) => selectSearchResult(r, 'pickup')} onClose={() => setShowPickupResults(false)} theme={theme} title={pickupSearch ? "Search Results" : "Recent Locations"} />
           )}
 
           <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
@@ -1196,7 +1196,7 @@ export default function BookingScreen() {
           </View>
 
           {showDropoffResults && activeLocationPicker === 'dropoff' && !dropoffLocation && (
-             <SearchResultsList results={dropoffSearch ? dropoffSearchResults : recentLocations} onSelect={(r: SearchResult) => selectSearchResult(r, 'dropoff')} theme={theme} title={dropoffSearch ? "Search Results" : "Recent Locations"} />
+             <SearchResultsList results={dropoffSearch ? dropoffSearchResults : recentLocations} onSelect={(r: SearchResult) => selectSearchResult(r, 'dropoff')} onClose={() => setShowDropoffResults(false)} theme={theme} title={dropoffSearch ? "Search Results" : "Recent Locations"} />
           )}
 
           {/* Fare Card */}
@@ -1450,9 +1450,14 @@ export default function BookingScreen() {
   );
 }
 
-const SearchResultsList = ({ results, onSelect, theme, title }: any) => (
+const SearchResultsList = ({ results, onSelect, onClose, theme, title }: any) => (
   <View style={[styles.resultsList, { backgroundColor: theme.colors.inputBackground }]}>
-    <Text style={[styles.resultsTitle, { color: theme.colors.textSecondary }]}>{title}</Text>
+    <View style={styles.resultsHeader}>
+      <Text style={[styles.resultsTitle, { color: theme.colors.textSecondary }]}>{title}</Text>
+      <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.resultsCloseButton}>
+        <MaterialCommunityIcons name="close" size={18} color={theme.colors.textSecondary} />
+      </TouchableOpacity>
+    </View>
     <View style={[styles.resultsHint, { borderColor: theme.colors.border }]}>
       <MaterialCommunityIcons name="gesture-tap" size={14} color={BRAND.primary} />
       <Text style={[styles.resultsHintText, { color: theme.colors.textSecondary }]}>Tap a location once to select it.</Text>
@@ -1475,8 +1480,10 @@ const SearchResultsList = ({ results, onSelect, theme, title }: any) => (
               borderBottomWidth: idx < results.length - 1 ? 1 : 0 
             }
           ]} 
-          onPressIn={() => Keyboard.dismiss()}
-          onPress={() => onSelect(item)}
+          onPress={() => {
+            onSelect(item);
+            Keyboard.dismiss();
+          }}
           activeOpacity={0.75}
         >
           <MaterialCommunityIcons name="map-marker" size={18} color={BRAND.primary} />
@@ -1584,7 +1591,9 @@ const styles = StyleSheet.create({
   resultsScrollView: {
     maxHeight: 220,
   },
-  resultsTitle: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', marginBottom: 8, letterSpacing: 0.5 },
+  resultsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 },
+  resultsTitle: { flex: 1, fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  resultsCloseButton: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   resultsHint: {
     flexDirection: 'row',
     alignItems: 'center',

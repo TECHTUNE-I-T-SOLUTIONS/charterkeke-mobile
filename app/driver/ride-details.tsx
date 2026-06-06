@@ -47,6 +47,7 @@ export default function RideDetailsScreen() {
   const isLight = mode === 'light';
   const [ride, setRide] = useState<any>(null);
   const [updating, setUpdating] = useState(false);
+  const [actionLabel, setActionLabel] = useState<string | null>(null);
    const [routeCoordinates, setRouteCoordinates] = useState<[number, number][] | undefined>(undefined);
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeDistanceKm, setRouteDistanceKm] = useState(0);
@@ -250,13 +251,16 @@ export default function RideDetailsScreen() {
   const handleUpdate = async (status: string) => {
     if (updating) return;
 
+    const previousRide = ride;
     try {
       setUpdating(true);
+      setActionLabel(status === 'completed' ? 'Completing trip...' : 'Starting trip...');
       const targetRideId = String(rideId || ride?.id || '');
       if (!targetRideId) {
         showError('Ride unavailable', 'We could not identify this ride yet. Please reopen the ride and try again.');
         return;
       }
+      setRide((current: any) => current ? { ...current, status } : current);
       const response = await apiService.updateRideStatus(targetRideId, status as 'in_progress' | 'completed');
       
       if (response) {
@@ -272,8 +276,10 @@ export default function RideDetailsScreen() {
       }
     } catch (error: any) {
       console.error('❌ [RIDE] Update failed:', error);
+      setRide(previousRide);
       showError('Could not update ride', error?.message || 'Failed to update ride status');
     } finally {
+      setActionLabel(null);
       setUpdating(false);
     }
   };
@@ -281,21 +287,26 @@ export default function RideDetailsScreen() {
   const handleAcceptRide = async () => {
     if (updating) return;
 
+    const previousRide = ride;
     try {
       setUpdating(true);
+      setActionLabel('Accepting ride...');
       const targetRideId = String(rideId || ride?.id || '');
       if (!targetRideId) {
         showError('Ride unavailable', 'We could not identify this ride yet. Please reopen the ride and try again.');
         return;
       }
+      setRide((current: any) => current ? { ...current, status: 'accepted' } : current);
       const response = await apiService.acceptRide(targetRideId);
       const nextRide = response?.ride || response;
       setRide(nextRide || { ...ride, status: 'accepted' });
       showSuccess('Ride accepted', 'The ride has been assigned to you. You can now start the trip.');
     } catch (error: any) {
       console.error('❌ [RIDE] Accept failed:', error);
+      setRide(previousRide);
       showError('Could not accept ride', error?.message || 'This ride may already have been accepted by another driver.');
     } finally {
+      setActionLabel(null);
       setUpdating(false);
     }
   };
@@ -542,7 +553,14 @@ export default function RideDetailsScreen() {
                onPress={isAwaitingAcceptance ? handleAcceptRide : () => handleUpdate(nextTripStatus)}
                disabled={updating}
             >
-               {updating ? <ActivityIndicator color="#000" /> : <Text style={styles.btnText}>{primaryActionLabel}</Text>}
+               {updating ? (
+                  <View style={styles.busyAction}>
+                     <ActivityIndicator color="#000" />
+                     <Text style={styles.btnText}>{actionLabel || 'Working...'}</Text>
+                  </View>
+               ) : (
+                  <Text style={styles.btnText}>{primaryActionLabel}</Text>
+               )}
             </TouchableOpacity>
          )}
 
@@ -620,6 +638,7 @@ const styles = StyleSheet.create({
   totalLabel: { fontSize: 14, fontWeight: '700' },
   totalValue: { fontSize: 18, fontWeight: '800' },
   mainBtn: { height: 56, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginBottom: 40 },
+  busyAction: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
   btnText: { fontSize: 16, fontWeight: '800', color: '#000' },
   receiptActions: { flexDirection: 'row', gap: 12, marginBottom: 16 },
   receiptBtn: { flex: 1, minHeight: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },

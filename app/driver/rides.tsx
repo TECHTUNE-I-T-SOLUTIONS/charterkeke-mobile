@@ -122,13 +122,15 @@ export default function RidesListScreen() {
   const handleAcceptRide = async (ride: RideItem) => {
     if (acceptingRideId) return;
 
+    const previousRides = rides;
     try {
       setAcceptingRideId(ride.id);
+      setRides((current) => current.filter((item) => item.id !== ride.id));
       await apiService.acceptRide(ride.id);
       showSuccess('Ride accepted', 'The ride has been assigned to you. You can now start the trip from your active rides.');
-      setRides((current) => current.filter((item) => item.id !== ride.id));
       await fetchRides(false, `driver_rides_${activeTab}`);
     } catch (error: any) {
+      setRides(previousRides);
       showError('Could not accept ride', error?.message || 'This ride may already have been accepted by another driver.');
     } finally {
       setAcceptingRideId(null);

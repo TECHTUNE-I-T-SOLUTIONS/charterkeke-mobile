@@ -134,6 +134,15 @@ export default function LoginScreen() {
     setFocusedInput(null);
   }, []);
 
+  const normalizePhoneInput = (value: string) => {
+    const cleaned = value.replace(/[^\d+]/g, '');
+    if (!cleaned) return '';
+    if (cleaned.startsWith('+')) return cleaned;
+    if (cleaned.startsWith('234')) return `+${cleaned}`;
+    if (cleaned.startsWith('0')) return `+234${cleaned.slice(1)}`;
+    return cleaned;
+  };
+
   const isLight = theme.mode === 'light';
 
   return (
@@ -159,7 +168,7 @@ export default function LoginScreen() {
                 <InputField 
                   label="Phone Number (with country code +234)" 
                   value={phone} 
-                  onChangeText={setPhone} 
+                  onChangeText={(text: string) => setPhone(normalizePhoneInput(text))} 
                   icon="phone-outline" 
                   fieldKey="phone"
                   error={errors.phone}

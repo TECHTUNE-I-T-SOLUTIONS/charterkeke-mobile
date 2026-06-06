@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
-import { MaterialIcons, Ionicons } from '@expo/vector-icons';
+import { MaterialIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '@context/ThemeContext';
 import { COLORS } from '@/utils/colors';
+import { apiService } from '@/services/api';
 
 interface NavItem {
   name: string;
@@ -26,9 +28,12 @@ export default function RiderBottomNavigation() {
   const { theme, mode } = useTheme();
   const isDark = mode === 'dark';
   const colors = isDark ? COLORS.dark : COLORS.light;
+  const isDriverArea = pathname.includes('/driver');
+  const [availableRideCount, setAvailableRideCount] = useState(0);
+  const [newRideCount, setNewRideCount] = useState(0);
 
   const getNavItems = () => {
-    if (pathname.includes('/driver')) {
+    if (isDriverArea) {
       return DRIVER_NAV_ITEMS;
     }
     return RIDER_NAV_ITEMS;
@@ -44,6 +49,55 @@ export default function RiderBottomNavigation() {
     }
   };
 
+  useEffect(() => {
+    if (!isDriverArea) return;
+
+    let mounted = true;
+    const seenKey = 'driver_rides_seen_available_count';
+
+    const refreshRideBadge = async () => {
+      try {
+        const statusResponse = (await apiService.get('/driver/status')) as any;
+        const driverStatus = String(statusResponse?.status || statusResponse?.driver?.availability_status || '').toLowerCase();
+        if (driverStatus !== 'online') {
+          if (mounted) {
+            setAvailableRideCount(0);
+            setNewRideCount(0);
+          }
+          return;
+        }
+
+        const response = (await apiService.get('/driver/available-rides?radiusKm=10').catch(() => ({ rides: [] }))) as any;
+        const count = Array.isArray(response?.rides) ? response.rides.length : 0;
+        const rawSeen = await AsyncStorage.getItem(seenKey);
+        const seenCount = Number(rawSeen || 0);
+        const driverIsViewingRides = pathname.includes('/driver/rides') || pathname.includes('/driver/available-rides');
+
+        if (driverIsViewingRides) {
+          await AsyncStorage.setItem(seenKey, String(count));
+        }
+
+        if (mounted) {
+          setAvailableRideCount(count);
+          setNewRideCount(driverIsViewingRides ? 0 : Math.max(0, count - seenCount));
+        }
+      } catch {
+        if (mounted) {
+          setAvailableRideCount(0);
+          setNewRideCount(0);
+        }
+      }
+    };
+
+    refreshRideBadge();
+    const interval = setInterval(refreshRideBadge, 30000);
+
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, [isDriverArea, pathname]);
+
   return (
     <View style={[styles.container, { 
       backgroundColor: colors.background,
@@ -51,6 +105,8 @@ export default function RiderBottomNavigation() {
     }]}>
       {navItems.map((item) => {
         const active = isActive(item.route);
+        const showDriverRideBadge = isDriverArea && item.name === 'rides' && availableRideCount > 0;
+        const badgeText = newRideCount > 0 ? `New ${newRideCount}` : String(availableRideCount);
         return (
           <TouchableOpacity
             key={item.name}
@@ -76,6 +132,11 @@ export default function RiderBottomNavigation() {
                 size={24}
                 color={active ? colors.primary : colors.textSecondary}
               />
+              {showDriverRideBadge && (
+                <View style={[styles.badge, { backgroundColor: newRideCount > 0 ? '#EF4444' : colors.primary }]}>
+                  <Text style={styles.badgeText}>{badgeText}</Text>
+                </View>
+              )}
             </View>
             <Text
               style={[
@@ -137,6 +198,23 @@ const styles = StyleSheet.create({
   iconContainer: {
     justifyContent: 'center',
     alignItems: 'center',
+    position: 'relative',
+  },
+  badge: {
+    position: 'absolute',
+    top: -8,
+    right: -18,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 9,
+    fontWeight: '800',
   },
   label: {
     marginTop: 4,

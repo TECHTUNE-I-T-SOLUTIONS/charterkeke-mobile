@@ -126,7 +126,7 @@ export default function PrivacySettingsScreen() {
       <ConfirmationDialog
         visible={showDeleteConfirm}
         title="Delete Account Permanently"
-        message="This permanently deletes your Charter Keke account, removes your login access, clears your personal profile details, and logs you out. Ride, payment, and safety records may only be retained where required."
+        message="This permanently deletes your Charter Keke account, removes your login access, and logs you out."
         onCancel={() => setShowDeleteConfirm(false)}
         onConfirm={confirmDeleteAccount}
         cancelText="Keep Account"

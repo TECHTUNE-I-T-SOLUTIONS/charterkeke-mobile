@@ -609,6 +609,7 @@ export default function SignupMultiStepScreen() {
         if (!formData.lastName.trim()) newErrors.lastName = 'Last name required';
         if (!normalizeEmail(formData.email).includes('@')) newErrors.email = 'Valid email required';
         if (normalizePhone(formData.phone).replace(/\D/g, '').length < 13) newErrors.phone = 'Valid phone number required';
+        if (!formData.profileImage) newErrors.profileImage = 'Profile photo required';
         break;
 
       case 'emergency':
@@ -1172,6 +1173,7 @@ export default function SignupMultiStepScreen() {
                         </View>
                       )}
                     </TouchableOpacity>
+                    {errors.profileImage && <Text style={styles.errorText}>{errors.profileImage}</Text>}
 
                     {/* Names Row */}
                     <View style={styles.row}>

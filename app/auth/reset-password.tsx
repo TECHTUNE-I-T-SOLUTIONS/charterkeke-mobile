@@ -97,7 +97,14 @@ export default function ResetPasswordScreen() {
   }, [resendTimer]);
 
   const validateEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-  const normalizePhone = (value: string) => value.replace(/[^\d+]/g, '');
+  const normalizePhone = (value: string) => {
+    const cleaned = value.replace(/[^\d+]/g, '');
+    if (!cleaned) return '';
+    if (cleaned.startsWith('+')) return cleaned;
+    if (cleaned.startsWith('234')) return `+${cleaned}`;
+    if (cleaned.startsWith('0')) return `+234${cleaned.slice(1)}`;
+    return cleaned;
+  };
   const validatePhone = (value: string) => /^\+?[0-9]{7,15}$/.test(normalizePhone(value));
   const deliveryLabel = deliveryMethod === 'email' ? 'Email' : 'SMS';
   const identifierLabel = deliveryMethod === 'email' ? 'Email Address' : 'Phone Number (add +234)';
