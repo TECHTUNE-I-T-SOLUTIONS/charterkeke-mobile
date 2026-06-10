@@ -9,7 +9,6 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  Alert,
   Modal,
   Image,
 } from 'react-native';
@@ -20,6 +19,7 @@ import * as SecureStore from 'expo-secure-store';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
+import { useAlert } from '@/context/AlertContext';
 import { apiService } from '@/services/api';
 import { API_CONFIG } from '@/utils/constants';
 
@@ -63,9 +63,11 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
   const params = useLocalSearchParams<{ ticketId?: string }>();
   const { theme, mode } = useTheme();
   const { user } = useAuth();
+  const { showError, showSuccess, showWarning } = useAlert();
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [activeTicket, setActiveTicket] = useState<SupportTicket | null>(null);
   const [isCreatingNewTicket, setIsCreatingNewTicket] = useState(false);
+  const [creatingTicket, setCreatingTicket] = useState(false);
   const [messages, setMessages] = useState<SupportMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -129,7 +131,7 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
       await loadTickets(requestedTicketId);
     } catch (error) {
       console.error('[SUPPORT] bootstrap error', error);
-      Alert.alert('Error', 'Failed to load support tickets');
+      showError('Support unavailable', 'Failed to load support tickets.');
     } finally {
       setLoading(false);
     }
@@ -167,7 +169,7 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
     };
   }, [activeTicket?.id]);
 
-  const createTicket = async (initialMessage: string) => {
+  const createTicket = async (initialMessage = '') => {
     const payload = {
       subject: category === 'driver' ? 'Driver Support Request' : 'Rider Support Request',
       description: initialMessage || 'New support request',
@@ -179,17 +181,30 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
     const response = await apiService.post<{ ticket: SupportTicket }>('/support/tickets', payload);
     setActiveTicket(response.ticket);
     setIsCreatingNewTicket(false);
-    await loadTickets();
+    await loadTickets(response.ticket.id);
     return response.ticket;
   };
 
-  const startNewTicket = () => {
-    setIsCreatingNewTicket(true);
-    setActiveTicket(null);
-    setMessages([]);
-    setText('');
-    setAttachment(null);
-    setTicketDrawerVisible(false);
+  const startNewTicket = async () => {
+    if (creatingTicket) return;
+
+    try {
+      setCreatingTicket(true);
+      setIsCreatingNewTicket(true);
+      setActiveTicket(null);
+      setMessages([]);
+      setText('');
+      setAttachment(null);
+      const ticket = await createTicket();
+      await loadThread(ticket.id, true);
+      setTicketDrawerVisible(false);
+    } catch (error) {
+      console.error('[SUPPORT] create ticket error', error);
+      showError('Ticket not created', 'Failed to create ticket. Please try again.');
+      setIsCreatingNewTicket(false);
+    } finally {
+      setCreatingTicket(false);
+    }
   };
 
   const getReplyTargetTicket = async () => {
@@ -213,7 +228,7 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
   const pickAttachment = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Permission needed', 'Please allow photo access to attach images.');
+      showWarning('Permission needed', 'Please allow photo access to attach images.');
       return;
     }
 
@@ -293,7 +308,7 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
       await loadThread(ticket.id, true);
     } catch (error) {
       console.error('[SUPPORT] send message error', error);
-      Alert.alert('Error', 'Failed to send message');
+      showError('Message not sent', 'Failed to send message.');
     } finally {
       setSending(false);
     }
@@ -308,9 +323,9 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
       setConfirmVisible(false);
       await loadTickets();
       await loadThread(activeTicket.id, true);
-      Alert.alert('Thank you', 'Ticket has been closed as resolved.');
+      showSuccess('Thank you', 'Ticket has been closed as resolved.');
     } catch (error) {
-      Alert.alert('Error', 'Failed to confirm resolution.');
+      showError('Resolution not saved', 'Failed to confirm resolution.');
     }
   };
 
@@ -520,20 +535,30 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
 
             <TouchableOpacity
               onPress={startNewTicket}
+              disabled={creatingTicket}
               style={[
                 styles.drawerNewTicket,
                 {
                   borderColor: isCreatingNewTicket ? theme.colors.primary : theme.colors.border,
                   backgroundColor: isCreatingNewTicket ? `${theme.colors.primary}22` : theme.colors.inputBackground,
+                  opacity: creatingTicket ? 0.72 : 1,
                 },
               ]}
             >
               <View style={[styles.drawerTicketIcon, { backgroundColor: `${theme.colors.primary}22` }]}>
-                <MaterialCommunityIcons name="plus" size={18} color={theme.colors.primary} />
+                {creatingTicket ? (
+                  <ActivityIndicator size="small" color={theme.colors.primary} />
+                ) : (
+                  <MaterialCommunityIcons name="plus" size={18} color={theme.colors.primary} />
+                )}
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.drawerTicketTitle, { color: theme.colors.textPrimary }]}>Create new ticket</Text>
-                <Text style={[styles.drawerTicketMeta, { color: theme.colors.textSecondary }]}>Start a fresh support thread</Text>
+                <Text style={[styles.drawerTicketTitle, { color: theme.colors.textPrimary }]}>
+                  {creatingTicket ? 'Creating ticket...' : 'Create new ticket'}
+                </Text>
+                <Text style={[styles.drawerTicketMeta, { color: theme.colors.textSecondary }]}>
+                  {creatingTicket ? 'Please wait' : 'Start a fresh support thread'}
+                </Text>
               </View>
             </TouchableOpacity>
 
@@ -727,7 +752,7 @@ const styles = StyleSheet.create({
     width: '82%',
     maxWidth: 360,
     borderLeftWidth: 1,
-    paddingTop: 14,
+    paddingTop: 26,
     paddingHorizontal: 16,
     paddingBottom: 18,
     shadowColor: '#000',

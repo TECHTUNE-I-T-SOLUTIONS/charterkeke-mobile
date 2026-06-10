@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Dimensions,
   Platform,
+  Pressable,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '@/context/ThemeContext';
@@ -42,22 +43,22 @@ const AlertDialog: React.FC<AlertDialogProps> = ({
   const { theme } = useTheme();
   const isLight = theme.mode === 'light';
 
-  const getIcon = () => {
+  const getVisuals = () => {
     switch (type) {
       case 'success':
-        return { name: 'check-circle', color: '#10B981' };
+        return { name: 'check-circle', color: '#10B981', bg: '#D1FAE5', title: 'Success' };
       case 'error':
-        return { name: 'alert-circle', color: '#EF4444' };
+        return { name: 'alert-circle', color: '#EF4444', bg: '#FEE2E2', title: 'Needs attention' };
       case 'warning':
-        return { name: 'alert', color: '#F59E0B' };
+        return { name: 'alert', color: '#F59E0B', bg: '#FEF3C7', title: 'Warning' };
       case 'confirm':
-        return { name: 'help-circle', color: BRAND.primary };
+        return { name: 'shield-alert', color: BRAND.primary, bg: '#FFF3E1', title: 'Please confirm' };
       default:
-        return { name: 'information', color: '#3B82F6' };
+        return { name: 'information', color: '#3B82F6', bg: '#DBEAFE', title: 'Notice' };
     }
   };
 
-  const icon = getIcon();
+  const visuals = getVisuals();
 
   const defaultButtons: AlertButton[] = buttons || [
     {
@@ -85,23 +86,26 @@ const AlertDialog: React.FC<AlertDialogProps> = ({
       statusBarTranslucent
     >
       <View style={styles.overlay}>
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: isLight ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.7)' }]} />
+        <Pressable
+          style={[StyleSheet.absoluteFill, { backgroundColor: isLight ? 'rgba(17,24,39,0.46)' : 'rgba(0,0,0,0.74)' }]}
+          onPress={type === 'confirm' ? undefined : onDismiss}
+        />
 
-        <View style={[styles.dialog, { backgroundColor: theme.colors.surface }]}>
-          {/* Icon */}
-          <View style={[styles.iconContainer, { backgroundColor: icon.color + '20' }]}>
-            <MaterialCommunityIcons name={icon.name as any} size={40} color={icon.color} />
+        <View style={[styles.dialog, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+          <View style={styles.topBar}>
+            <View style={[styles.iconContainer, { backgroundColor: visuals.bg }]}>
+              <MaterialCommunityIcons name={visuals.name as any} size={30} color={visuals.color} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.kicker, { color: visuals.color }]}>{visuals.title}</Text>
+              <Text style={[styles.title, { color: theme.colors.textPrimary }]}>{title}</Text>
+            </View>
           </View>
 
-          {/* Title */}
-          <Text style={[styles.title, { color: theme.colors.textPrimary }]}>{title}</Text>
-
-          {/* Message */}
           {message && (
             <Text style={[styles.message, { color: theme.colors.textSecondary }]}>{message}</Text>
           )}
 
-          {/* Buttons */}
           <View style={styles.buttonContainer}>
             {defaultButtons.map((button, index) => (
               <TouchableOpacity
@@ -109,16 +113,16 @@ const AlertDialog: React.FC<AlertDialogProps> = ({
                 onPress={() => handleButtonPress(button)}
                 style={[
                   styles.button,
-                  button.style === 'cancel' && { backgroundColor: theme.colors.inputBackground },
-                  button.style === 'destructive' && { backgroundColor: '#EF444420' },
-                  button.style === 'default' && { backgroundColor: BRAND.primary },
+                  button.style === 'cancel' && { backgroundColor: theme.colors.inputBackground, borderColor: theme.colors.border },
+                  button.style === 'destructive' && { backgroundColor: '#EF4444', borderColor: '#EF4444' },
+                  button.style === 'default' && { backgroundColor: BRAND.primary, borderColor: BRAND.primary },
                 ]}
               >
                 <Text
                   style={[
                     styles.buttonText,
                     button.style === 'cancel' && { color: theme.colors.textSecondary },
-                    button.style === 'destructive' && { color: '#EF4444' },
+                    button.style === 'destructive' && { color: '#fff', fontWeight: '800' },
                     button.style === 'default' && { color: '#000', fontWeight: '700' },
                   ]}
                 >
@@ -143,34 +147,45 @@ const styles = StyleSheet.create({
   dialog: {
     width: width - 60,
     maxWidth: 400,
-    borderRadius: 24,
-    padding: 24,
-    alignItems: 'center',
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 18,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.25,
     shadowRadius: 20,
     elevation: 10,
   },
+  topBar: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 14,
+  },
   iconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 56,
+    height: 56,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+  },
+  kicker: {
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+    marginBottom: 2,
   },
   title: {
-    fontSize: 20,
-    fontWeight: '800',
-    textAlign: 'center',
-    marginBottom: 8,
+    fontSize: 18,
+    fontWeight: '900',
+    lineHeight: 23,
   },
   message: {
     fontSize: 15,
-    textAlign: 'center',
     lineHeight: 22,
-    marginBottom: 24,
+    marginBottom: 18,
   },
   buttonContainer: {
     flexDirection: 'row',
@@ -179,8 +194,9 @@ const styles = StyleSheet.create({
   },
   button: {
     flex: 1,
+    borderWidth: 1,
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },

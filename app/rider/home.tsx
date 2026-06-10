@@ -29,6 +29,7 @@ import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
 import CtaCarousel, { CtaCard } from '@/components/CtaCarousel';
 import HomePromoCarousel, { HomePromoSlide } from '@/components/HomePromoCarousel';
 import SupportFloatingWidget from '@/components/SupportFloatingWidget';
+import SosHeaderButton from '@/components/SosHeaderButton';
 import { ErrorDialog } from '@/components/ErrorDialog';
 import { useAutoUpdateCheck } from '@/hooks/useAutoUpdateCheck';
 import { BRAND, COLORS } from '@/utils/colors';
@@ -351,6 +352,7 @@ export default function RiderHomeScreen() {
                 </Text>
               </View>
               <View style={styles.headerButtons}>
+                <SosHeaderButton role="rider" />
                 <TouchableOpacity
                   onPress={() => {
                     resetUnreadCount();

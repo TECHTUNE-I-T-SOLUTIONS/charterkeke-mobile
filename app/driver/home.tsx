@@ -34,6 +34,7 @@ import { setNotificationCallbacks } from '@/services/notificationService';
 import { setNavigationRef } from '@/services/navigationService';
 import { HomeSkeleton } from '@/components/HomeSkeleton';
 import SupportFloatingWidget from '@/components/SupportFloatingWidget';
+import SosHeaderButton from '@/components/SosHeaderButton';
 import { formatCurrency } from '@/utils/formatting';
 import { BRAND, COLORS } from '@/utils/colors';
 import { useAutoUpdateCheck } from '@/hooks/useAutoUpdateCheck';
@@ -470,6 +471,7 @@ export default function DriverHomeScreen() {
                 </Text>
               </View>
               <View style={styles.headerButtons}>
+                <SosHeaderButton role="driver" />
                 <TouchableOpacity 
                   onPress={() => {
                     resetUnreadCount();

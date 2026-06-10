@@ -19,7 +19,7 @@ interface AlertContextType {
   showSuccess: (title: string, message?: string) => void;
   showError: (title: string, message?: string) => void;
   showWarning: (title: string, message?: string) => void;
-  showConfirm: (title: string, message: string, onConfirm: () => void, onCancel?: () => void) => void;
+  showConfirm: (title: string, message: string, onConfirm: () => void, onCancel?: () => void, confirmText?: string, cancelText?: string) => void;
   hideAlert: () => void;
 }
 
@@ -88,20 +88,20 @@ export const AlertProvider: React.FC<AlertProviderProps> = ({ children }) => {
   }, [showAlert]);
 
   const showConfirm = useCallback(
-    (title: string, message: string, onConfirm: () => void, onCancel?: () => void) => {
+    (title: string, message: string, onConfirm: () => void, onCancel?: () => void, confirmText = 'Confirm', cancelText = 'Cancel') => {
       showAlert({
         type: 'confirm',
         title,
         message,
         buttons: [
           {
-            text: 'Cancel',
+            text: cancelText,
             style: 'cancel',
             onPress: onCancel,
           },
           {
-            text: 'Confirm',
-            style: 'default',
+            text: confirmText,
+            style: confirmText.toLowerCase().includes('sos') ? 'destructive' : 'default',
             onPress: onConfirm,
           },
         ],

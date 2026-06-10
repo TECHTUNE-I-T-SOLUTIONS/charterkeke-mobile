@@ -55,6 +55,7 @@ const PLATFORM_FEE_PERCENTAGE = 0.15;
 const RECENT_SEARCHES_KEY = '@charter_keke_recent_searches';
 const RECENT_LOCATIONS_KEY = '@charter_keke_recent_locations';
 const MAX_RECENT_ITEMS = 5;
+const PREWARMED_LOCATION_MAX_AGE_MS = 2 * 60 * 1000;
 
 // Expanded Lagos locations database with diverse areas
 const MOCK_LOCATIONS = [
@@ -174,6 +175,13 @@ interface RecentLocation {
   address: string;
   lat: number;
   lng: number;
+  timestamp: number;
+}
+
+interface PrewarmedCurrentLocation {
+  raw: { latitude: number; longitude: number };
+  resolved: LocationSearchResult;
+  location: Location;
   timestamp: number;
 }
 
@@ -376,6 +384,10 @@ export default function BookingScreen() {
   const [pendingPickupTime, setPendingPickupTime] = useState<string | null>(null);
   const [bookingConfirmationVisible, setBookingConfirmationVisible] = useState(false);
   const [currentLocationPrompt, setCurrentLocationPrompt] = useState<'pickup' | 'dropoff' | null>(null);
+  const [resolvingCurrentLocation, setResolvingCurrentLocation] = useState<'pickup' | 'dropoff' | null>(null);
+  const [prewarmingCurrentLocation, setPrewarmingCurrentLocation] = useState(false);
+  const prewarmedCurrentLocationRef = useRef<PrewarmedCurrentLocation | null>(null);
+  const prewarmCurrentLocationPromise = useRef<Promise<PrewarmedCurrentLocation | null> | null>(null);
   const [currentLocationUnavailableVisible, setCurrentLocationUnavailableVisible] = useState(false);
   const [currentLocationUsedAs, setCurrentLocationUsedAs] = useState<'pickup' | 'dropoff' | null>(null);
   const [voiceLocationTarget, setVoiceLocationTarget] = useState<'pickup' | 'dropoff' | null>(null);
@@ -478,30 +490,62 @@ export default function BookingScreen() {
     setShowDropoffResults(true);
   };
 
-  const promptForCurrentLocation = (type: 'pickup' | 'dropoff') => {
-    setCurrentLocationPrompt(type);
-  };
-
-  const useCurrentLocationForPrompt = async () => {
-    if (!currentLocationPrompt) return;
-
-    const freshLocation = await getCurrentLocation().catch(() => null);
-    const locationSource = freshLocation || currentLocation;
-
-    if (!locationSource) {
-      setCurrentLocationPrompt(null);
-      setCurrentLocationUnavailableVisible(true);
-      return;
-    }
-
-    const type = currentLocationPrompt;
-    setCurrentLocationPrompt(null);
+  const buildCurrentLocationEntry = async (
+    locationSource: { latitude: number; longitude: number }
+  ): Promise<PrewarmedCurrentLocation> => {
     const resolvedLocation = await resolveCurrentLocationAddress(locationSource, reverseGeocodeLocation);
     const location: Location = {
       lat: Number(resolvedLocation.lat) || locationSource.latitude,
       lng: Number(resolvedLocation.lng) || locationSource.longitude,
       address: sanitizeAddress(resolvedLocation.address),
     };
+
+    return {
+      raw: locationSource,
+      resolved: resolvedLocation,
+      location,
+      timestamp: Date.now(),
+    };
+  };
+
+  const prewarmCurrentLocation = async (forceFresh = false): Promise<PrewarmedCurrentLocation | null> => {
+    const cached = prewarmedCurrentLocationRef.current;
+    if (
+      !forceFresh &&
+      cached &&
+      Date.now() - cached.timestamp < PREWARMED_LOCATION_MAX_AGE_MS
+    ) {
+      return cached;
+    }
+
+    if (prewarmCurrentLocationPromise.current) {
+      return prewarmCurrentLocationPromise.current;
+    }
+
+    setPrewarmingCurrentLocation(true);
+    prewarmCurrentLocationPromise.current = (async () => {
+      try {
+        const freshLocation = await getCurrentLocation().catch(() => null);
+        const locationSource = freshLocation || currentLocation;
+        if (!locationSource) return null;
+
+        const entry = await buildCurrentLocationEntry(locationSource);
+        prewarmedCurrentLocationRef.current = entry;
+        return entry;
+      } catch (error) {
+        console.log('Current location prewarm failed:', error);
+        return null;
+      } finally {
+        prewarmCurrentLocationPromise.current = null;
+        setPrewarmingCurrentLocation(false);
+      }
+    })();
+
+    return prewarmCurrentLocationPromise.current;
+  };
+
+  const applyCurrentLocation = async (type: 'pickup' | 'dropoff', entry: PrewarmedCurrentLocation) => {
+    const location = entry.location;
 
     if (type === 'pickup') {
       setPickupLocation(location);
@@ -516,12 +560,60 @@ export default function BookingScreen() {
     setCurrentLocationUsedAs(type);
     setCameraCenter([location.lng, location.lat]);
     setCameraZoom(14);
-    if (resolvedLocation.placeId) {
-      saveSearchLocationsToCache([resolvedLocation]).catch(() => {});
-      markSearchLocationUsed(resolvedLocation).catch(() => {});
+    if (entry.resolved.placeId) {
+      saveSearchLocationsToCache([entry.resolved]).catch(() => {});
+      markSearchLocationUsed(entry.resolved).catch(() => {});
     }
     await saveRecentLocation(location);
     setRecentLocations(await getRecentLocations());
+  };
+
+  useEffect(() => {
+    prewarmCurrentLocation().catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!currentLocation) return;
+
+    const cached = prewarmedCurrentLocationRef.current;
+    const hasMoved =
+      cached &&
+      (Math.abs(cached.raw.latitude - currentLocation.latitude) > 0.0003 ||
+        Math.abs(cached.raw.longitude - currentLocation.longitude) > 0.0003);
+
+    if (!cached || hasMoved || Date.now() - cached.timestamp > PREWARMED_LOCATION_MAX_AGE_MS) {
+      prewarmCurrentLocation().catch(() => {});
+    }
+  }, [currentLocation?.latitude, currentLocation?.longitude]);
+
+  const promptForCurrentLocation = (type: 'pickup' | 'dropoff') => {
+    prewarmCurrentLocation().catch(() => {});
+    setCurrentLocationPrompt(type);
+  };
+
+  const useCurrentLocationForPrompt = async () => {
+    if (!currentLocationPrompt) return;
+
+    const type = currentLocationPrompt;
+    setCurrentLocationPrompt(null);
+    setResolvingCurrentLocation(type);
+
+    try {
+      const cached = prewarmedCurrentLocationRef.current;
+      const entry =
+        cached && Date.now() - cached.timestamp < PREWARMED_LOCATION_MAX_AGE_MS
+          ? cached
+          : await prewarmCurrentLocation(true);
+
+      if (!entry) {
+        setCurrentLocationUnavailableVisible(true);
+        return;
+      }
+
+      await applyCurrentLocation(type, entry);
+    } finally {
+      setResolvingCurrentLocation(null);
+    }
   };
 
   const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number) => {
@@ -1137,7 +1229,11 @@ export default function BookingScreen() {
               )}
             </View>
             <TouchableOpacity onPress={openPickupSearch} style={styles.mapIconBtn}>
-              <MaterialCommunityIcons name="crosshairs-gps" size={22} color={activeLocationPicker === 'pickup' ? BRAND.primary : theme.colors.textSecondary} />
+              {resolvingCurrentLocation === 'pickup' ? (
+                <ActivityIndicator size="small" color={BRAND.primary} />
+              ) : (
+                <MaterialCommunityIcons name="crosshairs-gps" size={22} color={activeLocationPicker === 'pickup' ? BRAND.primary : theme.colors.textSecondary} />
+              )}
             </TouchableOpacity>
             <TouchableOpacity onPress={() => openVoiceLocation('pickup')} style={styles.mapIconBtn}>
               <MaterialCommunityIcons name="microphone-outline" size={21} color={BRAND.primary} />
@@ -1188,7 +1284,11 @@ export default function BookingScreen() {
               )}
             </View>
             <TouchableOpacity onPress={openDropoffSearch} style={styles.mapIconBtn}>
-              <MaterialCommunityIcons name="crosshairs-gps" size={22} color={activeLocationPicker === 'dropoff' ? BRAND.primary : theme.colors.textSecondary} />
+              {resolvingCurrentLocation === 'dropoff' ? (
+                <ActivityIndicator size="small" color={BRAND.primary} />
+              ) : (
+                <MaterialCommunityIcons name="crosshairs-gps" size={22} color={activeLocationPicker === 'dropoff' ? BRAND.primary : theme.colors.textSecondary} />
+              )}
             </TouchableOpacity>
             <TouchableOpacity onPress={() => openVoiceLocation('dropoff')} style={styles.mapIconBtn}>
               <MaterialCommunityIcons name="microphone-outline" size={21} color={BRAND.primary} />
@@ -1295,6 +1395,18 @@ export default function BookingScreen() {
         ]}
         onDismiss={() => setCurrentLocationPrompt(null)}
       />
+
+      <Modal visible={Boolean(resolvingCurrentLocation)} transparent animationType="fade" statusBarTranslucent>
+        <View style={styles.locationWaitOverlay}>
+          <View style={[styles.locationWaitCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+            <ActivityIndicator color={BRAND.primary} />
+            <Text style={[styles.locationWaitTitle, { color: theme.colors.textPrimary }]}>Please wait</Text>
+            <Text style={[styles.locationWaitText, { color: theme.colors.textSecondary }]}>
+              Getting your current {resolvingCurrentLocation === 'pickup' ? 'pickup' : 'destination'} address...
+            </Text>
+          </View>
+        </View>
+      </Modal>
 
       {/* Operational Areas Modal */}
       <OperationalAreasModal
@@ -1460,7 +1572,7 @@ const SearchResultsList = ({ results, onSelect, onClose, theme, title }: any) =>
     </View>
     <View style={[styles.resultsHint, { borderColor: theme.colors.border }]}>
       <MaterialCommunityIcons name="gesture-tap" size={14} color={BRAND.primary} />
-      <Text style={[styles.resultsHintText, { color: theme.colors.textSecondary }]}>Tap a location once to select it.</Text>
+      <Text style={[styles.resultsHintText, { color: theme.colors.textSecondary }]}>Double Tap a location to select it.</Text>
     </View>
     <ScrollView 
       style={styles.resultsScrollView}
@@ -1831,6 +1943,32 @@ const styles = StyleSheet.create({
   warningButtonText: {
     color: '#000',
     fontWeight: '800',
+  },
+  locationWaitOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  locationWaitCard: {
+    width: '100%',
+    maxWidth: 320,
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 18,
+    alignItems: 'center',
+  },
+  locationWaitTitle: {
+    marginTop: 12,
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  locationWaitText: {
+    marginTop: 6,
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
   },
 });
 

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -32,49 +32,46 @@ export const ErrorDialog: React.FC<ErrorDialogProps> = ({
   onAction,
 }) => {
   const { theme } = useTheme();
-  const scaleAnim = new Animated.Value(0);
-  const shakeAnim = new Animated.Value(0);
+  const scaleAnim = useRef(new Animated.Value(0.96)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (visible) {
       Animated.parallel([
         Animated.spring(scaleAnim, {
           toValue: 1,
-          tension: 50,
-          friction: 7,
+          tension: 80,
+          friction: 9,
           useNativeDriver: true,
         }),
-        Animated.sequence([
-          Animated.timing(shakeAnim, {
-            toValue: 10,
-            duration: 100,
-            useNativeDriver: true,
-          }),
-          Animated.timing(shakeAnim, {
-            toValue: -10,
-            duration: 100,
-            useNativeDriver: true,
-          }),
-          Animated.timing(shakeAnim, {
-            toValue: 10,
-            duration: 100,
-            useNativeDriver: true,
-          }),
-          Animated.timing(shakeAnim, {
-            toValue: 0,
-            duration: 100,
-            useNativeDriver: true,
-          }),
-        ]),
+        Animated.timing(opacityAnim, {
+          toValue: 1,
+          duration: 180,
+          useNativeDriver: true,
+        }),
       ]).start();
     } else {
-      Animated.timing(scaleAnim, {
-        toValue: 0,
-        duration: 200,
-        useNativeDriver: true,
-      }).start();
+      Animated.parallel([
+        Animated.timing(scaleAnim, {
+          toValue: 0.96,
+          duration: 160,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacityAnim, {
+          toValue: 0,
+          duration: 160,
+          useNativeDriver: true,
+        }),
+      ]).start();
     }
-  }, [visible]);
+  }, [visible, opacityAnim, scaleAnim]);
+
+  useEffect(() => {
+    if (!visible) {
+      scaleAnim.setValue(0.96);
+      opacityAnim.setValue(0);
+    }
+  }, [visible, opacityAnim, scaleAnim]);
 
   const handleAction = () => {
     if (onAction) {
@@ -83,56 +80,48 @@ export const ErrorDialog: React.FC<ErrorDialogProps> = ({
     onClose();
   };
 
-  const isLight = theme.mode === 'light';
-
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <View style={styles.overlay}>
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)' }]} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.mode === 'light' ? 'rgba(17,24,39,0.48)' : 'rgba(0,0,0,0.76)' }]} />
 
         <Animated.View
           style={[
             styles.dialogContainer,
             {
               backgroundColor: theme.colors.card,
-              transform: [
-                { scale: scaleAnim },
-                { translateX: shakeAnim },
-              ],
+              borderColor: theme.colors.border,
+              opacity: opacityAnim,
+              transform: [{ scale: scaleAnim }],
             },
           ]}
         >
-          {/* Error Icon */}
-          <View style={[styles.iconContainer, { backgroundColor: '#FEE2E2' }]}>
-            <MaterialCommunityIcons name="alert-circle" size={56} color="#DC2626" />
+          <View style={styles.headerRow}>
+            <View style={styles.iconContainer}>
+              <MaterialCommunityIcons name="alert-octagon" size={30} color="#DC2626" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.kicker}>Action needed</Text>
+              <Text style={[styles.title, { color: theme.colors.textPrimary }]}>{title}</Text>
+            </View>
           </View>
 
-          {/* Title */}
-          <Text style={[styles.title, { color: theme.colors.textPrimary }]}>
-            {title}
-          </Text>
+          <Text style={[styles.message, { color: theme.colors.textSecondary }]}>{message}</Text>
 
-          {/* Message */}
-          <Text style={[styles.message, { color: theme.colors.textSecondary }]}>
-            {message}
-          </Text>
-
-          {/* Action Button */}
           <TouchableOpacity
-            style={[styles.button, { backgroundColor: '#DC2626' }]}
+            style={styles.button}
             onPress={handleAction}
-            activeOpacity={0.8}
+            activeOpacity={0.85}
           >
             <Text style={styles.buttonText}>{actionText}</Text>
           </TouchableOpacity>
 
-          {/* Close Button */}
           <TouchableOpacity
-            style={styles.closeButton}
+            style={[styles.closeButton, { backgroundColor: theme.colors.inputBackground }]}
             onPress={onClose}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <MaterialCommunityIcons name="close" size={20} color={theme.colors.textSecondary} />
+            <MaterialCommunityIcons name="close" size={18} color={theme.colors.textSecondary} />
           </TouchableOpacity>
         </Animated.View>
       </View>
@@ -148,10 +137,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   dialogContainer: {
-    width: Math.min(width * 0.85, 380),
-    borderRadius: 24,
-    padding: 28,
-    alignItems: 'center',
+    width: Math.min(width * 0.88, 390),
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 18,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -164,30 +153,44 @@ const styles = StyleSheet.create({
       },
     }),
   },
+  headerRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 14,
+  },
   iconContainer: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    backgroundColor: '#FEE2E2',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
+  },
+  kicker: {
+    color: '#DC2626',
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+    marginBottom: 2,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '700',
-    marginBottom: 12,
-    textAlign: 'center',
+    fontSize: 18,
+    fontWeight: '900',
+    lineHeight: 23,
   },
   message: {
-    fontSize: 16,
-    lineHeight: 24,
-    textAlign: 'center',
-    marginBottom: 28,
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 18,
   },
   button: {
     width: '100%',
     height: 52,
-    borderRadius: 16,
+    borderRadius: 14,
+    backgroundColor: '#DC2626',
     justifyContent: 'center',
     alignItems: 'center',
   },
