@@ -2,7 +2,6 @@ import React, { useMemo, useRef } from 'react';
 import {
   Animated,
   Dimensions,
-  Text,
   Image,
   PanResponder,
   Pressable,
@@ -24,10 +23,8 @@ export default function SupportFloatingWidget({ route, bottom = 110, tourId }: S
   const didDrag = useRef(false);
 
   const bounds = useMemo(() => {
-    const { width, height } = Dimensions.get('window');
+    const { height } = Dimensions.get('window');
     return {
-      minX: -(width - 86),
-      maxX: 0,
       minY: -(height - bottom - 160),
       maxY: 48,
     };
@@ -37,20 +34,20 @@ export default function SupportFloatingWidget({ route, bottom = 110, tourId }: S
     () =>
       PanResponder.create({
         onMoveShouldSetPanResponder: (_, gesture) =>
-          Math.abs(gesture.dx) > 6 || Math.abs(gesture.dy) > 6,
+          Math.abs(gesture.dy) > 6,
         onPanResponderGrant: () => {
           didDrag.current = false;
-          pan.setOffset(lastOffset.current);
+          pan.setOffset({ x: 0, y: lastOffset.current.y });
           pan.setValue({ x: 0, y: 0 });
         },
         onPanResponderMove: (_, gesture) => {
           didDrag.current = true;
-          pan.setValue({ x: gesture.dx, y: gesture.dy });
+          pan.setValue({ x: 0, y: gesture.dy });
         },
         onPanResponderRelease: (_, gesture) => {
           pan.flattenOffset();
           const nextOffset = {
-            x: Math.min(bounds.maxX, Math.max(bounds.minX, lastOffset.current.x + gesture.dx)),
+            x: 0,
             y: Math.min(bounds.maxY, Math.max(bounds.minY, lastOffset.current.y + gesture.dy)),
           };
           lastOffset.current = nextOffset;
@@ -62,7 +59,7 @@ export default function SupportFloatingWidget({ route, bottom = 110, tourId }: S
           }).start();
         },
       }),
-    [bounds.maxX, bounds.maxY, bounds.minX, bounds.minY, pan]
+    [bounds.maxY, bounds.minY, pan]
   );
 
   const openSupport = () => {
@@ -90,7 +87,7 @@ export default function SupportFloatingWidget({ route, bottom = 110, tourId }: S
 const styles = StyleSheet.create({
   wrap: {
     position: 'absolute',
-    right: 2,
+    right: -26,
     zIndex: 20,
   },
   button: {

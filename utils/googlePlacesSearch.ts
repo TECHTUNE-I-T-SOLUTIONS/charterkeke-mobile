@@ -60,7 +60,11 @@ export async function searchCachedLocations(query: string): Promise<LocationSear
 
 export async function searchGoogleAutocomplete(
   query: string,
-  sessionToken: string
+  sessionToken: string,
+  options?: {
+    locationBias?: { latitude: number; longitude: number };
+    preferPreciseAddresses?: boolean;
+  }
 ): Promise<LocationSearchResult[]> {
   const cleaned = query.trim();
   if (cleaned.length < 2) return [];
@@ -73,6 +77,8 @@ export async function searchGoogleAutocomplete(
     body: JSON.stringify({
       input: cleaned,
       sessionToken,
+      locationBias: options?.locationBias,
+      preferPreciseAddresses: options?.preferPreciseAddresses,
     }),
   });
 
@@ -213,10 +219,25 @@ export async function markSearchLocationUsed(result: LocationSearchResult): Prom
 
 export async function searchLagosPlaces(
   query: string,
-  sessionToken: string
+  sessionToken: string,
+  options?: {
+    locationBias?: { latitude: number; longitude: number };
+    preferPreciseAddresses?: boolean;
+  }
 ): Promise<LocationSearchResult[]> {
   const cached = await searchCachedLocations(query);
-  if (cached.length > 0) return cached;
+  if (!options?.preferPreciseAddresses && cached.length > 0) return cached;
 
-  return searchGoogleAutocomplete(query, sessionToken);
+  const googleResults = await searchGoogleAutocomplete(query, sessionToken, options);
+  if (options?.preferPreciseAddresses) {
+    const seen = new Set<string>();
+    return [...googleResults, ...cached].filter((item) => {
+      const key = item.placeId || item.address.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  return googleResults;
 }

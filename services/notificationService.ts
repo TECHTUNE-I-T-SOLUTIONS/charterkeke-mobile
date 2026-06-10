@@ -2,6 +2,7 @@ import * as Notifications from 'expo-notifications';
 import * as TaskManager from 'expo-task-manager';
 import { Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import { apiService } from '@services/api';
 import { navigate } from '@services/navigationService';
 
@@ -199,12 +200,13 @@ export const requestNotificationPermissions = async () => {
     // Step 2: Try to get a native device push token first on real builds.
     // Expo Go may still require Expo push tokens, so we fall back gracefully.
     try {
-      const isNativeBuild = Platform.OS === 'ios' || Platform.OS === 'android';
-      const tokenValue = isNativeBuild && !IS_DEV
-        ? (await Notifications.getDevicePushTokenAsync()).data
-        : (await Notifications.getExpoPushTokenAsync({
-            projectId: process.env.EXPO_PUBLIC_PROJECT_ID,
-          })).data;
+      const projectId =
+        process.env.EXPO_PUBLIC_PROJECT_ID ||
+        (Constants as any)?.expoConfig?.extra?.eas?.projectId ||
+        (Constants as any)?.easConfig?.projectId;
+      const tokenValue = (await Notifications.getExpoPushTokenAsync(
+        projectId ? { projectId } : undefined
+      )).data;
       devLog('Got push token:', tokenValue.slice(0, 30) + '...');
       
       console.log('✅ [NOTIFICATIONS] Push token obtained:', tokenValue.slice(0, 20) + '...');
@@ -428,9 +430,11 @@ const scheduleTokenRetry = async (userId: string, attempt: number = 1) => {
     try {
       console.log(`🔄 [NOTIFICATIONS] Retry attempt ${attempt}/${MAX_RETRIES} to get real push token`);
       
-      const realToken = await Notifications.getExpoPushTokenAsync({
-        projectId: process.env.EXPO_PUBLIC_PROJECT_ID,
-      });
+      const projectId =
+        process.env.EXPO_PUBLIC_PROJECT_ID ||
+        (Constants as any)?.expoConfig?.extra?.eas?.projectId ||
+        (Constants as any)?.easConfig?.projectId;
+      const realToken = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
 
       if (realToken?.data && !realToken.data.startsWith('placeholder')) {
         console.log('✅ [NOTIFICATIONS] Successfully obtained real push token on retry');

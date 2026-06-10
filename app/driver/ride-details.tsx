@@ -276,6 +276,19 @@ export default function RideDetailsScreen() {
       }
     } catch (error: any) {
       console.error('❌ [RIDE] Update failed:', error);
+      const currentStatus = String(error?.details?.currentStatus || error?.details?.ride?.status || '').toLowerCase();
+      if (
+        (status === 'in_progress' && currentStatus === 'in_progress') ||
+        (status === 'completed' && currentStatus === 'completed')
+      ) {
+        const resolvedRide = error?.details?.ride || previousRide;
+        setRide((current: any) => ({ ...(current || resolvedRide || {}), ...(resolvedRide || {}), status }));
+        showSuccess(
+          status === 'completed' ? 'Ride completed' : 'Trip started',
+          status === 'completed' ? 'The trip was already completed.' : 'The ride is already in progress.'
+        );
+        return;
+      }
       setRide(previousRide);
       showError('Could not update ride', error?.message || 'Failed to update ride status');
     } finally {

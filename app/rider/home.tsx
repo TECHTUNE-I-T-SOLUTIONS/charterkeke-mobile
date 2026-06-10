@@ -29,7 +29,6 @@ import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
 import CtaCarousel, { CtaCard } from '@/components/CtaCarousel';
 import HomePromoCarousel, { HomePromoSlide } from '@/components/HomePromoCarousel';
 import SupportFloatingWidget from '@/components/SupportFloatingWidget';
-import SosHeaderButton from '@/components/SosHeaderButton';
 import { TourTarget, useGuidedTour } from '@/components/GuidedTour';
 import { getTourStorageKey } from '@/utils/appTour';
 import { ErrorDialog } from '@/components/ErrorDialog';
@@ -82,11 +81,6 @@ export default function RiderHomeScreen() {
   useAutoUpdateCheck(true);
 
   const riderHomeTourSteps = useMemo(() => [
-    {
-      id: 'rider-sos',
-      title: 'SOS is always close',
-      body: 'Tap SOS when you need urgent help. It sends your latest location and ride context to Charter Keke admins.',
-    },
     {
       id: 'rider-notifications',
       title: 'Watch your alerts',
@@ -400,9 +394,6 @@ export default function RiderHomeScreen() {
                 </Text>
               </View>
               <View style={styles.headerButtons}>
-                <TourTarget id="rider-sos">
-                  <SosHeaderButton role="rider" />
-                </TourTarget>
                 <TourTarget id="rider-notifications">
                   <TouchableOpacity
                     onPress={() => {

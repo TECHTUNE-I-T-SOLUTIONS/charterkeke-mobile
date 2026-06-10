@@ -12,8 +12,6 @@ import {
   StatusBar,
   Modal,
   Platform,
-  Animated,
-  Easing,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -51,12 +49,7 @@ import {
 
 // Fare calculation constants
 const BASE_FARE_PER_KM = 600;
-const BASE_PICKUP_FARE = 250;
-const TIME_FARE_PER_MINUTE = 25;
-const MINIMUM_RIDE_FARE = 600;
 const PLATFORM_FEE_PERCENTAGE = 0.15;
-const KEKE_ROUTE_TIME_MULTIPLIER = 1.18;
-const KEKE_STOP_BUFFER_MINUTES = 4;
 // const DRIVER_COMMISSION_PERCENTAGE = 0.85;
 
 // Storage keys
@@ -218,19 +211,6 @@ const formatPickupTimeLabel = (pickupTime: string): string => {
       : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
   return `${dayLabel}, ${date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
-};
-
-const calculateKekeDurationMinutes = (routeDurationMin: number, routeDistanceKm: number): number => {
-  const mapDuration = Number.isFinite(routeDurationMin) ? routeDurationMin : 0;
-  const distanceBuffer = Math.max(2, routeDistanceKm * 0.8);
-  return Math.max(1, Math.ceil(mapDuration * KEKE_ROUTE_TIME_MULTIPLIER + KEKE_STOP_BUFFER_MINUTES + distanceBuffer));
-};
-
-const calculateRideFare = (distanceKm: number, durationMin: number): number => {
-  const safeDistance = Math.max(1, Number.isFinite(distanceKm) ? distanceKm : 0);
-  const safeDuration = Math.max(1, Number.isFinite(durationMin) ? durationMin : 0);
-  const rawFare = BASE_PICKUP_FARE + safeDistance * BASE_FARE_PER_KM + safeDuration * TIME_FARE_PER_MINUTE;
-  return Math.max(MINIMUM_RIDE_FARE, Math.ceil(rawFare / 50) * 50);
 };
 
 // --- HELPER FUNCTIONS ---
@@ -410,7 +390,6 @@ export default function BookingScreen() {
   const [pickupSearch, setPickupSearch] = useState('');
   const [dropoffSearch, setDropoffSearch] = useState('');
   const [activeLocationPicker, setActiveLocationPicker] = useState<'pickup' | 'dropoff' | null>(null);
-  const mapPickerNoticeAnim = useRef(new Animated.Value(0)).current;
   const [pickupSearchResults, setPickupSearchResults] = useState<SearchResult[]>([]);
   const [dropoffSearchResults, setDropoffSearchResults] = useState<SearchResult[]>([]);
   const [showPickupResults, setShowPickupResults] = useState(false);
@@ -582,28 +561,6 @@ export default function BookingScreen() {
     setShowDropoffResults(true);
   };
 
-  const closeLocationSuggestions = (type?: 'pickup' | 'dropoff') => {
-    if (!type || type === 'pickup') {
-      setShowPickupResults(false);
-    }
-    if (!type || type === 'dropoff') {
-      setShowDropoffResults(false);
-    }
-    setActiveLocationPicker(null);
-    if (pickupBlurTimer.current) clearTimeout(pickupBlurTimer.current);
-    if (dropoffBlurTimer.current) clearTimeout(dropoffBlurTimer.current);
-    Keyboard.dismiss();
-  };
-
-  const openMapLocationPicker = (type: 'pickup' | 'dropoff') => {
-    setActiveLocationPicker(type);
-    setShowPickupResults(false);
-    setShowDropoffResults(false);
-    if (pickupBlurTimer.current) clearTimeout(pickupBlurTimer.current);
-    if (dropoffBlurTimer.current) clearTimeout(dropoffBlurTimer.current);
-    Keyboard.dismiss();
-  };
-
   const buildCurrentLocationEntry = async (
     locationSource: { latitude: number; longitude: number }
   ): Promise<PrewarmedCurrentLocation> => {
@@ -765,12 +722,12 @@ export default function BookingScreen() {
 
         if (route) {
           const routeKm = Math.max(1, route.distanceKm || 0);
-          const kekeDurationMin = calculateKekeDurationMinutes(route.durationMin, routeKm);
-          const roundedFare = calculateRideFare(routeKm, kekeDurationMin);
+          const rawFare = routeKm * BASE_FARE_PER_KM;
+          const roundedFare = rawFare < 600 ? Math.ceil(rawFare / 100) * 100 : Math.ceil(rawFare / 10) * 10;
 
           setRouteCoordinates(route.coordinates);
           setEstimatedDistance(parseFloat(routeKm.toFixed(2)));
-          setEstimatedDuration(kekeDurationMin);
+          setEstimatedDuration(Math.max(1, Math.round(route.durationMin)));
           setEstimatedFare(roundedFare);
           return;
         }
@@ -785,17 +742,16 @@ export default function BookingScreen() {
         dropoffLocation.lng
       );
       const displayDistance = fallbackDistance < 1 ? 1 : parseFloat(fallbackDistance.toFixed(2));
-      const roadAdjustedDistance = parseFloat((displayDistance * 1.28).toFixed(2));
-      const fallbackDuration = calculateKekeDurationMinutes((roadAdjustedDistance / 18) * 60, roadAdjustedDistance);
-      const roundedFare = calculateRideFare(roadAdjustedDistance, fallbackDuration);
+      const rawFare = displayDistance * BASE_FARE_PER_KM;
+      const roundedFare = rawFare < 600 ? Math.ceil(rawFare / 100) * 100 : Math.ceil(rawFare / 10) * 10;
 
       if (!isCancelled) {
         setRouteCoordinates([
           [pickupLocation.lng, pickupLocation.lat],
           [dropoffLocation.lng, dropoffLocation.lat],
         ]);
-        setEstimatedDistance(roadAdjustedDistance);
-        setEstimatedDuration(fallbackDuration);
+        setEstimatedDistance(displayDistance);
+        setEstimatedDuration(Math.max(1, Math.round((displayDistance / 22) * 60)));
         setEstimatedFare(roundedFare);
       }
     };
@@ -828,37 +784,6 @@ export default function BookingScreen() {
       setCameraZoom(12);
     }
   }, [pickupLocation, dropoffLocation, currentLocation]);
-
-  useEffect(() => {
-    if (!activeLocationPicker) {
-      mapPickerNoticeAnim.stopAnimation();
-      mapPickerNoticeAnim.setValue(0);
-      return;
-    }
-
-    const animation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(mapPickerNoticeAnim, {
-          toValue: 1,
-          duration: 850,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(mapPickerNoticeAnim, {
-          toValue: 0,
-          duration: 850,
-          easing: Easing.in(Easing.cubic),
-          useNativeDriver: true,
-        }),
-      ])
-    );
-
-    animation.start();
-
-    return () => {
-      animation.stop();
-    };
-  }, [activeLocationPicker, mapPickerNoticeAnim]);
 
   const handleSearch = async (query: string, type: 'pickup' | 'dropoff') => {
     if (!query || query.length < 1) {
@@ -1024,9 +949,9 @@ export default function BookingScreen() {
     const sessionToken =
       type === 'pickup' ? pickupGoogleSessionToken.current : dropoffGoogleSessionToken.current;
 
-    if (result.placeId) {
+    if ((!Number.isFinite(result.lat) || !Number.isFinite(result.lng)) && result.placeId) {
       try {
-        resolvedResult = await getGooglePlaceDetails(result.placeId, sessionToken) || result;
+        resolvedResult = await getGooglePlaceDetails(result.placeId, sessionToken);
       } catch (error) {
         console.log('Google Place Details lookup failed:', error);
       }
@@ -1211,7 +1136,6 @@ export default function BookingScreen() {
           address: dropoffLocation.address,
         },
         estimated_distance: Number.isFinite(estimatedDistance) ? estimatedDistance : 0,
-        duration_minutes: Number.isFinite(estimatedDuration) ? estimatedDuration : 0,
         number_of_seats: 1,
         pickup_time: pendingPickupTime,
         fare_amount: totalFare,
@@ -1293,26 +1217,6 @@ export default function BookingScreen() {
   const bookingTotalFare = Number.isFinite(estimatedFare) ? estimatedFare : 0;
   const bookingPlatformFee = Math.round(bookingTotalFare * PLATFORM_FEE_PERCENTAGE);
   const bookingEstimatedDriverFare = Math.max(0, bookingTotalFare - bookingPlatformFee);
-  const mapPickerNoticeStyle = {
-    opacity: mapPickerNoticeAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [0.88, 1],
-    }),
-    transform: [
-      {
-        translateY: mapPickerNoticeAnim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [0, -5],
-        }),
-      },
-      {
-        scale: mapPickerNoticeAnim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [1, 1.02],
-        }),
-      },
-    ],
-  };
 
   const renderStepSheet = () => {
     const isPickupStep = bookingStep === 'pickup';
@@ -1435,7 +1339,7 @@ export default function BookingScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.quickIconButton, { backgroundColor: theme.colors.inputBackground, borderColor: theme.colors.border }]}
-            onPress={() => openMapLocationPicker(locationType)}
+            onPress={isPickupStep ? openPickupSearch : openDropoffSearch}
             activeOpacity={0.85}
           >
             <MaterialCommunityIcons name={isPickupStep ? 'map-marker-plus' : 'map-marker-check'} size={20} color={BRAND.primary} />
@@ -1453,7 +1357,11 @@ export default function BookingScreen() {
           results={activeResults}
           onSelect={(result: SearchResult) => selectSearchResult(result, locationType)}
           onClose={() => {
-            closeLocationSuggestions(locationType);
+            if (isPickupStep) {
+              setShowPickupResults(false);
+            } else {
+              setShowDropoffResults(false);
+            }
           }}
           theme={theme}
           title={activeResultsTitle}
@@ -1598,37 +1506,6 @@ export default function BookingScreen() {
         )}
       </MapboxMap>
 
-      {activeLocationPicker ? (
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.mapPickerNotice,
-            {
-              top: insets.top + 74,
-              backgroundColor: theme.colors.surface,
-              borderColor: BRAND.primary,
-            },
-            mapPickerNoticeStyle,
-          ]}
-        >
-          <View style={styles.mapPickerNoticeIcon}>
-            <MaterialCommunityIcons
-              name={activeLocationPicker === 'pickup' ? 'map-marker-plus' : 'map-marker-check'}
-              size={22}
-              color="#000"
-            />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.mapPickerNoticeTitle, { color: theme.colors.textPrimary }]}>
-              Select {activeLocationPicker === 'pickup' ? 'pickup' : 'destination'} on map
-            </Text>
-            <Text style={[styles.mapPickerNoticeText, { color: theme.colors.textSecondary }]}>
-              Move or zoom the map, then tap the exact street or building.
-            </Text>
-          </View>
-        </Animated.View>
-      ) : null}
-
       {/* Header */}
       <View style={[styles.header, { top: insets.top + 10 }]}>
         {/* <TouchableOpacity onPress={() => router.back()} style={[styles.iconButton, { backgroundColor: theme.colors.surface }]}>
@@ -1706,7 +1583,7 @@ export default function BookingScreen() {
                 </View>
               )}
             </View>
-            <TouchableOpacity onPress={() => openMapLocationPicker('pickup')} style={styles.mapIconBtn}>
+            <TouchableOpacity onPress={openPickupSearch} style={styles.mapIconBtn}>
               {resolvingCurrentLocation === 'pickup' ? (
                 <ActivityIndicator size="small" color={BRAND.primary} />
               ) : (
@@ -1720,7 +1597,7 @@ export default function BookingScreen() {
           </TourTarget>
 
           {showPickupResults && activeLocationPicker === 'pickup' && !pickupLocation && (
-             <SearchResultsList results={pickupSearch ? pickupSearchResults : recentLocations} onSelect={(r: SearchResult) => selectSearchResult(r, 'pickup')} onClose={() => closeLocationSuggestions('pickup')} theme={theme} title={pickupSearch ? "Search Results" : "Recent Locations"} />
+             <SearchResultsList results={pickupSearch ? pickupSearchResults : recentLocations} onSelect={(r: SearchResult) => selectSearchResult(r, 'pickup')} onClose={() => setShowPickupResults(false)} theme={theme} title={pickupSearch ? "Search Results" : "Recent Locations"} />
           )}
 
           <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
@@ -1763,7 +1640,7 @@ export default function BookingScreen() {
                 </View>
               )}
             </View>
-            <TouchableOpacity onPress={() => openMapLocationPicker('dropoff')} style={styles.mapIconBtn}>
+            <TouchableOpacity onPress={openDropoffSearch} style={styles.mapIconBtn}>
               {resolvingCurrentLocation === 'dropoff' ? (
                 <ActivityIndicator size="small" color={BRAND.primary} />
               ) : (
@@ -1777,7 +1654,7 @@ export default function BookingScreen() {
           </TourTarget>
 
           {showDropoffResults && activeLocationPicker === 'dropoff' && !dropoffLocation && (
-             <SearchResultsList results={dropoffSearch ? dropoffSearchResults : recentLocations} onSelect={(r: SearchResult) => selectSearchResult(r, 'dropoff')} onClose={() => closeLocationSuggestions('dropoff')} theme={theme} title={dropoffSearch ? "Search Results" : "Recent Locations"} />
+             <SearchResultsList results={dropoffSearch ? dropoffSearchResults : recentLocations} onSelect={(r: SearchResult) => selectSearchResult(r, 'dropoff')} onClose={() => setShowDropoffResults(false)} theme={theme} title={dropoffSearch ? "Search Results" : "Recent Locations"} />
           )}
 
           {/* Fare Card */}
@@ -2051,11 +1928,7 @@ const SearchResultsList = ({ results, onSelect, onClose, theme, title }: any) =>
   <View style={[styles.resultsList, { backgroundColor: theme.colors.inputBackground }]}>
     <View style={styles.resultsHeader}>
       <Text style={[styles.resultsTitle, { color: theme.colors.textSecondary }]}>{title}</Text>
-      <TouchableOpacity
-        onPress={() => onClose?.()}
-        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-        style={styles.resultsCloseButton}
-      >
+      <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.resultsCloseButton}>
         <MaterialCommunityIcons name="close" size={18} color={theme.colors.textSecondary} />
       </TouchableOpacity>
     </View>
@@ -2138,35 +2011,6 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   pillText: { color: '#000', fontWeight: '700', fontSize: 16 },
-  mapPickerNotice: {
-    position: 'absolute',
-    left: 20,
-    right: 20,
-    zIndex: 30,
-    minHeight: 68,
-    borderRadius: 18,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.16,
-    shadowRadius: 10,
-    elevation: 8,
-  },
-  mapPickerNoticeIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: BRAND.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  mapPickerNoticeTitle: { fontSize: 14, fontWeight: '900', marginBottom: 3 },
-  mapPickerNoticeText: { fontSize: 12, fontWeight: '700', lineHeight: 16 },
   bottomSheet: {
     position: 'absolute',
     bottom: 0,

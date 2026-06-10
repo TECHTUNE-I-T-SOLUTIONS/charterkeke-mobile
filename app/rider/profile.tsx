@@ -29,6 +29,7 @@ import { BRAND, COLORS } from '@/utils/colors';
 import { useUpdateChecker } from '@/hooks/useUpdateChecker';
 import { UpdateCheckerModal } from '@/components/UpdateCheckerModal';
 import { getTourStorageKey } from '@/utils/appTour';
+import SosHeaderButton from '@/components/SosHeaderButton';
 import { getAppVersionLabel } from '@/utils/appInfo';
 
 interface ProfileData {
@@ -346,6 +347,15 @@ export default function ProfileScreen() {
             />
 
              <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary, marginTop: 24 }]}>SUPPORT</Text>
+             <View style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+                <View style={styles.menuLeft}>
+                   <View style={[styles.iconBox, { backgroundColor: theme.colors.inputBackground }]}>
+                      <MaterialCommunityIcons name="alert-octagon-outline" size={20} color={BRAND.primary} />
+                   </View>
+                   <Text style={[styles.menuText, { color: theme.colors.textPrimary }]}>Emergency SOS</Text>
+                </View>
+                <SosHeaderButton role="rider" />
+             </View>
              <MenuItem icon="map-marker-question-outline" label="Take App Tour" onPress={handleReplayTour} theme={theme} />
              <MenuItem icon="help-circle-outline" label="Help & Support" onPress={() => router.push('/rider/help-and-support')} theme={theme} />
              <MenuItem icon="information-outline" label="About Charter Keke" onPress={() => router.push('/rider/about')} theme={theme} />

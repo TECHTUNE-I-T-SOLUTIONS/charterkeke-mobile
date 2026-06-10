@@ -34,7 +34,6 @@ import { setNotificationCallbacks } from '@/services/notificationService';
 import { setNavigationRef } from '@/services/navigationService';
 import { HomeSkeleton } from '@/components/HomeSkeleton';
 import SupportFloatingWidget from '@/components/SupportFloatingWidget';
-import SosHeaderButton from '@/components/SosHeaderButton';
 import { TourTarget, useGuidedTour } from '@/components/GuidedTour';
 import { getTourStorageKey } from '@/utils/appTour';
 import { formatCurrency } from '@/utils/formatting';
@@ -142,11 +141,6 @@ export default function DriverHomeScreen() {
       const seen = await AsyncStorage.getItem(getTourStorageKey('driver'));
       if (!seen) {
         startTour([
-          {
-            id: 'driver-sos',
-            title: 'SOS is available for drivers too',
-            body: 'Use this if you need urgent help while online, on a trip, or handling a customer.',
-          },
           {
             id: 'driver-notifications',
             title: 'Ride alerts arrive here',
@@ -513,9 +507,6 @@ export default function DriverHomeScreen() {
                 </Text>
               </View>
               <View style={styles.headerButtons}>
-                <TourTarget id="driver-sos">
-                  <SosHeaderButton role="driver" />
-                </TourTarget>
                 <TourTarget id="driver-notifications">
                   <TouchableOpacity 
                     onPress={() => {

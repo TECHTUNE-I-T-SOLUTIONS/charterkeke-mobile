@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   Modal,
@@ -49,7 +49,7 @@ export function PickupTimeModal({
 
     // Today - quick offsets
     const todaySlots = [
-      { label: 'ASAP', sublabel: 'Now', icon: 'flash', offset: 0 },
+      { label: 'ASAP', sublabel: 'Now', icon: 'flash', offset: 2 },
       { label: '30 min', sublabel: 'Soon', icon: 'clock-fast', offset: 30 },
       { label: '1 hour', sublabel: 'Soon', icon: 'clock', offset: 60 },
       { label: '2 hours', sublabel: 'Later', icon: 'clock-outline', offset: 120 },
@@ -132,8 +132,20 @@ export function PickupTimeModal({
     }
   };
 
+  useEffect(() => {
+    if (visible) {
+      const soon = new Date();
+      soon.setMinutes(soon.getMinutes() + 2);
+      setSelectedDate(soon);
+    }
+  }, [visible]);
+
   const handleConfirm = () => {
-    const formattedTime = formatPickupTime(selectedDate);
+    const now = new Date();
+    const safeSelectedDate = selectedDate <= now
+      ? new Date(now.getTime() + 2 * 60 * 1000)
+      : selectedDate;
+    const formattedTime = formatPickupTime(safeSelectedDate);
     onConfirm(formattedTime);
   };
 
