@@ -31,6 +31,7 @@ import { OperationalAreasModal } from '@/components/OperationalAreasModal';
 import { OutOfServiceAreaModal } from '@/components/OutOfServiceAreaModal';
 import { PickupTimeModal } from '@/components/PickupTimeModal';
 import AlertDialog from '@/components/ui/AlertDialog';
+import { TourTarget, useGuidedTour } from '@/components/GuidedTour';
 import {
   validateLocationInOperationalArea,
   getNearbyOperationalAreas,
@@ -337,6 +338,7 @@ export default function BookingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
+  const { startTour } = useGuidedTour();
   const { currentLocation, getCurrentLocation, reverseGeocodeLocation } = useLocation();
   // State
   const [pickupLocation, setPickupLocation] = useState<Location | null>(null);
@@ -399,6 +401,33 @@ export default function BookingScreen() {
   const isLight = theme.mode === 'light';
 
   useEffect(() => { loadRecentData(); loadUserName(); }, []);
+
+  useEffect(() => {
+    const maybeShowBookingTour = async () => {
+      const seen = await AsyncStorage.getItem('@charter_keke_tour_rider_booking_seen');
+      if (seen) return;
+      startTour([
+        {
+          id: 'booking-pickup',
+          title: 'Choose pickup',
+          body: 'Search, speak, tap the map, or use your current location. CK warms location in the background so this feels faster.',
+        },
+        {
+          id: 'booking-destination',
+          title: 'Choose destination',
+          body: 'Add where you are going. Once both points are set, the app shows the fare and trip distance.',
+        },
+        {
+          id: 'booking-confirm',
+          title: 'Confirm the ride',
+          body: 'Tap Book Ride Now to send the request to nearby drivers. You will get updates when a driver accepts.',
+        },
+      ], () => {
+        AsyncStorage.setItem('@charter_keke_tour_rider_booking_seen', 'true').catch(() => {});
+      });
+    };
+    maybeShowBookingTour().catch(() => {});
+  }, [startTour]);
 
   useEffect(() => {
     return () => {
@@ -1192,6 +1221,7 @@ export default function BookingScreen() {
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
           {/* Pickup Input */}
+          <TourTarget id="booking-pickup">
           <View style={styles.inputRow}>
             <MaterialCommunityIcons name="map-marker" size={20} color={BRAND.primary} style={styles.inputIcon} />
             <View style={{ flex: 1 }}>
@@ -1239,6 +1269,7 @@ export default function BookingScreen() {
               <MaterialCommunityIcons name="microphone-outline" size={21} color={BRAND.primary} />
             </TouchableOpacity>
           </View>
+          </TourTarget>
 
           {showPickupResults && activeLocationPicker === 'pickup' && !pickupLocation && (
              <SearchResultsList results={pickupSearch ? pickupSearchResults : recentLocations} onSelect={(r: SearchResult) => selectSearchResult(r, 'pickup')} onClose={() => setShowPickupResults(false)} theme={theme} title={pickupSearch ? "Search Results" : "Recent Locations"} />
@@ -1247,6 +1278,7 @@ export default function BookingScreen() {
           <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
 
           {/* Dropoff Input */}
+          <TourTarget id="booking-destination">
           <View style={styles.inputRow}>
             <MaterialCommunityIcons name="map-marker-check" size={20} color={theme.colors.textPrimary} style={styles.inputIcon} />
             <View style={{ flex: 1 }}>
@@ -1294,6 +1326,7 @@ export default function BookingScreen() {
               <MaterialCommunityIcons name="microphone-outline" size={21} color={BRAND.primary} />
             </TouchableOpacity>
           </View>
+          </TourTarget>
 
           {showDropoffResults && activeLocationPicker === 'dropoff' && !dropoffLocation && (
              <SearchResultsList results={dropoffSearch ? dropoffSearchResults : recentLocations} onSelect={(r: SearchResult) => selectSearchResult(r, 'dropoff')} onClose={() => setShowDropoffResults(false)} theme={theme} title={dropoffSearch ? "Search Results" : "Recent Locations"} />
@@ -1339,14 +1372,16 @@ export default function BookingScreen() {
 
 
           {/* Action Button */}
-          <TouchableOpacity
-            style={[styles.bookBtn, { backgroundColor: (!pickupLocation || !dropoffLocation || isBooking) ? theme.colors.border : BRAND.primary }]}
-            disabled={!pickupLocation || !dropoffLocation || isBooking}
-            onPress={handleBookRide}
-            activeOpacity={0.9}
-          >
-            {isBooking ? <ActivityIndicator color="#000" /> : <Text style={styles.bookBtnText}>Book Ride Now</Text>}
-          </TouchableOpacity>
+          <TourTarget id="booking-confirm">
+            <TouchableOpacity
+              style={[styles.bookBtn, { backgroundColor: (!pickupLocation || !dropoffLocation || isBooking) ? theme.colors.border : BRAND.primary }]}
+              disabled={!pickupLocation || !dropoffLocation || isBooking}
+              onPress={handleBookRide}
+              activeOpacity={0.9}
+            >
+              {isBooking ? <ActivityIndicator color="#000" /> : <Text style={styles.bookBtnText}>Book Ride Now</Text>}
+            </TouchableOpacity>
+          </TourTarget>
 
         </ScrollView>
       </View>

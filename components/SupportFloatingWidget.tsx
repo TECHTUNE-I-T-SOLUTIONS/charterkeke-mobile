@@ -9,13 +9,15 @@ import {
   StyleSheet,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { TourTarget } from '@/components/GuidedTour';
 
 interface SupportFloatingWidgetProps {
   route: string;
   bottom?: number;
+  tourId?: string;
 }
 
-export default function SupportFloatingWidget({ route, bottom = 110 }: SupportFloatingWidgetProps) {
+export default function SupportFloatingWidget({ route, bottom = 110, tourId }: SupportFloatingWidgetProps) {
   const router = useRouter();
   const pan = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
   const lastOffset = useRef({ x: 0, y: 0 });
@@ -76,10 +78,11 @@ export default function SupportFloatingWidget({ route, bottom = 110 }: SupportFl
       style={[styles.wrap, { bottom, transform: pan.getTranslateTransform() }]}
       {...panResponder.panHandlers}
     >
-      <Pressable onPress={openSupport} style={styles.button}>
-        <Image source={require('@/assets/support.png')} style={styles.image} resizeMode="contain" />
-        <Text style={styles.text}>Customer Support</Text>
-      </Pressable>
+      <TourTarget id={tourId || 'support-floating-widget'}>
+        <Pressable onPress={openSupport} style={styles.button}>
+          <Image source={require('@/assets/support.png')} style={styles.image} resizeMode="contain" />
+        </Pressable>
+      </TourTarget>
     </Animated.View>
   );
 }
@@ -104,18 +107,5 @@ const styles = StyleSheet.create({
   image: {
     width: 200,
     height: 160,
-  },
-  text: {
-    fontSize: 20,
-    textAlign: 'center',
-    fontWeight: '600',
-    color: '#FFBB00',
-    position: 'absolute',
-    bottom: -46,
-    shadowColor: '#B58605',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 8,
   },
 });

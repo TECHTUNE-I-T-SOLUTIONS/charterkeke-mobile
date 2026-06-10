@@ -35,9 +35,12 @@ import { setNavigationRef } from '@/services/navigationService';
 import { HomeSkeleton } from '@/components/HomeSkeleton';
 import SupportFloatingWidget from '@/components/SupportFloatingWidget';
 import SosHeaderButton from '@/components/SosHeaderButton';
+import { TourTarget, useGuidedTour } from '@/components/GuidedTour';
+import { getTourStorageKey } from '@/utils/appTour';
 import { formatCurrency } from '@/utils/formatting';
 import { BRAND, COLORS } from '@/utils/colors';
 import { useAutoUpdateCheck } from '@/hooks/useAutoUpdateCheck';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
 
@@ -119,6 +122,7 @@ export default function DriverHomeScreen() {
   const [remittanceModalVisible, setRemittanceModalVisible] = useState(false);
   const [remittanceModalAmount, setRemittanceModalAmount] = useState(0);
   const [driverStats, setDriverStats] = useState({ completedTrips: 0, averageRating: 0 });
+  const { startTour } = useGuidedTour();
   
   // Refs to prevent state updates on unmounted component
   const isMountedRef = useRef(true);
@@ -132,6 +136,44 @@ export default function DriverHomeScreen() {
     setNavigationRef(router);
     setNotificationCallbacks(incrementUnreadCount);
   }, [router, incrementUnreadCount]);
+
+  useEffect(() => {
+    const maybeShowTour = async () => {
+      const seen = await AsyncStorage.getItem(getTourStorageKey('driver'));
+      if (!seen) {
+        startTour([
+          {
+            id: 'driver-sos',
+            title: 'SOS is available for drivers too',
+            body: 'Use this if you need urgent help while online, on a trip, or handling a customer.',
+          },
+          {
+            id: 'driver-notifications',
+            title: 'Ride alerts arrive here',
+            body: 'New ride requests, rider updates, settlements, support messages, and account notices show here.',
+          },
+          {
+            id: 'driver-online-toggle',
+            title: 'Go online to earn',
+            body: 'Switch online when you are ready to receive nearby ride requests. Settlement locks are shown here too.',
+          },
+          {
+            id: 'driver-earnings',
+            title: 'Track earnings',
+            body: 'Open earnings to see today’s income, ride totals, and settlement information.',
+          },
+          {
+            id: 'driver-support',
+            title: 'Support is one tap away',
+            body: 'Use the floating support button to reach Charter Keke support without hunting through settings.',
+          },
+        ], () => {
+          AsyncStorage.setItem(getTourStorageKey('driver'), 'true').catch(() => {});
+        });
+      }
+    };
+    if (!loading) maybeShowTour().catch(() => {});
+  }, [loading, startTour]);
 
   // Clean up on unmount
   useEffect(() => {
@@ -471,21 +513,25 @@ export default function DriverHomeScreen() {
                 </Text>
               </View>
               <View style={styles.headerButtons}>
-                <SosHeaderButton role="driver" />
-                <TouchableOpacity 
-                  onPress={() => {
-                    resetUnreadCount();
-                    router.push('/driver/notifications');
-                  }} 
-                  style={[styles.iconBtn, { backgroundColor: theme.colors.inputBackground }]}
-                >
-                  <MaterialCommunityIcons name="bell-outline" size={20} color={theme.colors.textPrimary} />
-                  {unreadCount > 0 && (
-                    <View style={[styles.badge, { backgroundColor: BRAND.primary }]}>
-                      <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
+                <TourTarget id="driver-sos">
+                  <SosHeaderButton role="driver" />
+                </TourTarget>
+                <TourTarget id="driver-notifications">
+                  <TouchableOpacity 
+                    onPress={() => {
+                      resetUnreadCount();
+                      router.push('/driver/notifications');
+                    }} 
+                    style={[styles.iconBtn, { backgroundColor: theme.colors.inputBackground }]}
+                  >
+                    <MaterialCommunityIcons name="bell-outline" size={20} color={theme.colors.textPrimary} />
+                    {unreadCount > 0 && (
+                      <View style={[styles.badge, { backgroundColor: BRAND.primary }]}>
+                        <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                </TourTarget>
                 <TouchableOpacity onPress={toggleTheme} style={[styles.iconBtn, { backgroundColor: theme.colors.inputBackground }]}>
                   <MaterialCommunityIcons name={isLight ? "weather-sunny" : "weather-night"} size={20} color={theme.colors.textPrimary} />
                 </TouchableOpacity>
@@ -496,48 +542,52 @@ export default function DriverHomeScreen() {
             </View>
 
             {/* Status Toggle Card */}
-            <View style={[styles.statusCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-               <View style={styles.statusInfo}>
-                  <Text style={[styles.statusLabel, { color: theme.colors.textSecondary }]}>Current Status</Text>
-                  <Animated.Text style={[styles.statusValue, { color: statusColor }]}>
-                    {isOnline ? 'Online - Receiving Requests' : 'Offline'}
-                  </Animated.Text>
-                  {settlementBlocked ? (
-                    <Text style={[styles.statusNote, { color: '#EF4444' }]}>
-                      Overdue remittance lock: {formatCurrency(settlementOutstanding || 0)}
-                    </Text>
-                  ) : todayRemittanceDue > 0 ? (
-                    <Text style={[styles.statusNote, { color: BRAND.primary }]}>
-                      Remittance due in {formatRemittanceCountdown(remittanceCountdownMs)} - {formatCurrency(todayRemittanceDue)}
-                    </Text>
-                  ) : (
-                    <Text style={[styles.statusNote, { color: theme.colors.textSecondary }]}>
-                      No remittance due right now
-                    </Text>
-                  )}
-               </View>
-               <Switch
-                  value={isOnline}
-                  onValueChange={handleOnlineToggle}
-                  trackColor={{ false: theme.colors.border, true: '#10B981' }}
-                  thumbColor="#FFF"
-               />
-            </View>
+            <TourTarget id="driver-online-toggle">
+              <View style={[styles.statusCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                 <View style={styles.statusInfo}>
+                    <Text style={[styles.statusLabel, { color: theme.colors.textSecondary }]}>Current Status</Text>
+                    <Animated.Text style={[styles.statusValue, { color: statusColor }]}>
+                      {isOnline ? 'Online - Receiving Requests' : 'Offline'}
+                    </Animated.Text>
+                    {settlementBlocked ? (
+                      <Text style={[styles.statusNote, { color: '#EF4444' }]}>
+                        Overdue remittance lock: {formatCurrency(settlementOutstanding || 0)}
+                      </Text>
+                    ) : todayRemittanceDue > 0 ? (
+                      <Text style={[styles.statusNote, { color: BRAND.primary }]}>
+                        Remittance due in {formatRemittanceCountdown(remittanceCountdownMs)} - {formatCurrency(todayRemittanceDue)}
+                      </Text>
+                    ) : (
+                      <Text style={[styles.statusNote, { color: theme.colors.textSecondary }]}>
+                        No remittance due right now
+                      </Text>
+                    )}
+                 </View>
+                 <Switch
+                    value={isOnline}
+                    onValueChange={handleOnlineToggle}
+                    trackColor={{ false: theme.colors.border, true: '#10B981' }}
+                    thumbColor="#FFF"
+                 />
+              </View>
+            </TourTarget>
           </LinearGradient>
 
           <HomePromoCarousel slides={promoSlides} />
 
           {/* Stats Grid */}
           <View style={styles.statsContainer}>
-             <StatCard 
-               label="Today's Earnings" 
-               value={formatCurrency(todayEarnings || 0)} 
-               icon="wallet-outline" 
-               color={BRAND.primary}
-               theme={theme}
-               isLight={isLight}
-               onPress={() => router.push('/driver/earnings')}
-             />
+             <TourTarget id="driver-earnings" style={{ flex: 1 }}>
+               <StatCard 
+                 label="Today's Earnings" 
+                 value={formatCurrency(todayEarnings || 0)} 
+                 icon="wallet-outline" 
+                 color={BRAND.primary}
+                 theme={theme}
+                 isLight={isLight}
+                 onPress={() => router.push('/driver/earnings')}
+               />
+             </TourTarget>
              <StatCard 
                label="Completed Trips" 
                value={driverStats.completedTrips.toString()} 
@@ -553,7 +603,7 @@ export default function DriverHomeScreen() {
              <StatCard 
                label="Active Rides" 
                value={activeRidesCount.toString()} 
-               icon="car-sports" 
+               icon="rickshaw" 
                color="#3B82F6"
                theme={theme}
                isLight={isLight}
@@ -699,7 +749,7 @@ export default function DriverHomeScreen() {
             </ScrollView>
           ) : (
              <View style={[styles.emptyState, { borderColor: theme.colors.border, borderStyle: 'dashed' }]}>
-               <MaterialCommunityIcons name={isOnline ? "car-off" : "power-sleep"} size={32} color={theme.colors.textTertiary} />
+               <MaterialCommunityIcons name={isOnline ? "rickshaw" : "power-sleep"} size={32} color={theme.colors.textTertiary} />
                <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
                  {isOnline ? 'Searching for nearby rides...' : 'Go online to see requests'}
                </Text>
@@ -709,7 +759,7 @@ export default function DriverHomeScreen() {
         </ScrollView>
       )}
 
-      <SupportFloatingWidget route="/driver/help-and-support" />
+      <SupportFloatingWidget route="/driver/help-and-support" tourId="driver-support" />
 
       <Modal
         visible={remittanceModalVisible}

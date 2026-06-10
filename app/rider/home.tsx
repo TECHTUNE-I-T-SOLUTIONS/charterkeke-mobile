@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -30,12 +30,15 @@ import CtaCarousel, { CtaCard } from '@/components/CtaCarousel';
 import HomePromoCarousel, { HomePromoSlide } from '@/components/HomePromoCarousel';
 import SupportFloatingWidget from '@/components/SupportFloatingWidget';
 import SosHeaderButton from '@/components/SosHeaderButton';
+import { TourTarget, useGuidedTour } from '@/components/GuidedTour';
+import { getTourStorageKey } from '@/utils/appTour';
 import { ErrorDialog } from '@/components/ErrorDialog';
 import { useAutoUpdateCheck } from '@/hooks/useAutoUpdateCheck';
 import { BRAND, COLORS } from '@/utils/colors';
 import { cacheService } from '@/services/cache';
 import { STORAGE_KEYS } from '@/utils/constants';
 import { authService } from '@/services/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
 
@@ -68,6 +71,7 @@ export default function RiderHomeScreen() {
   const [scrollEnabled, setScrollEnabled] = useState(true);
   const [hasCached, setHasCached] = useState(false);
   const [sessionExpiredVisible, setSessionExpiredVisible] = useState(false);
+  const { startTour } = useGuidedTour();
   const { unreadCount, resetUnreadCount, incrementUnreadCount } = useNotificationBadge();
 
   // Refs to prevent state updates on unmounted component
@@ -77,11 +81,55 @@ export default function RiderHomeScreen() {
   // Auto-check for updates on app startup
   useAutoUpdateCheck(true);
 
+  const riderHomeTourSteps = useMemo(() => [
+    {
+      id: 'rider-sos',
+      title: 'SOS is always close',
+      body: 'Tap SOS when you need urgent help. It sends your latest location and ride context to Charter Keke admins.',
+    },
+    {
+      id: 'rider-notifications',
+      title: 'Watch your alerts',
+      body: 'Ride updates, support replies, driver activity, and account notices appear here.',
+    },
+    {
+      id: 'rider-book-ride',
+      title: 'Book a ride fast',
+      body: 'Start here when you need a keke. You can choose pickup, destination, and then confirm your ride.',
+    },
+    {
+      id: 'rider-ride-history',
+      title: 'Track ride history',
+      body: 'This card opens your completed and active rides so you can view details, track progress, and rate drivers.',
+    },
+    {
+      id: 'rider-support',
+      title: 'Support follows you',
+      body: 'Use this floating support button anywhere on the home screen to open your support conversations quickly.',
+    },
+  ], []);
+
+  const startRiderHomeTour = useCallback(() => {
+    startTour(riderHomeTourSteps, () => {
+      AsyncStorage.setItem(getTourStorageKey('rider'), 'true').catch(() => {});
+    });
+  }, [riderHomeTourSteps, startTour]);
+
   // Set up navigation ref and notification callbacks
   useEffect(() => {
     setNavigationRef(router);
     setNotificationCallbacks(incrementUnreadCount);
   }, [router, incrementUnreadCount]);
+
+  useEffect(() => {
+    const maybeShowTour = async () => {
+      const seen = await AsyncStorage.getItem(getTourStorageKey('rider'));
+      if (!seen) {
+        startRiderHomeTour();
+      }
+    };
+    if (!loading) maybeShowTour().catch(() => {});
+  }, [loading, startRiderHomeTour]);
 
   // Clean up on unmount
   useEffect(() => {
@@ -352,21 +400,25 @@ export default function RiderHomeScreen() {
                 </Text>
               </View>
               <View style={styles.headerButtons}>
-                <SosHeaderButton role="rider" />
-                <TouchableOpacity
-                  onPress={() => {
-                    resetUnreadCount();
-                    router.push('/rider/notifications');
-                  }}
-                  style={[styles.iconBtn, { backgroundColor: theme.colors.inputBackground }]}
-                >
-                  <MaterialCommunityIcons name="bell-outline" size={20} color={theme.colors.textPrimary} />
-                  {unreadCount > 0 && (
-                    <View style={[styles.badge, { backgroundColor: BRAND.primary }]}>
-                      <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
+                <TourTarget id="rider-sos">
+                  <SosHeaderButton role="rider" />
+                </TourTarget>
+                <TourTarget id="rider-notifications">
+                  <TouchableOpacity
+                    onPress={() => {
+                      resetUnreadCount();
+                      router.push('/rider/notifications');
+                    }}
+                    style={[styles.iconBtn, { backgroundColor: theme.colors.inputBackground }]}
+                  >
+                    <MaterialCommunityIcons name="bell-outline" size={20} color={theme.colors.textPrimary} />
+                    {unreadCount > 0 && (
+                      <View style={[styles.badge, { backgroundColor: BRAND.primary }]}>
+                        <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                </TourTarget>
                 <TouchableOpacity onPress={toggleTheme} style={[styles.iconBtn, { backgroundColor: theme.colors.inputBackground }]}>
                   <MaterialCommunityIcons name={isLight ? "weather-sunny" : "weather-night"} size={20} color={theme.colors.textPrimary} />
                 </TouchableOpacity>
@@ -397,22 +449,38 @@ export default function RiderHomeScreen() {
         {/* Hero Action - Book Ride */}
         <View style={styles.paddingH}>
           <TouchableOpacity style={styles.heroCard} onPress={() => router.push('/rider/booking')} activeOpacity={0.9}>
-            <LinearGradient
-              colors={[BRAND.primary, '#E68200']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.heroGradient}
-            >
-              <View>
-                <Text style={styles.heroTitle}>Need a ride?</Text>
-                <Text style={styles.heroSubtitle}>Fast and affordable keke rides.</Text>
-                <View style={styles.heroBtn}>
-                  <Text style={styles.heroBtnText}>Book Now</Text>
-                  <MaterialCommunityIcons name="arrow-right" size={16} color={BRAND.primary} />
+            <TourTarget id="rider-book-ride">
+              <LinearGradient
+                colors={[BRAND.primary, '#E68200']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.heroGradient}
+              >
+                <View>
+                  <Text style={styles.heroTitle}>Need a ride?</Text>
+                  <Text style={styles.heroSubtitle}>Fast and affordable keke rides.</Text>
+                  <View style={styles.heroBtn}>
+                    <Text style={styles.heroBtnText}>Book Now</Text>
+                    <MaterialCommunityIcons name="arrow-right" size={16} color={BRAND.primary} />
+                  </View>
                 </View>
-              </View>
-              <Image source={require('@assets/charter keke.png')} style={styles.heroImage} resizeMode="contain" />
-            </LinearGradient>
+                <Image source={require('@assets/charter keke.png')} style={styles.heroImage} resizeMode="contain" />
+              </LinearGradient>
+            </TourTarget>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tourReplayBtn, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
+            onPress={startRiderHomeTour}
+            activeOpacity={0.85}
+          >
+            <View style={[styles.tourReplayIcon, { backgroundColor: BRAND.primary + '18' }]}>
+              <MaterialCommunityIcons name="map-marker-question-outline" size={22} color={BRAND.primary} />
+            </View>
+            <View style={styles.tourReplayCopy}>
+              <Text style={[styles.tourReplayTitle, { color: theme.colors.textPrimary }]}>Take the quick tour</Text>
+              <Text style={[styles.tourReplayText, { color: theme.colors.textSecondary }]}>See what each key button does</Text>
+            </View>
+            <MaterialCommunityIcons name="chevron-right" size={22} color={theme.colors.textSecondary} />
           </TouchableOpacity>
         </View>
 
@@ -427,17 +495,19 @@ export default function RiderHomeScreen() {
              <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{rideStats.activeDrivers}</Text>
              <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Active Drivers</Text>
           </View>
-          <TouchableOpacity
-            onPress={() => router.push('/rider/rides-history')}
-            activeOpacity={0.85}
-            style={[styles.statCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
-          >
-             <View style={[styles.statIconBox, { backgroundColor: isLight ? '#F0F9FF' : '#001E2B' }]}>
-               <MaterialCommunityIcons name="rickshaw" size={20} color="#0EA5E9" />
-             </View>
-             <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{rideStats.totalRides}</Text>
-             <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Total Rides</Text>
-          </TouchableOpacity>
+          <TourTarget id="rider-ride-history" style={{ flex: 1 }}>
+            <TouchableOpacity
+              onPress={() => router.push('/rider/rides-history')}
+              activeOpacity={0.85}
+              style={[styles.statCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
+            >
+               <View style={[styles.statIconBox, { backgroundColor: isLight ? '#F0F9FF' : '#001E2B' }]}>
+                 <MaterialCommunityIcons name="rickshaw" size={20} color="#0EA5E9" />
+               </View>
+               <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{rideStats.totalRides}</Text>
+               <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Total Rides</Text>
+            </TouchableOpacity>
+          </TourTarget>
         </View>
 
         {/* Map Preview */}
@@ -609,7 +679,7 @@ export default function RiderHomeScreen() {
         </>
       )}
 
-      <SupportFloatingWidget route="/rider/help-and-support" />
+      <SupportFloatingWidget route="/rider/help-and-support" tourId="rider-support" />
       <ErrorDialog
         visible={sessionExpiredVisible}
         title="Session expired"
@@ -643,6 +713,26 @@ const styles = StyleSheet.create({
   heroBtn: { backgroundColor: '#000', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 100, alignSelf: 'flex-start', gap: 6 },
   heroBtnText: { color: '#FFF', fontSize: 12, fontWeight: '700' },
   heroImage: { width: 100, height: 80, transform: [{ rotate: '-10deg' }] },
+  tourReplayBtn: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  tourReplayIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tourReplayCopy: { flex: 1 },
+  tourReplayTitle: { fontSize: 14, fontWeight: '900' },
+  tourReplayText: { marginTop: 2, fontSize: 12, fontWeight: '600' },
   statsRow: { flexDirection: 'row', gap: 12, paddingHorizontal: 20, marginTop: 20 },
   statCard: { flex: 1, padding: 16, borderRadius: 16, borderWidth: 1 },
   statIconBox: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },

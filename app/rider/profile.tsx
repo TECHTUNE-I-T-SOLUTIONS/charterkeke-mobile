@@ -22,11 +22,14 @@ import ConfirmationDialog from '@/components/ui/ConfirmationDialog';
 import { ProfileSkeleton } from '@/components/ProfileSkeleton';
 import { apiService } from '@/services/api';
 import * as FileSystem from 'expo-file-system/legacy';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { cacheService } from '@/services/cache';
 import { STORAGE_KEYS } from '@/utils/constants';
 import { BRAND, COLORS } from '@/utils/colors';
 import { useUpdateChecker } from '@/hooks/useUpdateChecker';
 import { UpdateCheckerModal } from '@/components/UpdateCheckerModal';
+import { getTourStorageKey } from '@/utils/appTour';
+import { getAppVersionLabel } from '@/utils/appInfo';
 
 interface ProfileData {
   id?: string;
@@ -195,6 +198,12 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleReplayTour = async () => {
+    await AsyncStorage.removeItem(getTourStorageKey('rider')).catch(() => {});
+    await AsyncStorage.removeItem('@charter_keke_tour_rider_booking_seen').catch(() => {});
+    router.push('/rider/home');
+  };
+
   const handlePickAndUploadAvatar = async () => {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -337,7 +346,9 @@ export default function ProfileScreen() {
             />
 
              <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary, marginTop: 24 }]}>SUPPORT</Text>
+             <MenuItem icon="map-marker-question-outline" label="Take App Tour" onPress={handleReplayTour} theme={theme} />
              <MenuItem icon="help-circle-outline" label="Help & Support" onPress={() => router.push('/rider/help-and-support')} theme={theme} />
+             <MenuItem icon="information-outline" label="About Charter Keke" onPress={() => router.push('/rider/about')} theme={theme} />
              <MenuItem 
               icon="cloud-download-outline" 
               label="Check for Updates" 
@@ -350,6 +361,7 @@ export default function ProfileScreen() {
                 <MaterialCommunityIcons name="logout" size={20} color={COLORS.light.destructive} />
                 <Text style={{ color: COLORS.light.destructive, fontWeight: '600' }}>Log Out</Text>
              </TouchableOpacity>
+             <Text style={[styles.versionText, { color: theme.colors.textSecondary }]}>{getAppVersionLabel()}</Text>
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -458,6 +470,7 @@ const styles = StyleSheet.create({
   iconBox: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
   menuText: { fontSize: 14, fontWeight: '600' },
   logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, borderRadius: 12, borderWidth: 1, marginTop: 20, gap: 8 },
+  versionText: { textAlign: 'center', fontSize: 12, fontWeight: '700', marginTop: 18, marginBottom: 8 },
 });
 
 const DetailRow = ({ label, value }: { label: string; value: string }) => (

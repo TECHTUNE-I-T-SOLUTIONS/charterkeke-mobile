@@ -9,6 +9,7 @@ import { AlertProvider } from '@context/AlertContext';
 import { NotificationProvider } from '@context/NotificationContext';
 import { configureNotifications, registerBackgroundNotificationTask } from '@services/notificationService';
 import { AppErrorBoundary } from '@components/AppErrorBoundary';
+import { GuidedTourProvider } from '@components/GuidedTour';
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -72,7 +73,9 @@ export default function RootLayout() {
               <LocationProvider>
                 <RideProvider>
                   <NotificationProvider>
-                    <RootLayoutContent />
+                    <GuidedTourProvider>
+                      <RootLayoutContent />
+                    </GuidedTourProvider>
                   </NotificationProvider>
                 </RideProvider>
               </LocationProvider>

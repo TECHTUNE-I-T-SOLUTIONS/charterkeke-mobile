@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '@context/ThemeContext';
 import { COLORS } from '@/utils/colors';
@@ -10,6 +10,7 @@ import { apiService } from '@/services/api';
 interface NavItem {
   name: string;
   icon: string;
+  iconFamily?: 'material' | 'community';
   route: string;
   label: string;
 }
@@ -127,11 +128,19 @@ export default function RiderBottomNavigation() {
                 },
               ]}
             >
-              <MaterialIcons
-                name={item.icon as any}
-                size={24}
-                color={active ? colors.primary : colors.textSecondary}
-              />
+              {item.iconFamily === 'community' ? (
+                <MaterialCommunityIcons
+                  name={item.icon as any}
+                  size={24}
+                  color={active ? colors.primary : colors.textSecondary}
+                />
+              ) : (
+                <MaterialIcons
+                  name={item.icon as any}
+                  size={24}
+                  color={active ? colors.primary : colors.textSecondary}
+                />
+              )}
               {showDriverRideBadge && (
                 <View style={[styles.badge, { backgroundColor: newRideCount > 0 ? '#EF4444' : colors.primary }]}>
                   <Text style={styles.badgeText}>{badgeText}</Text>
@@ -168,7 +177,7 @@ export default function RiderBottomNavigation() {
 
 const DRIVER_NAV_ITEMS: NavItem[] = [
   { name: 'home', icon: 'home', route: '/driver/home', label: 'Home' },
-  { name: 'rides', icon: 'directions-car', route: '/driver/rides', label: 'Rides' },
+  { name: 'rides', icon: 'rickshaw', iconFamily: 'community', route: '/driver/rides', label: 'Rides' },
   { name: 'earnings', icon: 'trending-up', route: '/driver/earnings', label: 'Earnings' },
   { name: 'wallet', icon: 'wallet', route: '/driver/wallet', label: 'Wallet' },
   { name: 'profile', icon: 'person', route: '/driver/profile', label: 'Profile' },

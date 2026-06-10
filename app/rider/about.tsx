@@ -11,8 +11,10 @@ import {
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { FontAwesome6 } from '@expo/vector-icons';
 import { useTheme } from '@/context/ThemeContext';
 import { COLORS } from '@/utils/colors';
+import { APP_INFO, getAppVersionLabel } from '@/utils/appInfo';
 
 export default function AboutScreen() {
   const router = useRouter();
@@ -59,14 +61,14 @@ export default function AboutScreen() {
               { backgroundColor: colors.primary + '20' }
             ]}
           >
-            <MaterialCommunityIcons 
-              name="taxi" 
-              size={60} 
-              color={colors.primary} 
+            <Image
+              source={require('@/assets/charter keke.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
             />
           </View>
-          <Text style={[styles.appName, { color: colors.text }]}>Charter Keke</Text>
-          <Text style={[styles.version, { color: colors.textSecondary }]}>Version 1.0.0</Text>
+          <Text style={[styles.appName, { color: colors.text }]}>{APP_INFO.name}</Text>
+          <Text style={[styles.version, { color: colors.textSecondary }]}>{getAppVersionLabel()}</Text>
         </View>
 
         {/* Description */}
@@ -75,7 +77,7 @@ export default function AboutScreen() {
             Our Mission
           </Text>
           <Text style={[styles.descriptionText, { color: colors.textSecondary }]}>
-            Charter Keke is committed to making transportation affordable, reliable, and accessible to everyone. We connect riders with trusted drivers to provide safe and convenient rides across the city.
+            Charter Keke connects riders with trusted keke drivers for simple booking, live trip visibility, support, ratings, and safer everyday movement. For drivers, the app helps manage ride requests, earnings, wallet activity, remittance, notifications, and customer support.
           </Text>
         </View>
 
@@ -121,8 +123,13 @@ export default function AboutScreen() {
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Company Info</Text>
           
           <View style={[styles.infoItem, { borderTopColor: colors.border }]}>
-            <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>Founded</Text>
-            <Text style={[styles.infoValue, { color: colors.text }]}>2023</Text>
+            <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>App Version</Text>
+            <Text style={[styles.infoValue, { color: colors.text }]}>{getAppVersionLabel()}</Text>
+          </View>
+
+          <View style={[styles.infoItem, { borderTopColor: colors.border }]}>
+            <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>Company</Text>
+            <Text style={[styles.infoValue, { color: colors.text }]}>{APP_INFO.company}</Text>
           </View>
 
           <View style={[styles.infoItem, { borderTopColor: colors.border }]}>
@@ -131,13 +138,18 @@ export default function AboutScreen() {
           </View>
 
           <View style={[styles.infoItem, { borderTopColor: colors.border }]}>
-            <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>Active Cities</Text>
-            <Text style={[styles.infoValue, { color: colors.text }]}>Lagos, Abuja, Ibadan</Text>
+            <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>Service Focus</Text>
+            <Text style={[styles.infoValue, { color: colors.text }]}>Keke mobility</Text>
           </View>
 
           <View style={[styles.infoItem, { borderTopColor: colors.border, borderBottomColor: colors.border, borderBottomWidth: 1 }]}>
             <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>Support Email</Text>
-            <Text style={[styles.infoValue, { color: colors.primary }]}>support@charterkeke.com</Text>
+            <Text style={[styles.infoValue, { color: colors.primary }]}>{APP_INFO.supportEmail}</Text>
+          </View>
+
+          <View style={[styles.infoItem, { borderTopColor: colors.border, borderBottomColor: colors.border, borderBottomWidth: 1 }]}>
+            <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>Website</Text>
+            <Text style={[styles.infoValue, { color: colors.text }]}>{APP_INFO.website}</Text>
           </View>
         </View>
 
@@ -157,14 +169,14 @@ export default function AboutScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity
-              onPress={() => handleSocialLink('https://twitter.com/charterkeke')}
+              onPress={() => handleSocialLink('https://x.com/charterkeke')}
               style={[
                 styles.socialButton,
                 { backgroundColor: colors.card || colors.background, borderColor: colors.border }
               ]}
             >
-              <MaterialCommunityIcons name="twitter" size={24} color={colors.primary} />
-              <Text style={[styles.socialLabel, { color: colors.text }]}>Twitter</Text>
+              <FontAwesome6 name="x-twitter" size={22} color={colors.primary} />
+              <Text style={[styles.socialLabel, { color: colors.text }]}>X</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -176,6 +188,17 @@ export default function AboutScreen() {
             >
               <MaterialCommunityIcons name="instagram" size={24} color={colors.primary} />
               <Text style={[styles.socialLabel, { color: colors.text }]}>Instagram</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => handleSocialLink('https://charterkeke.com')}
+              style={[
+                styles.socialButton,
+                { backgroundColor: colors.card || colors.background, borderColor: colors.border }
+              ]}
+            >
+              <MaterialCommunityIcons name="web" size={24} color={colors.primary} />
+              <Text style={[styles.socialLabel, { color: colors.text }]}>Website</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -245,6 +268,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
+  },
+  logoImage: {
+    width: 86,
+    height: 86,
   },
   appName: {
     fontSize: 28,
