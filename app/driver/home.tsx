@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -122,6 +122,35 @@ export default function DriverHomeScreen() {
   const [remittanceModalAmount, setRemittanceModalAmount] = useState(0);
   const [driverStats, setDriverStats] = useState({ completedTrips: 0, averageRating: 0 });
   const { startTour } = useGuidedTour();
+
+  const driverHomeTourSteps = useMemo(() => [
+    {
+      id: 'driver-notifications',
+      title: 'Ride alerts arrive here',
+      body: 'New ride requests, rider updates, settlements, support messages, and account notices show here.',
+    },
+    {
+      id: 'driver-online-toggle',
+      title: 'Go online to earn',
+      body: 'Switch online when you are ready to receive nearby ride requests. Settlement locks are shown here too.',
+    },
+    {
+      id: 'driver-earnings',
+      title: 'Track earnings',
+      body: "Open earnings to see today's income, ride totals, and settlement information.",
+    },
+    {
+      id: 'driver-support',
+      title: 'Support is one tap away',
+      body: 'Use the floating support button to reach Charter Keke support without hunting through settings.',
+    },
+  ], []);
+
+  const startDriverHomeTour = useCallback(() => {
+    startTour(driverHomeTourSteps, () => {
+      AsyncStorage.setItem(getTourStorageKey('driver'), 'true').catch(() => {});
+    });
+  }, [driverHomeTourSteps, startTour]);
   
   // Refs to prevent state updates on unmounted component
   const isMountedRef = useRef(true);
@@ -140,34 +169,11 @@ export default function DriverHomeScreen() {
     const maybeShowTour = async () => {
       const seen = await AsyncStorage.getItem(getTourStorageKey('driver'));
       if (!seen) {
-        startTour([
-          {
-            id: 'driver-notifications',
-            title: 'Ride alerts arrive here',
-            body: 'New ride requests, rider updates, settlements, support messages, and account notices show here.',
-          },
-          {
-            id: 'driver-online-toggle',
-            title: 'Go online to earn',
-            body: 'Switch online when you are ready to receive nearby ride requests. Settlement locks are shown here too.',
-          },
-          {
-            id: 'driver-earnings',
-            title: 'Track earnings',
-            body: 'Open earnings to see today’s income, ride totals, and settlement information.',
-          },
-          {
-            id: 'driver-support',
-            title: 'Support is one tap away',
-            body: 'Use the floating support button to reach Charter Keke support without hunting through settings.',
-          },
-        ], () => {
-          AsyncStorage.setItem(getTourStorageKey('driver'), 'true').catch(() => {});
-        });
+        startDriverHomeTour();
       }
     };
     if (!loading) maybeShowTour().catch(() => {});
-  }, [loading, startTour]);
+  }, [loading, startDriverHomeTour]);
 
   // Clean up on unmount
   useEffect(() => {

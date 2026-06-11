@@ -32,11 +32,13 @@ export function useGuidedTour() {
 export function GuidedTourProvider({ children }: { children: ReactNode }) {
   const targets = useRef<Record<string, View | null>>({});
   const doneRef = useRef<(() => void) | undefined>(undefined);
+  const activeStepIdRef = useRef<string | undefined>(undefined);
   const [steps, setSteps] = useState<TourStep[]>([]);
   const [index, setIndex] = useState(0);
   const [frame, setFrame] = useState<TargetFrame | null>(null);
 
   const activeStep = steps[index];
+  activeStepIdRef.current = activeStep?.id;
 
   const measureStep = useCallback((step?: TourStep, attempt = 0) => {
     if (!step) return;
@@ -46,6 +48,7 @@ export function GuidedTourProvider({ children }: { children: ReactNode }) {
       return;
     }
     const setMeasuredFrame = (x: number, y: number, width: number, height: number) => {
+      if (activeStepIdRef.current !== step.id) return;
       if (width > 0 && height > 0) {
         setFrame({ x, y, width, height });
       } else if (attempt < 4) {
@@ -56,13 +59,16 @@ export function GuidedTourProvider({ children }: { children: ReactNode }) {
     };
 
     const runMeasure = () => requestAnimationFrame(() => {
+      if (activeStepIdRef.current !== step.id) return;
       target.measure((_x, _y, width, height, pageX, pageY) => {
+        if (activeStepIdRef.current !== step.id) return;
         if (width > 0 && height > 0 && Number.isFinite(pageX) && Number.isFinite(pageY)) {
           setMeasuredFrame(pageX, pageY, width, height);
           return;
         }
 
         target.measureInWindow((x, y, fallbackWidth, fallbackHeight) => {
+          if (activeStepIdRef.current !== step.id) return;
           setMeasuredFrame(x, y, fallbackWidth, fallbackHeight);
         });
       });
