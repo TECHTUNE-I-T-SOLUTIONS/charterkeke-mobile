@@ -24,6 +24,7 @@ import { useLocation } from '@/context/LocationContext';
 import { useTheme } from '@/context/ThemeContext';
 import { apiService } from '@/services/api';
 import { sendLocalNotification } from '@/services/notificationService';
+import { BOOKING_PRICING, calculateKekeDurationMinutes, calculateRideFare } from '@/services/bookingService';
 import { BRAND, COLORS } from '@/utils/colors';
 import { ErrorDialog } from '@/components/ErrorDialog';
 import { SuccessDialog } from '@/components/SuccessDialog';
@@ -47,14 +48,7 @@ import {
   searchLagosPlaces,
 } from '@/utils/googlePlacesSearch';
 
-// Fare calculation constants
-const BASE_FARE_PER_KM = 600;
-const BASE_PICKUP_FARE = 250;
-const TIME_FARE_PER_MINUTE = 25;
-const MINIMUM_RIDE_FARE = 600;
-const PLATFORM_FEE_PERCENTAGE = 0.15;
-const KEKE_ROUTE_TIME_MULTIPLIER = 1.18;
-const KEKE_STOP_BUFFER_MINUTES = 4;
+const PLATFORM_FEE_PERCENTAGE = BOOKING_PRICING.platformFeeRate;
 // const DRIVER_COMMISSION_PERCENTAGE = 0.85;
 
 // Storage keys
@@ -216,19 +210,6 @@ const formatPickupTimeLabel = (pickupTime: string): string => {
       : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
   return `${dayLabel}, ${date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
-};
-
-const calculateKekeDurationMinutes = (routeDurationMin: number, routeDistanceKm: number): number => {
-  const mapDuration = Number.isFinite(routeDurationMin) ? routeDurationMin : 0;
-  const distanceBuffer = Math.max(2, routeDistanceKm * 0.8);
-  return Math.max(1, Math.ceil(mapDuration * KEKE_ROUTE_TIME_MULTIPLIER + KEKE_STOP_BUFFER_MINUTES + distanceBuffer));
-};
-
-const calculateRideFare = (distanceKm: number, durationMin: number): number => {
-  const safeDistance = Math.max(1, Number.isFinite(distanceKm) ? distanceKm : 0);
-  const safeDuration = Math.max(1, Number.isFinite(durationMin) ? durationMin : 0);
-  const rawFare = BASE_PICKUP_FARE + safeDistance * BASE_FARE_PER_KM + safeDuration * TIME_FARE_PER_MINUTE;
-  return Math.max(MINIMUM_RIDE_FARE, Math.ceil(rawFare / 50) * 50);
 };
 
 // --- HELPER FUNCTIONS ---
@@ -1301,6 +1282,11 @@ export default function BookingScreen() {
   const bookingTotalFare = Number.isFinite(estimatedFare) ? estimatedFare : 0;
   const bookingPlatformFee = Math.round(bookingTotalFare * PLATFORM_FEE_PERCENTAGE);
   const bookingEstimatedDriverFare = Math.max(0, bookingTotalFare - bookingPlatformFee);
+  const isLocationSearchExpanded =
+    keyboardHeight > 0 &&
+    (bookingStep === 'pickup' || bookingStep === 'destination') &&
+    (showPickupResults || showDropoffResults || Boolean(pickupSearch || dropoffSearch));
+
   const renderStepSheet = () => {
     const isPickupStep = bookingStep === 'pickup';
     const isDestinationStep = bookingStep === 'destination';
@@ -1504,9 +1490,9 @@ export default function BookingScreen() {
       </>
     );
 
-    const keyboardLift = keyboardHeight > 0 ? Math.min(110, Math.round(keyboardHeight * 0.28)) : 0;
+    const keyboardLift = isLocationSearchExpanded ? 0 : keyboardHeight > 0 ? Math.min(84, Math.round(keyboardHeight * 0.22)) : 0;
     const keyboardScrollPadding = keyboardHeight > 0
-      ? Math.max(80, keyboardHeight - keyboardLift + 20)
+      ? Math.max(160, keyboardHeight + 24)
       : insets.bottom + 18;
 
     return (
@@ -1516,7 +1502,10 @@ export default function BookingScreen() {
           {
             backgroundColor: theme.colors.surface,
             bottom: keyboardLift,
-            maxHeight: keyboardHeight > 0 ? '60%' : '56%',
+            top: isLocationSearchExpanded ? insets.top + 4 : undefined,
+            borderTopLeftRadius: isLocationSearchExpanded ? 0 : 24,
+            borderTopRightRadius: isLocationSearchExpanded ? 0 : 24,
+            maxHeight: isLocationSearchExpanded ? undefined : keyboardHeight > 0 ? '72%' : '56%',
             paddingBottom: keyboardHeight > 0 ? 8 : insets.bottom + 18,
           },
         ]}
@@ -1553,11 +1542,11 @@ export default function BookingScreen() {
           {isTimeStep ? renderTimeStep() : null}
           {isReviewStep ? renderReviewStep() : null}
 
-          {activeLocationPicker && (isPickupStep || isDestinationStep) ? (
-            <View style={[styles.guideBox, { backgroundColor: theme.colors.inputBackground }]}>
+          {activeLocationPicker && (isPickupStep || isDestinationStep) && !isLocationSearchExpanded ? (
+            <View style={[styles.guideBox, styles.guideBoxCompact, { backgroundColor: theme.colors.inputBackground }]}>
               <MaterialCommunityIcons name="gesture-tap" size={20} color={BRAND.primary} />
               <Text style={[styles.guideText, { color: theme.colors.textSecondary }]}>
-                Tap anywhere on the map to set {activeLocationPicker === 'pickup' ? 'pickup' : 'destination'} location.
+                Tap the map to set {activeLocationPicker === 'pickup' ? 'pickup' : 'destination'}.
               </Text>
             </View>
           ) : null}
@@ -1571,6 +1560,7 @@ export default function BookingScreen() {
       <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
 
       {/* Map */}
+      {!isLocationSearchExpanded ? (
       <MapboxMap
         style={styles.map}
         latitude={currentLocation?.latitude || 6.5}
@@ -1603,8 +1593,12 @@ export default function BookingScreen() {
           />
         )}
       </MapboxMap>
+      ) : (
+        <View style={[styles.searchExpandedBackground, { backgroundColor: theme.colors.background }]} />
+      )}
 
       {/* Header */}
+      {!isLocationSearchExpanded ? (
       <View style={[styles.header, { top: insets.top + 10 }]}>
         {/* <TouchableOpacity onPress={() => router.back()} style={[styles.iconButton, { backgroundColor: theme.colors.surface }]}>
           <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.textPrimary} />
@@ -1624,6 +1618,7 @@ export default function BookingScreen() {
           <MaterialCommunityIcons name="information" size={20} color={BRAND.primary} />
         </TouchableOpacity>
       </View>
+      ) : null}
 
       {renderStepSheet()}
 
@@ -2081,6 +2076,7 @@ const SearchResultsList = ({ results, onSelect, onClose, theme, title }: any) =>
 const styles = StyleSheet.create({
   container: { flex: 1 },
   map: { flex: 1 },
+  searchExpandedBackground: { ...StyleSheet.absoluteFillObject },
   header: {
     position: 'absolute',
     left: 20,
@@ -2147,6 +2143,7 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 12,
   },
+  guideBoxCompact: { marginTop: 10, paddingVertical: 9 },
   stepContent: { paddingHorizontal: 20, paddingBottom: 14 },
   stepHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
   stepBackButton: {

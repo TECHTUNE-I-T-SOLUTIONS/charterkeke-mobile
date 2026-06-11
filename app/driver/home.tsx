@@ -201,7 +201,7 @@ export default function DriverHomeScreen() {
       }
       console.log('🔄 [DRIVER-HOME] Loading dashboard for user:', user.id);
       if (!isLoadingRef.current) {
-        loadDashboard();
+        cacheService.remove('driver_home_dashboard').finally(() => loadDashboard());
       }
     }, [isAuthenticated, user?.id])
   );
@@ -389,6 +389,7 @@ export default function DriverHomeScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
+    await cacheService.remove('driver_home_dashboard');
     await fetchDashboardData(!hasCached);
     setRefreshing(false);
   };
@@ -406,6 +407,8 @@ export default function DriverHomeScreen() {
       const result = await apiService.setDriverStatus(value ? 'online' : 'offline');
       const nextStatus = String(result?.status || '').toLowerCase();
       setIsOnline(nextStatus ? nextStatus === 'online' : value);
+      await cacheService.remove('driver_home_dashboard');
+      fetchDashboardData(false).catch(() => undefined);
     } catch (error) {
       if (value) {
         setIsOnline(false);

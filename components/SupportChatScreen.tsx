@@ -50,6 +50,7 @@ type SupportMessage = {
     role: string;
     first_name?: string;
     last_name?: string;
+    department?: string;
   };
   sender_id?: string;
 };
@@ -332,6 +333,21 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
   const renderMessage = ({ item }: { item: SupportMessage }) => {
     const myId = (user as any)?.id;
     const isMine = item.sender_id === myId || item.users?.id === myId;
+    const senderRole = String(item.users?.role || '').toLowerCase();
+    const isAssistant =
+      !isMine &&
+      (item.message.includes('Dapo') ||
+        item.message.includes('Daps') ||
+        item.message.toLowerCase().includes('journey assistant'));
+    const senderName = [item.users?.first_name, item.users?.last_name].filter(Boolean).join(' ').trim();
+    const senderDepartment = item.users?.department || (senderRole.includes('admin') ? 'support' : '');
+    const senderLabel = isMine
+      ? 'You'
+      : isAssistant
+        ? 'Dapo - Charter Keke assistant'
+        : senderName
+          ? `${senderName} - Charter Keke ${senderDepartment || 'support'}`
+          : 'Charter Keke support';
 
     return (
       <View style={[styles.msgRow, isMine ? styles.msgRowRight : styles.msgRowLeft]}>
@@ -344,6 +360,11 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
             },
           ]}
         >
+          {!isMine ? (
+            <Text style={[styles.senderLabel, { color: isAssistant ? theme.colors.primary : '#10B981' }]}>
+              {senderLabel}
+            </Text>
+          ) : null}
           <Text
             style={{
               color: isMine ? (isDark ? '#000' : '#fff') : theme.colors.textPrimary,
@@ -689,6 +710,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
+  senderLabel: { fontSize: 10, fontWeight: '900', marginBottom: 5, textTransform: 'uppercase' },
   attachmentPreview: { width: 170, height: 120, borderRadius: 10, marginBottom: 6 },
   inputRow: {
     borderTopWidth: 1,
