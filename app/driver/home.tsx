@@ -34,7 +34,7 @@ import { setNotificationCallbacks } from '@/services/notificationService';
 import { setNavigationRef } from '@/services/navigationService';
 import { HomeSkeleton } from '@/components/HomeSkeleton';
 import SupportFloatingWidget from '@/components/SupportFloatingWidget';
-import { TourTarget, useGuidedTour } from '@/components/GuidedTour';
+import { TourStep, TourTarget, useGuidedTour } from '@/components/GuidedTour';
 import { getTourStorageKey } from '@/utils/appTour';
 import { formatCurrency } from '@/utils/formatting';
 import { BRAND, COLORS } from '@/utils/colors';
@@ -42,6 +42,29 @@ import { useAutoUpdateCheck } from '@/hooks/useAutoUpdateCheck';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
+
+const DRIVER_HOME_TOUR_STEPS: TourStep[] = [
+  {
+    id: 'driver-notifications',
+    title: 'Ride alerts arrive here',
+    body: 'New ride requests, rider updates, settlements, support messages, and account notices show here.',
+  },
+  {
+    id: 'driver-online-toggle',
+    title: 'Go online to earn',
+    body: 'Switch online when you are ready to receive nearby ride requests. Settlement locks are shown here too.',
+  },
+  {
+    id: 'driver-earnings',
+    title: 'Track earnings',
+    body: "Open earnings to see today's income, ride totals, and settlement information.",
+  },
+  {
+    id: 'driver-support',
+    title: 'Support is one tap away',
+    body: 'Use the floating support button to reach Charter Keke support without hunting through settings.',
+  },
+];
 
 interface DriverData {
   total_earnings?: number;
@@ -122,35 +145,13 @@ export default function DriverHomeScreen() {
   const [remittanceModalAmount, setRemittanceModalAmount] = useState(0);
   const [driverStats, setDriverStats] = useState({ completedTrips: 0, averageRating: 0 });
   const { startTour } = useGuidedTour();
-
-  const driverHomeTourSteps = useMemo(() => [
-    {
-      id: 'driver-notifications',
-      title: 'Ride alerts arrive here',
-      body: 'New ride requests, rider updates, settlements, support messages, and account notices show here.',
-    },
-    {
-      id: 'driver-online-toggle',
-      title: 'Go online to earn',
-      body: 'Switch online when you are ready to receive nearby ride requests. Settlement locks are shown here too.',
-    },
-    {
-      id: 'driver-earnings',
-      title: 'Track earnings',
-      body: "Open earnings to see today's income, ride totals, and settlement information.",
-    },
-    {
-      id: 'driver-support',
-      title: 'Support is one tap away',
-      body: 'Use the floating support button to reach Charter Keke support without hunting through settings.',
-    },
-  ], []);
+  const hasCheckedDriverTourRef = useRef(false);
 
   const startDriverHomeTour = useCallback(() => {
-    startTour(driverHomeTourSteps, () => {
+    startTour(DRIVER_HOME_TOUR_STEPS, () => {
       AsyncStorage.setItem(getTourStorageKey('driver'), 'true').catch(() => {});
     });
-  }, [driverHomeTourSteps, startTour]);
+  }, [startTour]);
   
   // Refs to prevent state updates on unmounted component
   const isMountedRef = useRef(true);
@@ -167,6 +168,8 @@ export default function DriverHomeScreen() {
 
   useEffect(() => {
     const maybeShowTour = async () => {
+      if (hasCheckedDriverTourRef.current) return;
+      hasCheckedDriverTourRef.current = true;
       const seen = await AsyncStorage.getItem(getTourStorageKey('driver'));
       if (!seen) {
         startDriverHomeTour();

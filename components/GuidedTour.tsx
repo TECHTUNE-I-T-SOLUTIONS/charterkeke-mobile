@@ -33,6 +33,7 @@ export function GuidedTourProvider({ children }: { children: ReactNode }) {
   const targets = useRef<Record<string, View | null>>({});
   const doneRef = useRef<(() => void) | undefined>(undefined);
   const activeStepIdRef = useRef<string | undefined>(undefined);
+  const measuredStepIdRef = useRef<string | undefined>(undefined);
   const [steps, setSteps] = useState<TourStep[]>([]);
   const [index, setIndex] = useState(0);
   const [frame, setFrame] = useState<TargetFrame | null>(null);
@@ -49,7 +50,9 @@ export function GuidedTourProvider({ children }: { children: ReactNode }) {
     }
     const setMeasuredFrame = (x: number, y: number, width: number, height: number) => {
       if (activeStepIdRef.current !== step.id) return;
+      if (measuredStepIdRef.current === step.id) return;
       if (width > 0 && height > 0) {
+        measuredStepIdRef.current = step.id;
         setFrame({ x, y, width, height });
       } else if (attempt < 4) {
         setTimeout(() => measureStep(step, attempt + 1), 120);
@@ -84,6 +87,7 @@ export function GuidedTourProvider({ children }: { children: ReactNode }) {
   }, [activeStep, measureStep]);
 
   const stopTour = useCallback(() => {
+    measuredStepIdRef.current = undefined;
     setSteps([]);
     setIndex(0);
     setFrame(null);
@@ -94,13 +98,16 @@ export function GuidedTourProvider({ children }: { children: ReactNode }) {
   const startTour = useCallback((nextSteps: TourStep[], onDone?: () => void) => {
     if (!nextSteps.length) return;
     doneRef.current = onDone;
+    measuredStepIdRef.current = undefined;
     setSteps(nextSteps);
     setIndex(0);
+    setFrame(null);
     setTimeout(() => measureStep(nextSteps[0]), 350);
   }, [measureStep]);
 
   const goTo = useCallback((nextIndex: number) => {
     const nextStep = steps[nextIndex];
+    measuredStepIdRef.current = undefined;
     setIndex(nextIndex);
     setFrame(null);
     setTimeout(() => measureStep(nextStep), 220);
