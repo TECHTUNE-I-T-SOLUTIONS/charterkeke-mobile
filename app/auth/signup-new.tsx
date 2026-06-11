@@ -91,7 +91,11 @@ export default function SignupMultiStepScreen() {
     verifiedAccountName: '',
     vehicleType: '',
     plateNumber: '',
-    unionName: '',
+    guarantorName: '',
+    guarantorPhone: '+234',
+    guarantorAddress: '',
+    nin: '',
+    ninImage: null as any,
     vehicleImage: null as any,
     licenseImage: null as any,
   });
@@ -99,6 +103,7 @@ export default function SignupMultiStepScreen() {
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [previewVehicleImage, setPreviewVehicleImage] = useState<string | null>(null);
   const [previewLicenseImage, setPreviewLicenseImage] = useState<string | null>(null);
+  const [previewNinImage, setPreviewNinImage] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -120,9 +125,11 @@ export default function SignupMultiStepScreen() {
     const normalizedValue =
       field === 'bankAccountNumber'
         ? value.replace(/\D/g, '').slice(0, 10)
+        : field === 'nin'
+          ? value.replace(/\D/g, '').slice(0, 11)
         : field === 'email'
           ? normalizeEmail(value)
-          : field === 'phone' || field === 'emergencyContactPhone'
+          : field === 'phone' || field === 'emergencyContactPhone' || field === 'guarantorPhone'
             ? normalizePhone(value)
             : value;
 
@@ -633,7 +640,12 @@ export default function SignupMultiStepScreen() {
           if (!accountVerified) newErrors.bankVerification = 'Verify your bank account';
           if (!formData.vehicleType.trim()) newErrors.vehicleType = 'Vehicle type required';
           if (!formData.plateNumber.trim()) newErrors.plateNumber = 'Plate number required';
-          if (!formData.unionName.trim()) newErrors.unionName = 'Union name required';
+          if (!formData.guarantorName.trim()) newErrors.guarantorName = 'Guarantor name required';
+          if (normalizePhone(formData.guarantorPhone).replace(/\D/g, '').length < 13)
+            newErrors.guarantorPhone = 'Valid guarantor phone required';
+          if (!formData.guarantorAddress.trim()) newErrors.guarantorAddress = 'Guarantor address required';
+          if (formData.nin.replace(/\D/g, '').length !== 11) newErrors.nin = 'Enter your 11-digit NIN';
+          if (!formData.ninImage) newErrors.ninImage = 'NIN document photo required';
           if (!formData.vehicleImage) newErrors.vehicleImage = 'Vehicle photo required';
           if (!formData.licenseImage) newErrors.licenseImage = 'License photo required';
         }
@@ -786,7 +798,11 @@ export default function SignupMultiStepScreen() {
         }
         formDataObj.append('vehicleType', formData.vehicleType);
         formDataObj.append('plateNumber', formData.plateNumber);
-        formDataObj.append('unionName', formData.unionName);
+        formDataObj.append('guarantorName', formData.guarantorName);
+        formDataObj.append('guarantorPhone', normalizePhone(formData.guarantorPhone));
+        formDataObj.append('guarantorAddress', formData.guarantorAddress);
+        formDataObj.append('identityType', 'nin');
+        formDataObj.append('nin', formData.nin.replace(/\D/g, ''));
 
         // Vehicle and license photos
         if (formData.vehicleImage) {
@@ -804,6 +820,14 @@ export default function SignupMultiStepScreen() {
             name: formData.licenseImage.uri.split('/').pop() || 'license.jpg',
           } as any);
         }
+
+        if (formData.ninImage) {
+          formDataObj.append('ninDocument', {
+            uri: formData.ninImage.uri,
+            type: formData.ninImage.mimeType || 'image/jpeg',
+            name: formData.ninImage.uri.split('/').pop() || 'nin.jpg',
+          } as any);
+        }
       }
 
       await signup(formDataObj);
@@ -816,6 +840,24 @@ export default function SignupMultiStepScreen() {
       setSignupSuccessVisible(true);
     } catch (error) {
       showSignupError(error);
+    }
+  };
+
+  const pickNinImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        quality: 0.85,
+        base64: false,
+      });
+
+      if (!result.canceled) {
+        setPreviewNinImage(result.assets[0].uri);
+        setFormData({ ...formData, ninImage: result.assets[0] });
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to pick NIN document');
     }
   };
 
@@ -1340,14 +1382,37 @@ export default function SignupMultiStepScreen() {
                         />
 
                         <InputField
-                          label="Union Name *"
-                          value={formData.unionName}
+                          label="Guarantor Name *"
+                          value={formData.guarantorName}
                           onChangeText={(text) =>
-                            handleFieldChange('unionName', text)
+                            handleFieldChange('guarantorName', text)
                           }
-                          placeholder="Your union/cooperative name"
-                          error={errors.unionName}
-                          icon="home-group"
+                          placeholder="Guarantor full name"
+                          error={errors.guarantorName}
+                          icon="account-check-outline"
+                        />
+
+                        <InputField
+                          label="Guarantor Phone *"
+                          value={formData.guarantorPhone}
+                          onChangeText={(text) =>
+                            handleFieldChange('guarantorPhone', text)
+                          }
+                          placeholder="08012345678"
+                          error={errors.guarantorPhone}
+                          keyboardType="phone-pad"
+                          icon="phone-check-outline"
+                        />
+
+                        <InputField
+                          label="Guarantor Address *"
+                          value={formData.guarantorAddress}
+                          onChangeText={(text) =>
+                            handleFieldChange('guarantorAddress', text)
+                          }
+                          placeholder="Full residential address"
+                          error={errors.guarantorAddress}
+                          icon="map-marker-account-outline"
                         />
 
                         <InputField
@@ -1471,6 +1536,55 @@ export default function SignupMultiStepScreen() {
                         {errors.bankVerification && (
                           <Text style={[styles.errorText, { color: theme.colors.error }]}>{errors.bankVerification}</Text>
                         )}
+
+                        <InputField
+                          label="NIN *"
+                          value={formData.nin}
+                          onChangeText={(text) =>
+                            handleFieldChange('nin', text)
+                          }
+                          placeholder="11-digit National Identification Number"
+                          error={errors.nin}
+                          keyboardType="number-pad"
+                          icon="card-account-details-outline"
+                        />
+
+                        <Text style={[styles.helperText, { color: theme.colors.textSecondary }]}>
+                          Your NIN is hashed before storage. Admins review only your uploaded NIN document and last four digits.
+                        </Text>
+
+                        <View style={styles.uploadSection}>
+                          <Text style={[styles.label, { color: theme.colors.textSecondary }]}>NIN Document *</Text>
+                          <TouchableOpacity
+                            onPress={pickNinImage}
+                            style={styles.uploadBox}
+                            activeOpacity={0.8}
+                          >
+                            {previewNinImage ? (
+                              <>
+                                <Image source={{ uri: previewNinImage }} style={styles.uploadedImage} />
+                                <View style={styles.changePhotoOverlay}>
+                                  <MaterialCommunityIcons name="pencil" size={moderateScale(16)} color="#fff" />
+                                  <Text style={styles.changePhotoText}>Change</Text>
+                                </View>
+                              </>
+                            ) : (
+                              <>
+                                <MaterialCommunityIcons
+                                  name="card-account-details-outline"
+                                  size={moderateScale(32)}
+                                  color="rgba(241, 137, 2, 0.94)"
+                                />
+                                <Text style={[styles.uploadBoxText, { color: theme.colors.textSecondary }]}>
+                                  Upload NIN Document
+                                </Text>
+                              </>
+                            )}
+                          </TouchableOpacity>
+                          {errors.ninImage && (
+                            <Text style={styles.errorText}>{errors.ninImage}</Text>
+                          )}
+                        </View>
 
                         {/* Vehicle Photo */}
                         <View style={styles.uploadSection}>
@@ -2347,6 +2461,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: moderateScale(12),
   },
+  helperText: {
+    fontSize: moderateScale(11),
+    lineHeight: moderateScale(16),
+    marginTop: verticalScale(-8),
+    marginBottom: verticalScale(12),
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',
@@ -2513,3 +2633,4 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(13),
   },
 });
+

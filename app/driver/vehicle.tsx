@@ -23,7 +23,6 @@ import { BRAND } from '@/utils/colors';
 interface VehicleDetails {
   vehicle_type?: string;
   plate_number?: string;
-  union_name?: string;
   vehicle_color?: string;
   vehicle_picture_url?: string;
   license_picture_url?: string;
@@ -61,7 +60,6 @@ export default function VehicleDetailsScreen() {
       const nextDetails: VehicleDetails = {
         vehicle_type: driverData.vehicle_type || driverData.vehicleType,
         plate_number: driverData.plate_number || driverData.plateNumber,
-        union_name: driverData.union_name || driverData.unionName,
         vehicle_color: driverData.vehicle_color || driverData.vehicleColor,
         vehicle_picture_url: driverData.vehicle_picture_url || driverData.vehicleImage,
         license_picture_url: driverData.license_picture_url || driverData.licenseImage,
@@ -171,7 +169,6 @@ export default function VehicleDetailsScreen() {
               <Text style={[styles.cardTitle, { color: theme.colors.textSecondary }]}>VEHICLE INFO</Text>
               <InfoRow label="Vehicle Type" value={details?.vehicle_type || 'Not set'} theme={theme} />
               <InfoRow label="Plate Number" value={details?.plate_number || 'Not set'} theme={theme} />
-              <InfoRow label="Union Name" value={details?.union_name || 'Not set'} theme={theme} />
               <InfoRow label="Color" value={details?.vehicle_color || 'Not set'} theme={theme} />
             </View>
 

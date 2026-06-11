@@ -35,7 +35,9 @@ export default function EditProfileScreen() {
     lastName: '',
     email: '',
     phone: '',
-    unionName: '',
+    guarantorName: '',
+    guarantorPhone: '',
+    guarantorAddress: '',
     emergencyContact: '',
   });
   const [hasCached, setHasCached] = useState(false);
@@ -68,7 +70,9 @@ export default function EditProfileScreen() {
         lastName: driverData?.last_name || '',
         email: driverData?.email || '',
         phone: driverData?.phone_number || '',
-        unionName: driverData?.union_name || '',
+        guarantorName: driverData?.guarantor_name || '',
+        guarantorPhone: driverData?.guarantor_phone || '',
+        guarantorAddress: driverData?.guarantor_address || '',
         emergencyContact: driverData?.emergency_contact || '',
       };
       setFormData(nextForm);
@@ -94,7 +98,9 @@ export default function EditProfileScreen() {
         last_name: formData.lastName,
         email: formData.email,
         phone_number: formData.phone,
-        union_name: formData.unionName,
+        guarantor_name: formData.guarantorName,
+        guarantor_phone: formData.guarantorPhone,
+        guarantor_address: formData.guarantorAddress,
         emergency_contact: formData.emergencyContact,
       };
 
@@ -240,10 +246,10 @@ export default function EditProfileScreen() {
               />
             </View>
 
-            {/* Union Name */}
+            {/* Guarantor Details */}
             <View style={{ marginBottom: scale(16) }}>
               <Text style={{ fontSize: scale(12), fontWeight: '600', color: colors.foreground, marginBottom: scale(8) }}>
-                Union Name
+                Guarantor Name
               </Text>
               <TextInput
                 style={{
@@ -257,9 +263,57 @@ export default function EditProfileScreen() {
                   backgroundColor: colors.card,
                 }}
                 placeholderTextColor={colors.mutedForeground}
-                placeholder="Enter union name"
-                value={formData.unionName}
-                onChangeText={(value) => handleInputChange('unionName', value)}
+                placeholder="Enter guarantor name"
+                value={formData.guarantorName}
+                onChangeText={(value) => handleInputChange('guarantorName', value)}
+              />
+            </View>
+
+            <View style={{ marginBottom: scale(16) }}>
+              <Text style={{ fontSize: scale(12), fontWeight: '600', color: colors.foreground, marginBottom: scale(8) }}>
+                Guarantor Phone
+              </Text>
+              <TextInput
+                style={{
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  borderRadius: scale(8),
+                  paddingHorizontal: scale(12),
+                  paddingVertical: scale(12),
+                  fontSize: scale(14),
+                  color: colors.foreground,
+                  backgroundColor: colors.card,
+                }}
+                placeholderTextColor={colors.mutedForeground}
+                placeholder="Enter guarantor phone"
+                value={formData.guarantorPhone}
+                onChangeText={(value) => handleInputChange('guarantorPhone', value)}
+                keyboardType="phone-pad"
+              />
+            </View>
+
+            <View style={{ marginBottom: scale(16) }}>
+              <Text style={{ fontSize: scale(12), fontWeight: '600', color: colors.foreground, marginBottom: scale(8) }}>
+                Guarantor Address
+              </Text>
+              <TextInput
+                style={{
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  borderRadius: scale(8),
+                  paddingHorizontal: scale(12),
+                  paddingVertical: scale(12),
+                  fontSize: scale(14),
+                  color: colors.foreground,
+                  backgroundColor: colors.card,
+                  minHeight: scale(72),
+                  textAlignVertical: 'top',
+                }}
+                placeholderTextColor={colors.mutedForeground}
+                placeholder="Enter guarantor address"
+                value={formData.guarantorAddress}
+                onChangeText={(value) => handleInputChange('guarantorAddress', value)}
+                multiline
               />
             </View>
 
