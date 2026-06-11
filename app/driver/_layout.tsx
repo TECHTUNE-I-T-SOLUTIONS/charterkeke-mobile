@@ -1,5 +1,5 @@
 import React from 'react';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import { View } from 'react-native';
 import { useTheme } from '@/context/ThemeContext';
 import RiderBottomNavigation from '@/components/RiderBottomNavigation';
@@ -7,6 +7,7 @@ import { COLORS } from '@utils/colors';
 
 export default function DriverLayout() {
   const router = useRouter();
+  const segments = useSegments();
   const { mode } = useTheme();
   const isDark = mode === 'dark';
   const colors = isDark ? COLORS.dark : COLORS.light;
@@ -20,6 +21,7 @@ export default function DriverLayout() {
           }}
         >
           <Stack.Screen name="home" />
+          <Stack.Screen name="awaiting-verification" />
           <Stack.Screen name="rides" />
           <Stack.Screen name="ride-details" />
           <Stack.Screen name="available-rides" />
@@ -38,7 +40,7 @@ export default function DriverLayout() {
         </Stack>
 
         {/* Bottom Navigation - Outside Stack to prevent re-renders */}
-        <RiderBottomNavigation />
+        {segments[segments.length - 1] !== 'awaiting-verification' && <RiderBottomNavigation />}
       </View>
     </>
   );

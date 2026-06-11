@@ -119,7 +119,13 @@ export default function LoginScreen() {
     if (!validateForm()) return;
     try {
       const loggedInUser = await login(phone, password);
-      if (loggedInUser?.role === 'driver') router.push('/driver/home');
+      if (loggedInUser?.role === 'driver') {
+        if ((loggedInUser as any)?.isVerified === false || (loggedInUser as any)?.verificationStatus === 'pending') {
+          router.replace('/driver/awaiting-verification');
+        } else {
+          router.replace('/driver/home');
+        }
+      }
       else if (loggedInUser?.role === 'rider') router.push('/rider/home');
     } catch (error: any) {
       setErrors({ submit: error?.message || 'Invalid credentials. Please try again.' });

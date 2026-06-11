@@ -12,8 +12,6 @@ import {
   StatusBar,
   Modal,
   Platform,
-  Animated,
-  Easing,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -410,7 +408,7 @@ export default function BookingScreen() {
   const [pickupSearch, setPickupSearch] = useState('');
   const [dropoffSearch, setDropoffSearch] = useState('');
   const [activeLocationPicker, setActiveLocationPicker] = useState<'pickup' | 'dropoff' | null>(null);
-  const mapPickerNoticeAnim = useRef(new Animated.Value(0)).current;
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [pickupSearchResults, setPickupSearchResults] = useState<SearchResult[]>([]);
   const [dropoffSearchResults, setDropoffSearchResults] = useState<SearchResult[]>([]);
   const [showPickupResults, setShowPickupResults] = useState(false);
@@ -830,35 +828,18 @@ export default function BookingScreen() {
   }, [pickupLocation, dropoffLocation, currentLocation]);
 
   useEffect(() => {
-    if (!activeLocationPicker) {
-      mapPickerNoticeAnim.stopAnimation();
-      mapPickerNoticeAnim.setValue(0);
-      return;
-    }
-
-    const animation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(mapPickerNoticeAnim, {
-          toValue: 1,
-          duration: 850,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(mapPickerNoticeAnim, {
-          toValue: 0,
-          duration: 850,
-          easing: Easing.in(Easing.cubic),
-          useNativeDriver: true,
-        }),
-      ])
-    );
-
-    animation.start();
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardHeight(Math.max(0, event.endCoordinates.height - insets.bottom));
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
 
     return () => {
-      animation.stop();
+      showSub.remove();
+      hideSub.remove();
     };
-  }, [activeLocationPicker, mapPickerNoticeAnim]);
+  }, [insets.bottom]);
 
   const handleSearch = async (query: string, type: 'pickup' | 'dropoff') => {
     if (!query || query.length < 1) {
@@ -1080,13 +1061,40 @@ export default function BookingScreen() {
   };
 
   const selectCurrentLocationOption = async (type: 'pickup' | 'dropoff') => {
-    setResolvingCurrentLocation(type);
     try {
       const cached = prewarmedCurrentLocationRef.current;
-      const entry =
+      let entry =
         cached && Date.now() - cached.timestamp < PREWARMED_LOCATION_MAX_AGE_MS
           ? cached
-          : await prewarmCurrentLocation(true);
+          : null;
+
+      if (!entry && prewarmCurrentLocationPromise.current) {
+        entry = await prewarmCurrentLocationPromise.current;
+      }
+
+      if (!entry && currentLocation) {
+        entry = {
+          raw: currentLocation,
+          resolved: {
+            lat: currentLocation.latitude,
+            lng: currentLocation.longitude,
+            address: `Current location (${currentLocation.latitude.toFixed(5)}, ${currentLocation.longitude.toFixed(5)})`,
+            source: 'local',
+          },
+          location: {
+            lat: currentLocation.latitude,
+            lng: currentLocation.longitude,
+            address: `Current location (${currentLocation.latitude.toFixed(5)}, ${currentLocation.longitude.toFixed(5)})`,
+          },
+          timestamp: Date.now(),
+        };
+        prewarmCurrentLocation().catch(() => {});
+      }
+
+      if (!entry) {
+        setResolvingCurrentLocation(type);
+        entry = await prewarmCurrentLocation(false);
+      }
 
       if (!entry) {
         setCurrentLocationUnavailableVisible(true);
@@ -1293,27 +1301,6 @@ export default function BookingScreen() {
   const bookingTotalFare = Number.isFinite(estimatedFare) ? estimatedFare : 0;
   const bookingPlatformFee = Math.round(bookingTotalFare * PLATFORM_FEE_PERCENTAGE);
   const bookingEstimatedDriverFare = Math.max(0, bookingTotalFare - bookingPlatformFee);
-  const mapPickerNoticeStyle = {
-    opacity: mapPickerNoticeAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [0.88, 1],
-    }),
-    transform: [
-      {
-        translateY: mapPickerNoticeAnim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [0, -5],
-        }),
-      },
-      {
-        scale: mapPickerNoticeAnim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [1, 1.02],
-        }),
-      },
-    ],
-  };
-
   const renderStepSheet = () => {
     const isPickupStep = bookingStep === 'pickup';
     const isDestinationStep = bookingStep === 'destination';
@@ -1518,7 +1505,17 @@ export default function BookingScreen() {
     );
 
     return (
-      <View style={[styles.stepSheet, { backgroundColor: theme.colors.surface, paddingBottom: insets.bottom + 18 }]}>
+      <View
+        style={[
+          styles.stepSheet,
+          {
+            backgroundColor: theme.colors.surface,
+            bottom: keyboardHeight,
+            maxHeight: keyboardHeight > 0 ? '74%' : '56%',
+            paddingBottom: keyboardHeight > 0 ? 14 : insets.bottom + 18,
+          },
+        ]}
+      >
         <View style={styles.handleIndicator} />
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.stepContent}>
           <View style={styles.stepHeader}>
@@ -1597,37 +1594,6 @@ export default function BookingScreen() {
           />
         )}
       </MapboxMap>
-
-      {activeLocationPicker ? (
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.mapPickerNotice,
-            {
-              top: insets.top + 74,
-              backgroundColor: theme.colors.surface,
-              borderColor: BRAND.primary,
-            },
-            mapPickerNoticeStyle,
-          ]}
-        >
-          <View style={styles.mapPickerNoticeIcon}>
-            <MaterialCommunityIcons
-              name={activeLocationPicker === 'pickup' ? 'map-marker-plus' : 'map-marker-check'}
-              size={22}
-              color="#000"
-            />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.mapPickerNoticeTitle, { color: theme.colors.textPrimary }]}>
-              Select {activeLocationPicker === 'pickup' ? 'pickup' : 'destination'} on map
-            </Text>
-            <Text style={[styles.mapPickerNoticeText, { color: theme.colors.textSecondary }]}>
-              Move or zoom the map, then tap the exact street or building.
-            </Text>
-          </View>
-        </Animated.View>
-      ) : null}
 
       {/* Header */}
       <View style={[styles.header, { top: insets.top + 10 }]}>
@@ -2138,35 +2104,6 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   pillText: { color: '#000', fontWeight: '700', fontSize: 16 },
-  mapPickerNotice: {
-    position: 'absolute',
-    left: 20,
-    right: 20,
-    zIndex: 30,
-    minHeight: 68,
-    borderRadius: 18,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.16,
-    shadowRadius: 10,
-    elevation: 8,
-  },
-  mapPickerNoticeIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: BRAND.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  mapPickerNoticeTitle: { fontSize: 14, fontWeight: '900', marginBottom: 3 },
-  mapPickerNoticeText: { fontSize: 12, fontWeight: '700', lineHeight: 16 },
   bottomSheet: {
     position: 'absolute',
     bottom: 0,
@@ -2191,10 +2128,8 @@ const styles = StyleSheet.create({
   },
   stepSheet: {
     position: 'absolute',
-    bottom: 0,
     left: 0,
     right: 0,
-    maxHeight: '56%',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     shadowColor: '#000',
