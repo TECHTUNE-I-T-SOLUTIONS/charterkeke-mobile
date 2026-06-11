@@ -1504,20 +1504,29 @@ export default function BookingScreen() {
       </>
     );
 
+    const keyboardLift = keyboardHeight > 0 ? Math.min(110, Math.round(keyboardHeight * 0.28)) : 0;
+    const keyboardScrollPadding = keyboardHeight > 0
+      ? Math.max(80, keyboardHeight - keyboardLift + 20)
+      : insets.bottom + 18;
+
     return (
       <View
         style={[
           styles.stepSheet,
           {
             backgroundColor: theme.colors.surface,
-            bottom: keyboardHeight,
-            maxHeight: keyboardHeight > 0 ? '74%' : '56%',
-            paddingBottom: keyboardHeight > 0 ? 14 : insets.bottom + 18,
+            bottom: keyboardLift,
+            maxHeight: keyboardHeight > 0 ? '60%' : '56%',
+            paddingBottom: keyboardHeight > 0 ? 8 : insets.bottom + 18,
           },
         ]}
       >
         <View style={styles.handleIndicator} />
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.stepContent}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={[styles.stepContent, { paddingBottom: keyboardScrollPadding }]}
+        >
           <View style={styles.stepHeader}>
             {bookingStep !== 'pickup' ? (
               <TouchableOpacity
