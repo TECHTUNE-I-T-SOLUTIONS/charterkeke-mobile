@@ -340,8 +340,12 @@ export default function RideDetailsScreen() {
     parseMapCoordinate(rideAny?.driver_location) ||
     null;
 
+  const activeRideStatus = String(rideDetails?.status || '').toLowerCase();
+  const shouldUseLiveEta = activeRideStatus === 'accepted' || activeRideStatus === 'in_progress' || activeRideStatus === 'started';
   const displayDistanceKm = routeDistanceKm || rideDetails?.distance_km || 0;
-  const displayDurationMin = routeDurationMin || rideDetails?.duration_minutes || 0;
+  const displayDurationMin = shouldUseLiveEta
+    ? routeDurationMin || rideDetails?.duration_minutes || 0
+    : rideDetails?.duration_minutes || routeDurationMin || 0;
 
   const handleCallDriver = async () => {
     const phoneNumber = driverDetails?.phone_number || rideDetails?.drivers?.users?.phone_number;

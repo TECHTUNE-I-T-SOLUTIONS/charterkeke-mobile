@@ -45,6 +45,10 @@ type SupportMessage = {
   created_at: string;
   attachment_url?: string | null;
   attachment_name?: string | null;
+  sender_type?: 'user' | 'assistant' | 'support' | 'admin' | 'system';
+  sender_label?: string | null;
+  department_key?: string | null;
+  metadata?: Record<string, any> | null;
   users?: {
     id: string;
     role: string;
@@ -335,14 +339,17 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
     const isMine = item.sender_id === myId || item.users?.id === myId;
     const senderRole = String(item.users?.role || '').toLowerCase();
     const isAssistant =
-      !isMine &&
-      (item.message.includes('Dapo') ||
-        item.message.includes('Daps') ||
-        item.message.toLowerCase().includes('journey assistant'));
+      item.sender_type === 'assistant' ||
+      (!isMine &&
+        (item.message.includes('Dapo') ||
+          item.message.includes('Daps') ||
+          item.message.toLowerCase().includes('journey assistant')));
     const senderName = [item.users?.first_name, item.users?.last_name].filter(Boolean).join(' ').trim();
-    const senderDepartment = item.users?.department || (senderRole.includes('admin') ? 'support' : '');
+    const senderDepartment = item.department_key || item.users?.department || (senderRole.includes('admin') ? 'support' : '');
     const senderLabel = isMine
       ? 'You'
+      : item.sender_label
+        ? item.sender_label
       : isAssistant
         ? 'Dapo - Charter Keke assistant'
         : senderName

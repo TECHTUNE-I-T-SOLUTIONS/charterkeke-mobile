@@ -355,12 +355,15 @@ export default function RideDetailsScreen() {
     ...(riderCoordinate ? [riderCoordinate] : []),
     ...(driverCoordinate ? [driverCoordinate] : []),
   ];
+  const rideStatus = String(ride.status || '').toLowerCase();
+  const shouldUseLiveEta = rideStatus === 'accepted' || rideStatus === 'in_progress' || rideStatus === 'started';
   const displayDistanceKm = routeDistanceKm || Number(ride.distance_km || 0);
-  const displayDurationMin = routeDurationMin || Number(ride.duration_minutes || 0);
+  const displayDurationMin = shouldUseLiveEta
+    ? routeDurationMin || Number(ride.duration_minutes || 0)
+    : Number(ride.duration_minutes || 0) || routeDurationMin;
   const fareAmount = Number(ride.fare_amount || ride.fare || 0);
   const platformFee = Number(ride.platform_fee ?? fareAmount * PLATFORM_FEE_PERCENTAGE);
   const driverEarnings = Number(ride.driver_earnings ?? fareAmount - platformFee);
-  const rideStatus = String(ride.status || '').toLowerCase();
   const isAwaitingAcceptance = rideStatus === 'pending' || rideStatus === 'dispatched';
   const isCompleted = rideStatus === 'completed';
   const nextTripStatus = rideStatus === 'accepted' ? 'in_progress' : 'completed';

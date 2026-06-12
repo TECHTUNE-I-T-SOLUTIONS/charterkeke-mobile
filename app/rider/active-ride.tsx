@@ -28,6 +28,7 @@ interface ActiveRide {
   destination_zone: string;
   fare_amount: number;
   status: string;
+  duration_minutes?: number;
   driver?: {
     users: {
       first_name: string;
@@ -60,6 +61,11 @@ export default function ActiveRideScreen() {
 
   const isDark = theme?.mode === 'dark';
   const colors = isDark ? COLORS.dark : COLORS.light;
+  const activeRideStatus = String(activeRide?.status || '').toLowerCase();
+  const shouldUseLiveEta = activeRideStatus === 'accepted' || activeRideStatus === 'in_progress' || activeRideStatus === 'started';
+  const displayDurationMin = shouldUseLiveEta
+    ? routeDurationMin || activeRide?.duration_minutes || 0
+    : activeRide?.duration_minutes || routeDurationMin || 0;
 
   useEffect(() => {
     fetchActiveRide();
@@ -366,7 +372,7 @@ export default function ActiveRideScreen() {
           <View style={{ alignItems: 'flex-end' }}>
             <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: '600' }}>ETA</Text>
             <Text style={{ fontSize: 16, color: colors.text, fontWeight: '700' }}>
-              {routeLoading ? 'Calculating...' : `${routeDurationMin || 0} min`}
+              {routeLoading && shouldUseLiveEta ? 'Calculating...' : `${displayDurationMin || 0} min`}
             </Text>
           </View>
         </View>
@@ -662,7 +668,7 @@ export default function ActiveRideScreen() {
         focusCoordinates={routeCoordinates || mapFocusCoordinates}
         riderLocation={currentLocation ? [currentLocation.longitude, currentLocation.latitude] : null}
         driverLocation={driverLocation ? [driverLocation.longitude, driverLocation.latitude] : null}
-        speedText={routeLoading ? 'Loading route...' : `ETA ${routeDurationMin || 0} min | ${routeDistanceKm || 0} km`}
+        speedText={routeLoading && shouldUseLiveEta ? 'Loading route...' : `ETA ${displayDurationMin || 0} min | ${routeDistanceKm || 0} km`}
         onClose={() => setShowFullMap(false)}
       />
     </SafeAreaView>
