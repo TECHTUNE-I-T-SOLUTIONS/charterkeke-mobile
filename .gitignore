@@ -34,6 +34,10 @@ auth_keys/
 *.mobileprovision
 *.orig.*
 web-build/
+.expo-tmp/
+dist-android/
+dist-ota-android/
+dist-ota-ios/
 
 # Environmental variables
 .env

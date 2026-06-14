@@ -58,6 +58,8 @@ export default function RideDetailsScreen() {
   const [lastMapTap, setLastMapTap] = useState(0);
   const [receiptModalMode, setReceiptModalMode] = useState<'share' | 'download' | null>(null);
   const receiptRef = useRef<View>(null);
+  const etaPersistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastPersistedEtaRef = useRef<number | null>(null);
   const parseDescriptionCoordinate = (description?: string | null) => {
     if (!description) return null;
     const latMatch = description.match(/Lat:\s*([-\d.]+)/i);
@@ -261,7 +263,7 @@ export default function RideDetailsScreen() {
         return;
       }
       setRide((current: any) => current ? { ...current, status } : current);
-      const response = await apiService.updateRideStatus(targetRideId, status as 'in_progress' | 'completed');
+      const response = await apiService.updateRideStatus(targetRideId, status as 'in_progress' | 'completed', displayEtaMin);
       
       if (response) {
         // Update local state with the response data
@@ -310,7 +312,7 @@ export default function RideDetailsScreen() {
         return;
       }
       setRide((current: any) => current ? { ...current, status: 'accepted' } : current);
-      const response = await apiService.acceptRide(targetRideId);
+      const response = await apiService.acceptRide(targetRideId, displayEtaMin);
       const nextRide = response?.ride || response;
       setRide(nextRide || { ...ride, status: 'accepted' });
       showSuccess('Ride accepted', 'The ride has been assigned to you. You can now start the trip.');
@@ -355,16 +357,31 @@ export default function RideDetailsScreen() {
     ...(riderCoordinate ? [riderCoordinate] : []),
     ...(driverCoordinate ? [driverCoordinate] : []),
   ];
+  const rideStatus = String(ride.status || '').toLowerCase();
+  const shouldShowEta = rideStatus === 'pending' || rideStatus === 'dispatched' || rideStatus === 'accepted';
   const displayDistanceKm = routeDistanceKm || Number(ride.distance_km || 0);
-  const displayDurationMin = routeDurationMin || Number(ride.duration_minutes || 0);
+  const displayEtaMin = routeDurationMin || Number(ride.eta_minutes || ride.duration_minutes || 0);
+  const displayDurationMin = Number(ride.duration_minutes || 0) || routeDurationMin;
   const fareAmount = Number(ride.fare_amount || ride.fare || 0);
   const platformFee = Number(ride.platform_fee ?? fareAmount * PLATFORM_FEE_PERCENTAGE);
   const driverEarnings = Number(ride.driver_earnings ?? fareAmount - platformFee);
-  const rideStatus = String(ride.status || '').toLowerCase();
   const isAwaitingAcceptance = rideStatus === 'pending' || rideStatus === 'dispatched';
   const isCompleted = rideStatus === 'completed';
   const nextTripStatus = rideStatus === 'accepted' ? 'in_progress' : 'completed';
   const primaryActionLabel = isAwaitingAcceptance ? 'Accept Ride' : rideStatus === 'accepted' ? 'Start Trip' : 'Complete Trip';
+  const persistLiveEta = async (etaMinutes: number) => {
+    const targetRideId = String(rideId || ride?.id || '');
+    if (!targetRideId || !Number.isFinite(etaMinutes) || etaMinutes <= 0) return;
+    if (lastPersistedEtaRef.current !== null && Math.abs(lastPersistedEtaRef.current - etaMinutes) < 1) return;
+    lastPersistedEtaRef.current = etaMinutes;
+    try {
+      await apiService.updateRide(targetRideId, {
+        eta_minutes: Math.round(etaMinutes),
+      });
+    } catch (error) {
+      console.log('Failed to persist live ETA for driver ride details:', error);
+    }
+  };
   const handleMapTap = () => {
     const now = Date.now();
     if (now - lastMapTap < 300) {
@@ -372,6 +389,34 @@ export default function RideDetailsScreen() {
     }
     setLastMapTap(now);
   };
+
+  useEffect(() => {
+    const targetRideId = String(rideId || ride?.id || '');
+    if (!targetRideId || rideStatus !== 'accepted' || !currentLocation || !pickupCoordinate) {
+      return;
+    }
+
+    if (etaPersistTimer.current) clearTimeout(etaPersistTimer.current);
+    etaPersistTimer.current = setTimeout(() => {
+      fetchMapboxRoute(
+        [currentLocation.longitude, currentLocation.latitude],
+        pickupCoordinate,
+        { profile: 'driving-traffic' }
+      )
+        .then((route) => {
+          const eta = route ? Math.max(1, Math.round(route.durationMin)) : 0;
+          if (!eta) return;
+          setRouteDurationMin(eta);
+          setRide((current: any) => current ? { ...current, eta_minutes: eta } : current);
+          return persistLiveEta(eta);
+        })
+        .catch((error) => console.log('Failed to refresh live ETA from driver distance:', error));
+    }, 12000);
+
+    return () => {
+      if (etaPersistTimer.current) clearTimeout(etaPersistTimer.current);
+    };
+  }, [currentLocation?.latitude, currentLocation?.longitude, rideStatus, rideId, ride?.id, pickupCoordinate?.[0], pickupCoordinate?.[1]]);
 
   const openReceiptModal = (action: 'share' | 'download') => {
     if (!ride) return;
@@ -535,8 +580,10 @@ export default function RideDetailsScreen() {
                         <Text style={[styles.routeSummaryValue, { color: theme.colors.textPrimary }]}>{routeLoading ? 'Calculating...' : `${displayDistanceKm || 0} km`}</Text>
                      </View>
                      <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={[styles.routeSummaryLabel, { color: theme.colors.textSecondary }]}>ETA</Text>
-                        <Text style={[styles.routeSummaryValue, { color: theme.colors.textPrimary }]}>{routeLoading ? 'Calculating...' : `${displayDurationMin || 0} min`}</Text>
+                        <Text style={[styles.routeSummaryLabel, { color: theme.colors.textSecondary }]}>{shouldShowEta ? 'ETA' : 'Duration'}</Text>
+                        <Text style={[styles.routeSummaryValue, { color: theme.colors.textPrimary }]}>
+                          {routeLoading ? 'Calculating...' : `${shouldShowEta ? displayEtaMin || 0 : displayDurationMin || 0} min`}
+                        </Text>
                      </View>
                   </View>
          </View>
@@ -587,7 +634,7 @@ export default function RideDetailsScreen() {
         dropoff={dropoffCoordinate}
         riderLocation={riderCoordinate}
         driverLocation={driverCoordinate}
-        speedText={routeLoading ? 'Loading route...' : `ETA ${displayDurationMin || 0} min | ${displayDistanceKm || 0} km`}
+        speedText={routeLoading ? 'Loading route...' : `${shouldShowEta ? 'ETA' : 'Duration'} ${shouldShowEta ? displayEtaMin || 0 : displayDurationMin || 0} min | ${displayDistanceKm || 0} km`}
         onClose={() => setShowFullMap(false)}
       />
       <RideReceiptExportModal

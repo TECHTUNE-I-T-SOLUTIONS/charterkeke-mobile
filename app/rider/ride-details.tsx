@@ -44,6 +44,7 @@ interface RideData {
   rating?: number;
   distance_km?: number;
   duration_minutes?: number;
+  eta_minutes?: number;
   platform_fee?: number | null;
   payment_method?: string;
   driver_id?: string;
@@ -340,8 +341,11 @@ export default function RideDetailsScreen() {
     parseMapCoordinate(rideAny?.driver_location) ||
     null;
 
+  const activeRideStatus = String(rideDetails?.status || '').toLowerCase();
+  const shouldShowEta = activeRideStatus === 'pending' || activeRideStatus === 'dispatched' || activeRideStatus === 'accepted';
   const displayDistanceKm = routeDistanceKm || rideDetails?.distance_km || 0;
-  const displayDurationMin = routeDurationMin || rideDetails?.duration_minutes || 0;
+  const displayEtaMin = routeDurationMin || rideDetails?.eta_minutes || rideDetails?.duration_minutes || 0;
+  const displayDurationMin = rideDetails?.duration_minutes || routeDurationMin || 0;
 
   const handleCallDriver = async () => {
     const phoneNumber = driverDetails?.phone_number || rideDetails?.drivers?.users?.phone_number;
@@ -593,8 +597,10 @@ export default function RideDetailsScreen() {
           </View>
           <View style={[styles.statItem, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
             <MaterialCommunityIcons name="clock-outline" size={20} color={BRAND.primary} style={{marginBottom: 4}} />
-            <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{routeLoading ? 'Calculating...' : (displayDurationMin ? `${Math.round(displayDurationMin)} min` : '-')}</Text>
-            <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Duration</Text>
+            <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>
+              {routeLoading ? 'Calculating...' : shouldShowEta ? (displayEtaMin ? `${Math.round(displayEtaMin)} min` : '-') : (displayDurationMin ? `${Math.round(displayDurationMin)} min` : '-')}
+            </Text>
+            <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>{shouldShowEta ? 'ETA' : 'Duration'}</Text>
           </View>
         </View>
 
@@ -602,17 +608,17 @@ export default function RideDetailsScreen() {
         <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.textSecondary }]}>PAYMENT</Text>
           
-          <View style={styles.row}>
+          {/* <View style={styles.row}>
             <Text style={[styles.rowLabel, { color: theme.colors.textSecondary }]}>Ride Fare</Text>
             <Text style={[styles.rowValue, { color: theme.colors.textPrimary }]}>₦{formatCurrency(rideDetails.fare_amount)}</Text>
-          </View>
+          </View> */}
           
-          {rideDetails.platform_fee && (
+          {/* {rideDetails.platform_fee && (
             <View style={styles.row}>
               <Text style={[styles.rowLabel, { color: theme.colors.textSecondary }]}>Platform & Booking Fee</Text>
               <Text style={[styles.rowValue, { color: theme.colors.textPrimary }]}>₦{formatCurrency(rideDetails.platform_fee)}</Text>
             </View>
-          )}
+          )} */}
           
           <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
           
@@ -676,7 +682,7 @@ export default function RideDetailsScreen() {
         dropoff={destCoords ? [destCoords.longitude, destCoords.latitude] : [3.4292, 6.5844]}
         riderLocation={riderCurrentLocation}
         driverLocation={driverCurrentLocation}
-        speedText={routeLoading ? 'Loading route...' : `${displayDistanceKm || 0} km • ${displayDurationMin || 0} min`}
+        speedText={routeLoading ? 'Loading route...' : `${displayDistanceKm || 0} km • ${shouldShowEta ? displayEtaMin || 0 : displayDurationMin || 0} min`}
         onClose={() => setShowFullMap(false)}
       />
       <RideReceiptExportModal

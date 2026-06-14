@@ -226,8 +226,8 @@ export default function NotificationsScreen() {
         {/* Header */}
         <LinearGradient
           colors={[
-            isDark ? '#F18902B2' : '#F18902',
-            isDark ? '#F18902' : '#F18902D0',
+            isDark ? '#000000B2' : '#E4D1B9',
+            isDark ? '#3F2401' : '#C49961D0',
           ]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -252,13 +252,13 @@ export default function NotificationsScreen() {
               />
             </TouchableOpacity>
           </View> */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', position: 'static' }}>
             <View>
               <Text
                 style={{
                   fontSize: 20,
                   fontWeight: '700',
-                  color: isDark ? '#000000' : '#FFFFFF',
+                  color: isDark ? '#FFFFFF' : '#000000',
                 }}
               >
                 Notifications
@@ -266,7 +266,7 @@ export default function NotificationsScreen() {
               <Text
                 style={{
                   fontSize: 13,
-                  color: isDark ? '#0C0C0C' : '#CCCCCC',
+                  color: isDark ? '#FFFFFF' : '#000000',
                   fontWeight: '500',
                   marginTop: 4,
                 }}

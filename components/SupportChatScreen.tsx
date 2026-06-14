@@ -7,10 +7,11 @@ import {
   TextInput,
   ActivityIndicator,
   StyleSheet,
-  KeyboardAvoidingView,
   Platform,
   Modal,
   Image,
+  Keyboard,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -45,6 +46,10 @@ type SupportMessage = {
   created_at: string;
   attachment_url?: string | null;
   attachment_name?: string | null;
+  sender_type?: 'user' | 'assistant' | 'support' | 'admin' | 'system';
+  sender_label?: string | null;
+  department_key?: string | null;
+  metadata?: Record<string, any> | null;
   users?: {
     id: string;
     role: string;
@@ -53,6 +58,8 @@ type SupportMessage = {
     department?: string;
   };
   sender_id?: string;
+  local_status?: 'sending' | 'sent' | 'failed';
+  client_id?: string;
 };
 
 interface SupportChatScreenProps {
@@ -73,18 +80,39 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [text, setText] = useState('');
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [supportTyping, setSupportTyping] = useState(false);
   const [attachment, setAttachment] = useState<any | null>(null);
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [previewImage, setPreviewImage] = useState<{ url: string; name?: string | null } | null>(null);
-  const [ticketDrawerVisible, setTicketDrawerVisible] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const messageListRef = useRef<FlatList<SupportMessage> | null>(null);
+  const ticketDrawerVisible = false;
+  const setTicketDrawerVisible = (..._args: any[]) => undefined;
 
   const isDark = mode === 'dark';
+  const myId = (user as any)?.id;
 
   const isWaitingForConfirmation =
     activeTicket?.status === 'resolved' && !activeTicket?.resolution_confirmed_at;
 
   const requestedTicketId = typeof params.ticketId === 'string' ? params.ticketId : undefined;
+
+  const getMessageKey = (item: SupportMessage) =>
+    `${item.sender_id || item.users?.id || item.sender_type || ''}:${(item.message || '').trim()}:${item.attachment_url || item.attachment_name || ''}`;
+
+  const mergeMessages = (serverMessages: SupportMessage[]) => {
+    setMessages((current) => {
+      const serverKeys = new Set(serverMessages.map(getMessageKey));
+      const pending = current.filter((item) => {
+        if (!item.local_status || item.local_status === 'sent') return false;
+        return !serverKeys.has(getMessageKey(item));
+      });
+      return [...serverMessages.map((item) => ({ ...item, local_status: 'sent' as const })), ...pending].sort(
+        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+    });
+  };
 
   const loadTickets = async (preferredTicketId?: string) => {
     const response = await apiService.get<{ tickets: SupportTicket[] }>(
@@ -120,7 +148,10 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
       );
       setActiveTicket(response.ticket);
       setIsCreatingNewTicket(false);
-      setMessages(response.messages || []);
+      mergeMessages(response.messages || []);
+      if ((response.messages || []).some((item) => item.sender_id !== myId && item.users?.id !== myId)) {
+        setSupportTyping(false);
+      }
     } finally {
       if (!silent) setLoading(false);
     }
@@ -140,10 +171,24 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
 
   useEffect(() => {
     bootstrap();
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (event) => setKeyboardHeight(event.endCoordinates.height));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
+      showSub.remove();
+      hideSub.remove();
     };
   }, []);
+
+  useEffect(() => {
+    if (!loading) {
+      requestAnimationFrame(() => {
+        messageListRef.current?.scrollToEnd({ animated: true });
+      });
+    }
+  }, [messages.length, loading, supportTyping, activeTicket?.id]);
 
   useEffect(() => {
     if (requestedTicketId) {
@@ -198,7 +243,6 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
       setAttachment(null);
       const ticket = await createTicket();
       await loadThread(ticket.id, true);
-      setTicketDrawerVisible(false);
     } catch (error) {
       console.error('[SUPPORT] create ticket error', error);
       showError('Ticket not created', 'Failed to create ticket. Please try again.');
@@ -214,6 +258,10 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
     }
 
     if (activeTicket) {
+      if (['resolved', 'closed'].includes(String(activeTicket.status).toLowerCase())) {
+        await apiService.patch(`/support/tickets/${activeTicket.id}`, { status: 'open' });
+        setActiveTicket((current) => current ? { ...current, status: 'open' } : current);
+      }
       return activeTicket;
     }
 
@@ -244,16 +292,16 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
     }
   };
 
-  const uploadAttachment = async (ticketId: string) => {
-    if (!attachment) return null;
+  const uploadAttachment = async (ticketId: string, selectedAttachment = attachment) => {
+    if (!selectedAttachment) return null;
 
     const token = await SecureStore.getItemAsync('authToken');
     const formData = new FormData();
     formData.append('ticketId', ticketId);
     formData.append('file', {
-      uri: attachment.uri,
-      type: attachment.mimeType || 'image/jpeg',
-      name: attachment.fileName || `attachment-${Date.now()}.jpg`,
+      uri: selectedAttachment.uri,
+      type: selectedAttachment.mimeType || 'image/jpeg',
+      name: selectedAttachment.fileName || `attachment-${Date.now()}.jpg`,
     } as any);
 
     const res = await fetch(`${API_CONFIG.url}/support/upload`, {
@@ -273,17 +321,42 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
   const sendMessage = async () => {
     if (!text.trim() && !attachment) return;
 
+    const messageText = text.trim();
+    const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const selectedAttachment = attachment;
+    const optimisticMessage: SupportMessage = {
+      id: localId,
+      client_id: localId,
+      message: messageText,
+      created_at: new Date().toISOString(),
+      sender_id: myId,
+      sender_type: 'user',
+      local_status: 'sending',
+      attachment_name: selectedAttachment?.fileName || null,
+      users: myId ? { id: myId, role: 'user' } : undefined,
+    };
+
+    setMessages((current) => [...current, optimisticMessage]);
+    setText('');
+    setAttachment(null);
+    setSupportTyping(true);
+
     try {
       setSending(true);
       let ticket = await getReplyTargetTicket();
       if (!ticket) {
-        ticket = await createTicket(text.trim() || 'Support request with attachment');
+        ticket = await createTicket();
+      }
+      if (['resolved', 'closed'].includes(String(ticket.status).toLowerCase())) {
+        await apiService.patch(`/support/tickets/${ticket.id}`, { status: 'open' });
+        ticket = { ...ticket, status: 'open' };
+        setActiveTicket(ticket);
       }
 
-      const uploaded = await uploadAttachment(ticket.id);
+      const uploaded = await uploadAttachment(ticket.id, selectedAttachment);
 
       await apiService.post(`/support/tickets/${ticket.id}/messages`, {
-        message: text.trim(),
+        message: messageText,
         messageType: uploaded ? 'image' : 'text',
         attachmentUrl: uploaded?.url,
         attachmentName: uploaded?.name,
@@ -302,14 +375,15 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
           : [],
       });
 
-      setText('');
-      setAttachment(null);
+      setMessages((current) => current.map((item) => item.id === localId ? { ...item, local_status: 'sent' } : item));
       setIsCreatingNewTicket(false);
       await loadTickets();
       await loadThread(ticket.id, true);
     } catch (error) {
       console.error('[SUPPORT] send message error', error);
-      showError('Message not sent', 'Failed to send message.');
+      setSupportTyping(false);
+      setMessages((current) => current.map((item) => item.id === localId ? { ...item, local_status: 'failed' } : item));
+      showError('Message not sent', 'Check your internet connection and try again.');
     } finally {
       setSending(false);
     }
@@ -331,18 +405,20 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
   };
 
   const renderMessage = ({ item }: { item: SupportMessage }) => {
-    const myId = (user as any)?.id;
     const isMine = item.sender_id === myId || item.users?.id === myId;
     const senderRole = String(item.users?.role || '').toLowerCase();
     const isAssistant =
-      !isMine &&
-      (item.message.includes('Dapo') ||
-        item.message.includes('Daps') ||
-        item.message.toLowerCase().includes('journey assistant'));
+      item.sender_type === 'assistant' ||
+      (!isMine &&
+        (item.message.includes('Dapo') ||
+          item.message.includes('Daps') ||
+          item.message.toLowerCase().includes('journey assistant')));
     const senderName = [item.users?.first_name, item.users?.last_name].filter(Boolean).join(' ').trim();
-    const senderDepartment = item.users?.department || (senderRole.includes('admin') ? 'support' : '');
+    const senderDepartment = item.department_key || item.users?.department || (senderRole.includes('admin') ? 'support' : '');
     const senderLabel = isMine
       ? 'You'
+      : item.sender_label
+        ? item.sender_label
       : isAssistant
         ? 'Dapo - Charter Keke assistant'
         : senderName
@@ -390,6 +466,18 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
           <Text style={{ color: isMine ? '#00000088' : theme.colors.textSecondary, fontSize: 10 }}>
             {new Date(item.created_at).toLocaleString()}
           </Text>
+          {isMine ? (
+            <View style={styles.deliveryRow}>
+              <MaterialCommunityIcons
+                name={item.local_status === 'failed' ? 'alert-circle-outline' : item.local_status === 'sending' ? 'clock-outline' : 'check-all'}
+                size={13}
+                color={item.local_status === 'failed' ? '#EF4444' : isMine ? '#00000099' : theme.colors.textSecondary}
+              />
+              <Text style={[styles.deliveryText, { color: item.local_status === 'failed' ? '#EF4444' : '#00000099' }]}>
+                {item.local_status === 'failed' ? 'Not sent' : item.local_status === 'sending' ? 'Sending' : 'Sent'}
+              </Text>
+            </View>
+          ) : null}
         </View>
       </View>
     );
@@ -404,23 +492,27 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
         <View style={{ flex: 1 }}>
           <Text style={[styles.title, { color: theme.colors.textPrimary }]}>Customer Support</Text>
           <Text style={{ color: theme.colors.textSecondary, fontSize: 12 }}>
-            {activeTicket && !isCreatingNewTicket ? `Ticket: ${activeTicket.subject}` : 'Create a new support request'}
+            {supportTyping ? 'Dapo is typing...' : activeTicket && !isCreatingNewTicket ? `Ticket: ${activeTicket.subject}` : 'Create a new support request'}
           </Text>
         </View>
         <TouchableOpacity
-          onPress={() => setTicketDrawerVisible(true)}
+          onPress={() => {
+            setIsCreatingNewTicket(false);
+            setActiveTicket((current) => current || tickets[0] || null);
+          }}
           style={[styles.newTicketBtn, { backgroundColor: theme.colors.primary }]}
           activeOpacity={0.85}
         >
-          <MaterialCommunityIcons name="ticket-confirmation-outline" size={16} color="#000" />
-          <Text style={styles.newTicketText}>Tickets</Text>
-          <View style={styles.ticketCountBadge}>
-            <Text style={styles.ticketCountText}>{tickets.length}</Text>
-          </View>
+          <MaterialCommunityIcons name="chat-outline" size={16} color="#000" />
+          <Text style={styles.newTicketText}>{activeTicket ? 'Support chat' : 'Start chat'}</Text>
         </TouchableOpacity>
       </View>
 
-      <View style={styles.chatShell}>
+      <KeyboardAvoidingView
+        style={styles.chatShell}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={0}
+      >
         <View style={styles.threadPane}>
           {activeTicket && !isCreatingNewTicket ? (
             <View style={styles.statusWrap}>
@@ -450,10 +542,20 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
             </View>
           ) : (
             <FlatList
+              ref={messageListRef}
               data={messages}
               renderItem={renderMessage}
               keyExtractor={(item) => item.id}
-              contentContainerStyle={{ padding: 12, paddingBottom: 80 }}
+              contentContainerStyle={styles.messagesContainer}
+              onContentSizeChange={() => messageListRef.current?.scrollToEnd({ animated: true })}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              ListFooterComponent={supportTyping ? (
+                <View style={[styles.typingBubble, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+                  <Text style={[styles.senderLabel, { color: theme.colors.primary }]}>Dapo</Text>
+                  <Text style={{ color: theme.colors.textSecondary, fontSize: 12 }}>typing...</Text>
+                </View>
+              ) : null}
               ListEmptyComponent={
                 <View style={styles.center}> 
                   <Text style={{ color: theme.colors.textSecondary, textAlign: 'center' }}>
@@ -466,9 +568,8 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
             />
           )}
         </View>
-      </View>
 
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={styles.composerWrap}>
         {attachment ? (
           <View style={[styles.attachmentBar, { borderTopColor: theme.colors.border }]}> 
             <MaterialCommunityIcons name="image" size={18} color={theme.colors.textSecondary} />
@@ -495,15 +596,12 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
           />
           <TouchableOpacity
             onPress={sendMessage}
-            disabled={sending || (!text.trim() && !attachment)}
-            style={[styles.sendBtn, { backgroundColor: theme.colors.primary, opacity: sending ? 0.6 : 1 }]}
+            disabled={!text.trim() && !attachment}
+            style={[styles.sendBtn, { backgroundColor: theme.colors.primary, opacity: (!text.trim() && !attachment) ? 0.45 : 1 }]}
           >
-            {sending ? (
-              <ActivityIndicator size="small" color="#000" />
-            ) : (
-              <MaterialCommunityIcons name="send" size={18} color="#000" />
-            )}
+            <MaterialCommunityIcons name={sending ? 'send-clock' : 'send'} size={18} color="#000" />
           </TouchableOpacity>
+        </View>
         </View>
       </KeyboardAvoidingView>
 
@@ -687,6 +785,7 @@ const styles = StyleSheet.create({
   chatShell: { flex: 1, minHeight: 0 },
   sidebarEmpty: { fontSize: 11, textAlign: 'center', marginTop: 10 },
   threadPane: { flex: 1, minWidth: 0 },
+  messagesContainer: { padding: 12, paddingBottom: 16 },
   statusWrap: { paddingHorizontal: 16, paddingTop: 10 },
   statusBadge: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
   resolveBox: {
@@ -711,6 +810,16 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   senderLabel: { fontSize: 10, fontWeight: '900', marginBottom: 5, textTransform: 'uppercase' },
+  deliveryRow: { marginTop: 3, flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-end' },
+  deliveryText: { fontSize: 10, fontWeight: '700' },
+  typingBubble: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginTop: 2,
+  },
   attachmentPreview: { width: 170, height: 120, borderRadius: 10, marginBottom: 6 },
   inputRow: {
     borderTopWidth: 1,
@@ -736,6 +845,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  composerWrap: { paddingBottom: 0 },
   attachmentBar: {
     borderTopWidth: 1,
     flexDirection: 'row',

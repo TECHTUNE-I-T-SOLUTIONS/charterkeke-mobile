@@ -390,7 +390,7 @@ export default function RiderHomeScreen() {
                   Welcome back,
                 </Text>
                 <Text style={[styles.name, { color: theme.colors.textPrimary }]}>
-                  {profileData?.first_name || 'Rider'}! 👋
+                  {profileData?.first_name || 'Rider'}!
                 </Text>
               </View>
               <View style={styles.headerButtons}>
@@ -402,7 +402,7 @@ export default function RiderHomeScreen() {
                     }}
                     style={[styles.iconBtn, { backgroundColor: theme.colors.inputBackground }]}
                   >
-                    <MaterialCommunityIcons name="bell-outline" size={20} color={theme.colors.textPrimary} />
+                    <MaterialCommunityIcons name="bell-outline" size={14} color={theme.colors.textPrimary} />
                     {unreadCount > 0 && (
                       <View style={[styles.badge, { backgroundColor: BRAND.primary }]}>
                         <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
@@ -411,7 +411,7 @@ export default function RiderHomeScreen() {
                   </TouchableOpacity>
                 </TourTarget>
                 <TouchableOpacity onPress={toggleTheme} style={[styles.iconBtn, { backgroundColor: theme.colors.inputBackground }]}>
-                  <MaterialCommunityIcons name={isLight ? "weather-sunny" : "weather-night"} size={20} color={theme.colors.textPrimary} />
+                  <MaterialCommunityIcons name={isLight ? "weather-sunny" : "weather-night"} size={14} color={theme.colors.textPrimary} />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => router.push('/rider/profile')} style={styles.profileBtn}>
                   <Image
@@ -688,14 +688,14 @@ const styles = StyleSheet.create({
   scrollView: { flex: 1 },
   headerGradient: { paddingBottom: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20 },
-  headerButtons: { flexDirection: 'row', gap: 12, alignItems: 'center' },
+  headerButtons: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   iconBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', position: 'relative' },
   badge: { position: 'absolute', top: -6, right: -4, width: 24, height: 24, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   badgeText: { fontSize: 10, fontWeight: '700', color: '#fff' },
-  profileBtn: { width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: BRAND.primary, padding: 1 },
+  profileBtn: { width: 34, height: 34, borderRadius: 20, borderWidth: 2, borderColor: BRAND.primary, padding: 1 },
   profileImage: { width: '100%', height: '100%', borderRadius: 20 },
   greeting: { fontSize: 13, fontWeight: '500' },
-  name: { fontSize: 20, fontWeight: '800' },
+  name: { fontSize: 14, fontWeight: '800' },
   paddingH: { paddingHorizontal: 20, marginTop: 20 },
   heroCard: { borderRadius: 20, overflow: 'hidden', elevation: 8, shadowColor: BRAND.primary, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.25, shadowRadius: 12 },
   heroGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 24, height: 140 },

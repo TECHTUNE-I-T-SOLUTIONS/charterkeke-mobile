@@ -454,12 +454,19 @@ class APIService {
   }
 
   // Driver endpoints - missing methods
-  async acceptRide(rideId: string): Promise<any> {
-    return this.post('/driver/accept-ride', { rideId });
+  async acceptRide(rideId: string, etaMinutes?: number): Promise<any> {
+    return this.post('/driver/accept-ride', {
+      rideId,
+      ...(Number.isFinite(Number(etaMinutes)) && Number(etaMinutes) > 0 ? { eta_minutes: Math.round(Number(etaMinutes)) } : {}),
+    });
   }
 
-  async updateRideStatus(rideId: string, status: 'in_progress' | 'completed'): Promise<any> {
-    return this.post('/driver/update-ride-status', { rideId, status });
+  async updateRideStatus(rideId: string, status: 'in_progress' | 'completed', etaMinutes?: number): Promise<any> {
+    return this.post('/driver/update-ride-status', {
+      rideId,
+      status,
+      ...(Number.isFinite(Number(etaMinutes)) && Number(etaMinutes) > 0 ? { eta_minutes: Math.round(Number(etaMinutes)) } : {}),
+    });
   }
 
   async verifyDriverSettlementPayment(reference: string): Promise<any> {

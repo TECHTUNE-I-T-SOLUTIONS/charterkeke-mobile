@@ -12,8 +12,6 @@ import {
   StatusBar,
   Modal,
   Platform,
-  PanResponder,
-  Dimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -26,14 +24,6 @@ import { useLocation } from '@/context/LocationContext';
 import { useTheme } from '@/context/ThemeContext';
 import { apiService } from '@/services/api';
 import { sendLocalNotification } from '@/services/notificationService';
-import {
-  BOOKING_PRICING,
-  BookingPricingConfig,
-  calculateKekeDurationMinutes,
-  calculateRideFare,
-  getBookingPricingConfig,
-} from '@/services/bookingService';
-import { createRideBooking } from '@/services/ridesService';
 import { BRAND, COLORS } from '@/utils/colors';
 import { ErrorDialog } from '@/components/ErrorDialog';
 import { SuccessDialog } from '@/components/SuccessDialog';
@@ -42,8 +32,6 @@ import { OutOfServiceAreaModal } from '@/components/OutOfServiceAreaModal';
 import { PickupTimeModal } from '@/components/PickupTimeModal';
 import AlertDialog from '@/components/ui/AlertDialog';
 import { TourTarget, useGuidedTour } from '@/components/GuidedTour';
-import { BookingPreviousChoice } from '@/components/booking/BookingPreviousChoice';
-import { BookingRecentRoutes } from '@/components/booking/BookingRecentRoutes';
 import {
   validateLocationInOperationalArea,
   getNearbyOperationalAreas,
@@ -59,18 +47,19 @@ import {
   searchLagosPlaces,
 } from '@/utils/googlePlacesSearch';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-const SHEET_SNAP_HEIGHTS = {
-  compact: Math.round(SCREEN_HEIGHT * 0.42),
-  medium: Math.round(SCREEN_HEIGHT * 0.56),
-  tall: Math.round(SCREEN_HEIGHT * 0.74),
-} as const;
+// Fare calculation constants
+const BASE_FARE_PER_KM = 600;
+const BASE_PICKUP_FARE = 250;
+const TIME_FARE_PER_MINUTE = 25;
+const MINIMUM_RIDE_FARE = 600;
+const PLATFORM_FEE_PERCENTAGE = 0.15;
+const KEKE_ROUTE_TIME_MULTIPLIER = 1.18;
+const KEKE_STOP_BUFFER_MINUTES = 4;
 // const DRIVER_COMMISSION_PERCENTAGE = 0.85;
 
 // Storage keys
 const RECENT_SEARCHES_KEY = '@charter_keke_recent_searches';
 const RECENT_LOCATIONS_KEY = '@charter_keke_recent_locations';
-const RECENT_ROUTES_KEY = '@charter_keke_recent_routes';
 const MAX_RECENT_ITEMS = 5;
 const PREWARMED_LOCATION_MAX_AGE_MS = 2 * 60 * 1000;
 type BookingStep = 'pickup' | 'destination' | 'time' | 'review';
@@ -196,39 +185,6 @@ interface RecentLocation {
   timestamp: number;
 }
 
-interface RecentRoute {
-  pickup: Location;
-  dropoff: Location;
-  distanceKm: number;
-  durationMinutes: number;
-  fare: number;
-  timestamp: number;
-  pickupTime?: string | null;
-  source?: 'history' | 'cache';
-}
-
-type RideHistoryRouteSource = {
-  id?: string;
-  pickup_zone?: string;
-  destination_zone?: string;
-  fare_amount?: number | string | null;
-  distance_km?: number | string | null;
-  duration_minutes?: number | string | null;
-  pickup_time?: string | null;
-  created_at?: string | null;
-  pickup_description?: string | null;
-  destination_description?: string | null;
-  pickup_latitude?: number | string | null;
-  pickup_longitude?: number | string | null;
-  destination_latitude?: number | string | null;
-  destination_longitude?: number | string | null;
-  dropoff_latitude?: number | string | null;
-  dropoff_longitude?: number | string | null;
-  pickup_location?: { lat?: number; lng?: number; latitude?: number; longitude?: number } | null;
-  destination_location?: { lat?: number; lng?: number; latitude?: number; longitude?: number } | null;
-  dropoff_location?: { lat?: number; lng?: number; latitude?: number; longitude?: number } | null;
-};
-
 interface PrewarmedCurrentLocation {
   raw: { latitude: number; longitude: number };
   resolved: LocationSearchResult;
@@ -260,6 +216,19 @@ const formatPickupTimeLabel = (pickupTime: string): string => {
       : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
   return `${dayLabel}, ${date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
+};
+
+const calculateKekeDurationMinutes = (routeDurationMin: number, routeDistanceKm: number): number => {
+  const mapDuration = Number.isFinite(routeDurationMin) ? routeDurationMin : 0;
+  const distanceBuffer = Math.max(2, routeDistanceKm * 0.8);
+  return Math.max(1, Math.ceil(mapDuration * KEKE_ROUTE_TIME_MULTIPLIER + KEKE_STOP_BUFFER_MINUTES + distanceBuffer));
+};
+
+const calculateRideFare = (distanceKm: number): number => {
+  const safeDistance = Math.max(1, Number.isFinite(distanceKm) ? distanceKm : 0);
+  const bandRate = safeDistance <= 3 ? 450 : safeDistance <= 10 ? 550 : 650;
+  const rawFare = 700 + safeDistance * bandRate;
+  return Math.max(1500, Math.round(rawFare));
 };
 
 // --- HELPER FUNCTIONS ---
@@ -367,108 +336,6 @@ async function getRecentLocations(): Promise<RecentLocation[]> {
   } catch (error) { return []; }
 }
 
-async function getRecentRoutes(): Promise<RecentRoute[]> {
-  try {
-    const data = await AsyncStorage.getItem(RECENT_ROUTES_KEY);
-    const parsed = data ? JSON.parse(data) : [];
-    return Array.isArray(parsed) ? parsed.slice(0, MAX_RECENT_ITEMS) : [];
-  } catch (error) { return []; }
-}
-
-async function saveRecentRoute(route: RecentRoute): Promise<void> {
-  try {
-    const existing = await getRecentRoutes();
-    const routeKey = `${sanitizeAddress(route.pickup.address).toLowerCase()}->${sanitizeAddress(route.dropoff.address).toLowerCase()}`;
-    const filtered = existing.filter((item) => {
-      const itemKey = `${sanitizeAddress(item.pickup.address).toLowerCase()}->${sanitizeAddress(item.dropoff.address).toLowerCase()}`;
-      return itemKey !== routeKey;
-    });
-    await AsyncStorage.setItem(RECENT_ROUTES_KEY, JSON.stringify([route, ...filtered].slice(0, MAX_RECENT_ITEMS)));
-  } catch (error) { console.error('Error saving recent route:', error); }
-}
-
-function toFiniteNumber(value: unknown, fallback = 0): number {
-  const numeric = typeof value === 'string' ? Number(value) : value;
-  return typeof numeric === 'number' && Number.isFinite(numeric) ? numeric : fallback;
-}
-
-function extractRideCoordinate(
-  ride: RideHistoryRouteSource,
-  latKeys: Array<keyof RideHistoryRouteSource>,
-  lngKeys: Array<keyof RideHistoryRouteSource>,
-  objectKeys: Array<keyof RideHistoryRouteSource>
-) {
-  for (const key of objectKeys) {
-    const value = ride[key] as RideHistoryRouteSource['pickup_location'];
-    const lat = toFiniteNumber(value?.lat ?? value?.latitude, NaN);
-    const lng = toFiniteNumber(value?.lng ?? value?.longitude, NaN);
-    if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
-  }
-
-  for (const latKey of latKeys) {
-    for (const lngKey of lngKeys) {
-      const lat = toFiniteNumber(ride[latKey], NaN);
-      const lng = toFiniteNumber(ride[lngKey], NaN);
-      if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
-    }
-  }
-
-  return null;
-}
-
-function extractCoordinateFromDescription(description?: string | null) {
-  if (!description) return null;
-  const latMatch = description.match(/Lat:\s*(-?\d+(?:\.\d+)?)/i);
-  const lngMatch = description.match(/Lng:\s*(-?\d+(?:\.\d+)?)/i);
-  const pairMatch = description.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
-  const lat = toFiniteNumber(latMatch?.[1] ?? pairMatch?.[1], NaN);
-  const lng = toFiniteNumber(lngMatch?.[1] ?? pairMatch?.[2], NaN);
-  if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
-  return null;
-}
-
-function routeFromRideHistory(ride: RideHistoryRouteSource): RecentRoute | null {
-  const pickupAddress = sanitizeAddress(ride.pickup_zone || '');
-  const dropoffAddress = sanitizeAddress(ride.destination_zone || '');
-  if (!pickupAddress || !dropoffAddress) return null;
-
-  const pickupCoordinate = extractRideCoordinate(
-    ride,
-    ['pickup_latitude'],
-    ['pickup_longitude'],
-    ['pickup_location']
-  ) || extractCoordinateFromDescription(ride.pickup_description);
-  const dropoffCoordinate = extractRideCoordinate(
-    ride,
-    ['destination_latitude', 'dropoff_latitude'],
-    ['destination_longitude', 'dropoff_longitude'],
-    ['destination_location', 'dropoff_location']
-  ) || extractCoordinateFromDescription(ride.destination_description);
-
-  if (!pickupCoordinate || !dropoffCoordinate) return null;
-
-  return {
-    pickup: { ...pickupCoordinate, address: pickupAddress },
-    dropoff: { ...dropoffCoordinate, address: dropoffAddress },
-    distanceKm: toFiniteNumber(ride.distance_km, 0),
-    durationMinutes: toFiniteNumber(ride.duration_minutes, 0),
-    fare: toFiniteNumber(ride.fare_amount, 0),
-    pickupTime: null,
-    source: 'history',
-    timestamp: ride.created_at ? new Date(ride.created_at).getTime() || Date.now() : Date.now(),
-  };
-}
-
-function dedupeRecentRoutes(routes: RecentRoute[]) {
-  const seen = new Set<string>();
-  return routes.filter((route) => {
-    const key = `${sanitizeAddress(route.pickup.address).toLowerCase()}->${sanitizeAddress(route.dropoff.address).toLowerCase()}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
 // Find nearest named location within 1km radius
 function findNearestLocation(lat: number, lng: number): Location | null {
   const R = 6371; // Earth radius in km
@@ -542,7 +409,6 @@ export default function BookingScreen() {
   const [dropoffSearch, setDropoffSearch] = useState('');
   const [activeLocationPicker, setActiveLocationPicker] = useState<'pickup' | 'dropoff' | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const [sheetHeight, setSheetHeight] = useState(SHEET_SNAP_HEIGHTS.medium);
   const [pickupSearchResults, setPickupSearchResults] = useState<SearchResult[]>([]);
   const [dropoffSearchResults, setDropoffSearchResults] = useState<SearchResult[]>([]);
   const [showPickupResults, setShowPickupResults] = useState(false);
@@ -553,14 +419,11 @@ export default function BookingScreen() {
   const dropoffSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pickupSearchRequest = useRef(0);
   const dropoffSearchRequest = useRef(0);
-  const sheetStartHeightRef = useRef(SHEET_SNAP_HEIGHTS.medium);
   const pickupGoogleSessionToken = useRef(`pickup-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const dropoffGoogleSessionToken = useRef(`dropoff-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const [locationWarningVisible, setLocationWarningVisible] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [recentLocations, setRecentLocations] = useState<RecentLocation[]>([]);
-  const [recentRoutes, setRecentRoutes] = useState<RecentRoute[]>([]);
-  const [pricingConfig, setPricingConfig] = useState<BookingPricingConfig>(BOOKING_PRICING);
   const [estimatedDistance, setEstimatedDistance] = useState(0);
   const [estimatedDuration, setEstimatedDuration] = useState(0);
   const [estimatedFare, setEstimatedFare] = useState(0);
@@ -598,13 +461,7 @@ export default function BookingScreen() {
 
   const isLight = theme.mode === 'light';
 
-  useEffect(() => {
-    loadRecentData();
-    loadUserName();
-    getBookingPricingConfig()
-      .then(setPricingConfig)
-      .catch((error) => console.warn('[Booking] Pricing config load failed:', error));
-  }, []);
+  useEffect(() => { loadRecentData(); loadUserName(); }, []);
 
   useEffect(() => {
     const maybeShowBookingTour = async () => {
@@ -703,22 +560,9 @@ export default function BookingScreen() {
 
   const loadRecentData = async () => {
     try {
-      const [searches, locations, cachedRoutes, historyResponse] = await Promise.all([
-        getRecentSearches(),
-        getRecentLocations(),
-        getRecentRoutes(),
-        apiService.getRiderRides(20).catch((error) => {
-          console.log('Ride history shortcuts unavailable:', error?.message || error);
-          return { rides: [] };
-        }),
-      ]);
-      const historyRoutes = ((historyResponse as any)?.rides || [])
-        .map(routeFromRideHistory)
-        .filter(Boolean) as RecentRoute[];
-      const routes = dedupeRecentRoutes([...historyRoutes, ...cachedRoutes]).slice(0, MAX_RECENT_ITEMS);
+      const [searches, locations] = await Promise.all([getRecentSearches(), getRecentLocations()]);
       setRecentSearches(searches);
       setRecentLocations(locations);
-      setRecentRoutes(routes);
     } catch (error) { console.error('Error loading recent data:', error); }
   };
 
@@ -919,8 +763,8 @@ export default function BookingScreen() {
 
         if (route) {
           const routeKm = Math.max(1, route.distanceKm || 0);
-          const kekeDurationMin = calculateKekeDurationMinutes(route.durationMin, routeKm, pricingConfig);
-          const roundedFare = calculateRideFare(routeKm, pricingConfig);
+          const kekeDurationMin = calculateKekeDurationMinutes(route.durationMin, routeKm);
+          const roundedFare = calculateRideFare(routeKm);
 
           setRouteCoordinates(route.coordinates);
           setEstimatedDistance(parseFloat(routeKm.toFixed(2)));
@@ -940,8 +784,8 @@ export default function BookingScreen() {
       );
       const displayDistance = fallbackDistance < 1 ? 1 : parseFloat(fallbackDistance.toFixed(2));
       const roadAdjustedDistance = parseFloat((displayDistance * 1.28).toFixed(2));
-      const fallbackDuration = calculateKekeDurationMinutes((roadAdjustedDistance / 18) * 60, roadAdjustedDistance, pricingConfig);
-      const roundedFare = calculateRideFare(roadAdjustedDistance, pricingConfig);
+      const fallbackDuration = calculateKekeDurationMinutes((roadAdjustedDistance / 18) * 60, roadAdjustedDistance);
+      const roundedFare = calculateRideFare(roadAdjustedDistance);
 
       if (!isCancelled) {
         setRouteCoordinates([
@@ -963,7 +807,7 @@ export default function BookingScreen() {
     return () => {
       isCancelled = true;
     };
-  }, [pickupLocation, dropoffLocation, pricingConfig]);
+  }, [pickupLocation, dropoffLocation]);
 
   useEffect(() => {
     if (pickupLocation && dropoffLocation) {
@@ -1341,11 +1185,6 @@ export default function BookingScreen() {
       setErrorDialogVisible(true);
       return;
     }
-    if (routeLoading) {
-      setErrorMessage('Please wait while we finish calculating your route.');
-      setErrorDialogVisible(true);
-      return;
-    }
     // Show pickup time modal instead of directly booking
     setSelectedPickupTime(null);
     setShowPickupTimeModal(true);
@@ -1361,40 +1200,35 @@ export default function BookingScreen() {
 
   const handleConfirmBooking = async () => {
     if (!pickupLocation || !dropoffLocation || !pendingPickupTime) return;
-    if (routeLoading) {
-      setErrorMessage('Please wait while we finish calculating your route.');
-      setErrorDialogVisible(true);
-      return;
-    }
 
     setBookingConfirmationVisible(false);
     setIsBooking(true);
 
     try {
       const totalFare = Number.isFinite(estimatedFare) ? estimatedFare : 0;
-      const response = await createRideBooking({
-        pickup: pickupLocation,
-        dropoff: dropoffLocation,
-        distanceKm: Number.isFinite(estimatedDistance) ? estimatedDistance : 0,
-        durationMinutes: Number.isFinite(estimatedDuration) ? estimatedDuration : 0,
-        pickupTime: pendingPickupTime,
-        fare: totalFare,
-        pricingConfig,
-      });
-      const rideId = response?.ride?.id || null;
-
-      const routeToSave: RecentRoute = {
-        pickup: pickupLocation,
-        dropoff: dropoffLocation,
-        distanceKm: Number.isFinite(estimatedDistance) ? estimatedDistance : 0,
-        durationMinutes: Number.isFinite(estimatedDuration) ? estimatedDuration : 0,
-        fare: totalFare,
-        pickupTime: pendingPickupTime,
-        source: 'cache',
-        timestamp: Date.now(),
+      const platformFee = Math.round(totalFare * PLATFORM_FEE_PERCENTAGE);
+      const rideData = {
+        pickup_location: {
+          lat: pickupLocation.lat,
+          lng: pickupLocation.lng,
+          address: pickupLocation.address,
+        },
+        dropoff_location: {
+          lat: dropoffLocation.lat,
+          lng: dropoffLocation.lng,
+          address: dropoffLocation.address,
+        },
+        estimated_distance: Number.isFinite(estimatedDistance) ? estimatedDistance : 0,
+        duration_minutes: Number.isFinite(estimatedDuration) ? estimatedDuration : 0,
+        number_of_seats: 1,
+        pickup_time: pendingPickupTime,
+        fare_amount: totalFare,
+        platform_fee: platformFee,
+        driver_earnings: Math.max(0, totalFare - platformFee),
+        seats_available: 4,
       };
-      await saveRecentRoute(routeToSave);
-      setRecentRoutes((routes) => dedupeRecentRoutes([routeToSave, ...routes]).slice(0, MAX_RECENT_ITEMS));
+      const response = await apiService.createRide(rideData);
+      const rideId = response?.ride?.id || null;
 
       setLastBookedRideId(rideId);
       setPickupLocation(null);
@@ -1465,35 +1299,8 @@ export default function BookingScreen() {
   }, [currentLocation, pickupLocation, dropoffLocation]);
 
   const bookingTotalFare = Number.isFinite(estimatedFare) ? estimatedFare : 0;
-  const bookingPlatformFee = Math.round(bookingTotalFare * pricingConfig.platformFeeRate);
+  const bookingPlatformFee = Math.round(bookingTotalFare * PLATFORM_FEE_PERCENTAGE);
   const bookingEstimatedDriverFare = Math.max(0, bookingTotalFare - bookingPlatformFee);
-  const isLocationSearchExpanded =
-    keyboardHeight > 0 &&
-    (bookingStep === 'pickup' || bookingStep === 'destination') &&
-    (showPickupResults || showDropoffResults || Boolean(pickupSearch || dropoffSearch));
-
-  const sheetPanResponder = useMemo(() => PanResponder.create({
-    onMoveShouldSetPanResponder: (_, gesture) => !isLocationSearchExpanded && Math.abs(gesture.dy) > 8,
-    onPanResponderGrant: () => {
-      sheetStartHeightRef.current = sheetHeight;
-    },
-    onPanResponderMove: (_, gesture) => {
-      const nextHeight = Math.max(
-        SHEET_SNAP_HEIGHTS.compact,
-        Math.min(SHEET_SNAP_HEIGHTS.tall, sheetStartHeightRef.current - gesture.dy)
-      );
-      setSheetHeight(nextHeight);
-    },
-    onPanResponderRelease: (_, gesture) => {
-      const projected = sheetStartHeightRef.current - gesture.dy;
-      const snaps = Object.values(SHEET_SNAP_HEIGHTS);
-      const nearest = snaps.reduce((best, value) =>
-        Math.abs(value - projected) < Math.abs(best - projected) ? value : best
-      , SHEET_SNAP_HEIGHTS.medium);
-      setSheetHeight(nearest);
-    },
-  }), [isLocationSearchExpanded, sheetHeight]);
-
   const renderStepSheet = () => {
     const isPickupStep = bookingStep === 'pickup';
     const isDestinationStep = bookingStep === 'destination';
@@ -1522,21 +1329,6 @@ export default function BookingScreen() {
       }
     };
 
-    const applyRecentRoute = (route: RecentRoute) => {
-      setPickupLocation(route.pickup);
-      setDropoffLocation(route.dropoff);
-      setPickupSearch('');
-      setDropoffSearch('');
-      setEstimatedDistance(route.distanceKm);
-      setEstimatedDuration(route.durationMinutes);
-      setEstimatedFare(route.fare);
-      setRouteCoordinates(undefined);
-      setPendingPickupTime(null);
-      setBookingStep('time');
-      closeLocationSuggestions();
-      Keyboard.dismiss();
-    };
-
     const renderPreviousChoice = () => {
       if (isPickupStep) return null;
 
@@ -1554,14 +1346,20 @@ export default function BookingScreen() {
       const editStep: BookingStep = isDestinationStep ? 'pickup' : isTimeStep ? 'destination' : 'time';
 
       return (
-        <BookingPreviousChoice
-          label={label}
-          value={value}
-          icon={icon}
-          theme={theme}
-          styles={styles}
-          onEdit={() => setBookingStep(editStep)}
-        />
+        <TouchableOpacity
+          style={[styles.previousChoiceCard, { backgroundColor: theme.colors.inputBackground, borderColor: theme.colors.border }]}
+          onPress={() => setBookingStep(editStep)}
+          activeOpacity={0.85}
+        >
+          <MaterialCommunityIcons name={icon as any} size={18} color={BRAND.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.previousChoiceLabel, { color: theme.colors.textSecondary }]}>{label}</Text>
+            <Text numberOfLines={1} style={[styles.previousChoiceValue, { color: theme.colors.textPrimary }]}>
+              {value}
+            </Text>
+          </View>
+          <Text style={[styles.previousChoiceEdit, { color: BRAND.primary }]}>Edit</Text>
+        </TouchableOpacity>
       );
     };
 
@@ -1685,16 +1483,12 @@ export default function BookingScreen() {
             </Text>
           </View>
           <View style={[styles.compactFareBreakdown, { borderTopColor: theme.colors.border }]}>
-            {/* <Text style={[styles.simpleFareMetaText, { color: theme.colors.textSecondary }]}>
+            <Text style={[styles.simpleFareMetaText, { color: theme.colors.textSecondary }]}>
               Platform fee: N{bookingPlatformFee.toLocaleString()}
-            </Text> */}
-            {/* <Text style={[styles.simpleFareMetaText, { color: theme.colors.textPrimary }]}>
-              Driver receives about N{bookingEstimatedDriverFare.toLocaleString()}
-            </Text> */}
-            <Text style={[styles.simpleFareMetaText, { color: theme.colors.textPrimary }]}>
-              Kindly pay to the driver directly. The actual time of arrival may vary based on traffic and distance.
             </Text>
-
+            <Text style={[styles.simpleFareMetaText, { color: theme.colors.textPrimary }]}>
+              Driver receives about N{bookingEstimatedDriverFare.toLocaleString()}
+            </Text>
           </View>
         </View>
         <TourTarget id="booking-confirm">
@@ -1710,9 +1504,9 @@ export default function BookingScreen() {
       </>
     );
 
-    const keyboardLift = isLocationSearchExpanded ? 0 : keyboardHeight > 0 ? Math.min(84, Math.round(keyboardHeight * 0.22)) : 0;
+    const keyboardLift = keyboardHeight > 0 ? Math.min(110, Math.round(keyboardHeight * 0.28)) : 0;
     const keyboardScrollPadding = keyboardHeight > 0
-      ? Math.max(160, keyboardHeight + 24)
+      ? Math.max(80, keyboardHeight - keyboardLift + 20)
       : insets.bottom + 18;
 
     return (
@@ -1722,18 +1516,12 @@ export default function BookingScreen() {
           {
             backgroundColor: theme.colors.surface,
             bottom: keyboardLift,
-            top: isLocationSearchExpanded ? insets.top + 4 : undefined,
-            height: isLocationSearchExpanded ? undefined : sheetHeight,
-            borderTopLeftRadius: isLocationSearchExpanded ? 0 : 24,
-            borderTopRightRadius: isLocationSearchExpanded ? 0 : 24,
-            maxHeight: isLocationSearchExpanded ? undefined : keyboardHeight > 0 ? '72%' : undefined,
+            maxHeight: keyboardHeight > 0 ? '60%' : '56%',
             paddingBottom: keyboardHeight > 0 ? 8 : insets.bottom + 18,
           },
         ]}
       >
-        <View {...sheetPanResponder.panHandlers} style={styles.dragHandleZone}>
-          <View style={styles.handleIndicator} />
-        </View>
+        <View style={styles.handleIndicator} />
         <ScrollView
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
@@ -1750,16 +1538,6 @@ export default function BookingScreen() {
               </TouchableOpacity>
             ) : null}
             <View style={styles.stepTitleWrap}>
-              {isPickupStep ? (
-                <BookingRecentRoutes
-                  routes={recentRoutes}
-                  theme={theme}
-                  styles={styles}
-                  sanitizeAddress={sanitizeAddress}
-                  onSelect={applyRecentRoute}
-                />
-              ) : null}
-
               <Text style={[styles.stepEyebrow, { color: BRAND.primary }]}>
                 Step {bookingStep === 'pickup' ? '1' : bookingStep === 'destination' ? '2' : bookingStep === 'time' ? '3' : '4'} of 4
               </Text>
@@ -1775,11 +1553,11 @@ export default function BookingScreen() {
           {isTimeStep ? renderTimeStep() : null}
           {isReviewStep ? renderReviewStep() : null}
 
-          {activeLocationPicker && (isPickupStep || isDestinationStep) && !isLocationSearchExpanded ? (
-            <View style={[styles.guideBox, styles.guideBoxCompact, { backgroundColor: theme.colors.inputBackground }]}>
+          {activeLocationPicker && (isPickupStep || isDestinationStep) ? (
+            <View style={[styles.guideBox, { backgroundColor: theme.colors.inputBackground }]}>
               <MaterialCommunityIcons name="gesture-tap" size={20} color={BRAND.primary} />
               <Text style={[styles.guideText, { color: theme.colors.textSecondary }]}>
-                Tap the map to set {activeLocationPicker === 'pickup' ? 'pickup' : 'destination'}.
+                Tap anywhere on the map to set {activeLocationPicker === 'pickup' ? 'pickup' : 'destination'} location.
               </Text>
             </View>
           ) : null}
@@ -1793,7 +1571,6 @@ export default function BookingScreen() {
       <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
 
       {/* Map */}
-      {!isLocationSearchExpanded ? (
       <MapboxMap
         style={styles.map}
         latitude={currentLocation?.latitude || 6.5}
@@ -1826,12 +1603,8 @@ export default function BookingScreen() {
           />
         )}
       </MapboxMap>
-      ) : (
-        <View style={[styles.searchExpandedBackground, { backgroundColor: theme.colors.background }]} />
-      )}
 
       {/* Header */}
-      {!isLocationSearchExpanded ? (
       <View style={[styles.header, { top: insets.top + 10 }]}>
         {/* <TouchableOpacity onPress={() => router.back()} style={[styles.iconButton, { backgroundColor: theme.colors.surface }]}>
           <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.textPrimary} />
@@ -1851,7 +1624,6 @@ export default function BookingScreen() {
           <MaterialCommunityIcons name="information" size={20} color={BRAND.primary} />
         </TouchableOpacity>
       </View>
-      ) : null}
 
       {renderStepSheet()}
 
@@ -2166,14 +1938,14 @@ export default function BookingScreen() {
               <Text numberOfLines={2} style={[styles.confirmAddress, { color: theme.colors.textPrimary }]}>{sanitizeAddress(dropoffLocation?.address || '')}</Text>
             </View>
             <View style={styles.confirmRows}>
-              {/* <View style={styles.confirmRow}>
+              <View style={styles.confirmRow}>
                 <Text style={[styles.confirmLabel, { color: theme.colors.textSecondary }]}>Estimated driver fare</Text>
                 <Text style={[styles.confirmValue, { color: theme.colors.textPrimary }]}>₦{bookingEstimatedDriverFare.toLocaleString()}</Text>
               </View>
               <View style={styles.confirmRow}>
                 <Text style={[styles.confirmLabel, { color: theme.colors.textSecondary }]}>Platform fee deducted</Text>
                 <Text style={[styles.confirmValue, { color: theme.colors.textPrimary }]}>₦{bookingPlatformFee.toLocaleString()}</Text>
-              </View> */}
+              </View>
               <View style={[styles.confirmRow, styles.confirmTotalRow, { borderTopColor: theme.colors.border }]}>
                 <Text style={[styles.confirmTotalLabel, { color: theme.colors.textPrimary }]}>Total payable fare</Text>
                 <Text style={[styles.confirmTotalValue, { color: BRAND.primary }]}>₦{bookingTotalFare.toLocaleString()}</Text>
@@ -2309,7 +2081,6 @@ const SearchResultsList = ({ results, onSelect, onClose, theme, title }: any) =>
 const styles = StyleSheet.create({
   container: { flex: 1 },
   map: { flex: 1 },
-  searchExpandedBackground: { ...StyleSheet.absoluteFillObject },
   header: {
     position: 'absolute',
     left: 20,
@@ -2364,32 +2135,6 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 8,
   },
-  dragHandleZone: { paddingTop: 2, paddingBottom: 2 },
-  recentRoutesWrap: { marginBottom: 14 },
-  recentRoutesTitle: { fontSize: 21, fontWeight: '900', marginBottom: 10, letterSpacing: 0 },
-  recentRoutesList: { gap: 8, paddingRight: 8 },
-  recentRouteCard: {
-    width: 132,
-    minHeight: 128,
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 10,
-    justifyContent: 'space-between',
-  },
-  recentRouteIconBadge: {
-    width: 44,
-    height: 36,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255, 149, 0, 0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 6,
-  },
-  recentRouteMain: { fontSize: 13, lineHeight: 16, fontWeight: '900', minHeight: 32 },
-  recentRouteSub: { fontSize: 10, lineHeight: 13, fontWeight: '700', marginTop: 3 },
-  recentRouteMetaRow: { marginTop: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
-  recentRouteFare: { fontSize: 12, fontWeight: '900' },
-  recentRouteTime: { flex: 1, textAlign: 'right', fontSize: 10, fontWeight: '800' },
   stepSheet: {
     position: 'absolute',
     left: 0,
@@ -2402,7 +2147,6 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 12,
   },
-  guideBoxCompact: { marginTop: 10, paddingVertical: 9 },
   stepContent: { paddingHorizontal: 20, paddingBottom: 14 },
   stepHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
   stepBackButton: {

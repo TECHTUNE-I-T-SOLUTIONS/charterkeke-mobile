@@ -258,9 +258,6 @@ export default function ProfileScreen() {
       <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
       <SafeAreaView style={{ flex: 1 }}>
         <View style={styles.header}>
-           {/* <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: theme.colors.inputBackground }]}>
-             <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.textPrimary} />
-           </TouchableOpacity> */}
            <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>Profile</Text>
            <View style={{ width: 40 }} />
         </View>
