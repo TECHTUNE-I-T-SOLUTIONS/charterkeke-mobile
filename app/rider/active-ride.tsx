@@ -29,7 +29,10 @@ interface ActiveRide {
   fare_amount: number;
   status: string;
   duration_minutes?: number;
+<<<<<<< HEAD
   eta_minutes?: number;
+=======
+>>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
   driver?: {
     users: {
       first_name: string;
@@ -63,9 +66,16 @@ export default function ActiveRideScreen() {
   const isDark = theme?.mode === 'dark';
   const colors = isDark ? COLORS.dark : COLORS.light;
   const activeRideStatus = String(activeRide?.status || '').toLowerCase();
+<<<<<<< HEAD
   const shouldShowEta = activeRideStatus === 'pending' || activeRideStatus === 'dispatched' || activeRideStatus === 'accepted';
   const displayEtaMin = routeDurationMin || activeRide?.eta_minutes || activeRide?.duration_minutes || 0;
   const displayDurationMin = activeRide?.duration_minutes || routeDurationMin || 0;
+=======
+  const shouldUseLiveEta = activeRideStatus === 'accepted' || activeRideStatus === 'in_progress' || activeRideStatus === 'started';
+  const displayDurationMin = shouldUseLiveEta
+    ? routeDurationMin || activeRide?.duration_minutes || 0
+    : activeRide?.duration_minutes || routeDurationMin || 0;
+>>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
 
   useEffect(() => {
     fetchActiveRide();
@@ -372,7 +382,11 @@ export default function ActiveRideScreen() {
           <View style={{ alignItems: 'flex-end' }}>
             <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: '600' }}>{shouldShowEta ? 'ETA' : 'Duration'}</Text>
             <Text style={{ fontSize: 16, color: colors.text, fontWeight: '700' }}>
+<<<<<<< HEAD
               {routeLoading && shouldShowEta ? 'Calculating...' : `${shouldShowEta ? displayEtaMin || 0 : displayDurationMin || 0} min`}
+=======
+              {routeLoading && shouldUseLiveEta ? 'Calculating...' : `${displayDurationMin || 0} min`}
+>>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
             </Text>
           </View>
         </View>
@@ -668,7 +682,11 @@ export default function ActiveRideScreen() {
         focusCoordinates={routeCoordinates || mapFocusCoordinates}
         riderLocation={currentLocation ? [currentLocation.longitude, currentLocation.latitude] : null}
         driverLocation={driverLocation ? [driverLocation.longitude, driverLocation.latitude] : null}
+<<<<<<< HEAD
         speedText={routeLoading && shouldShowEta ? 'Loading route...' : `${shouldShowEta ? 'ETA' : 'Duration'} ${shouldShowEta ? displayEtaMin || 0 : displayDurationMin || 0} min | ${routeDistanceKm || 0} km`}
+=======
+        speedText={routeLoading && shouldUseLiveEta ? 'Loading route...' : `ETA ${displayDurationMin || 0} min | ${routeDistanceKm || 0} km`}
+>>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
         onClose={() => setShowFullMap(false)}
       />
     </SafeAreaView>

@@ -358,10 +358,18 @@ export default function RideDetailsScreen() {
     ...(driverCoordinate ? [driverCoordinate] : []),
   ];
   const rideStatus = String(ride.status || '').toLowerCase();
+<<<<<<< HEAD
   const shouldShowEta = rideStatus === 'pending' || rideStatus === 'dispatched' || rideStatus === 'accepted';
   const displayDistanceKm = routeDistanceKm || Number(ride.distance_km || 0);
   const displayEtaMin = routeDurationMin || Number(ride.eta_minutes || ride.duration_minutes || 0);
   const displayDurationMin = Number(ride.duration_minutes || 0) || routeDurationMin;
+=======
+  const shouldUseLiveEta = rideStatus === 'accepted' || rideStatus === 'in_progress' || rideStatus === 'started';
+  const displayDistanceKm = routeDistanceKm || Number(ride.distance_km || 0);
+  const displayDurationMin = shouldUseLiveEta
+    ? routeDurationMin || Number(ride.duration_minutes || 0)
+    : Number(ride.duration_minutes || 0) || routeDurationMin;
+>>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
   const fareAmount = Number(ride.fare_amount || ride.fare || 0);
   const platformFee = Number(ride.platform_fee ?? fareAmount * PLATFORM_FEE_PERCENTAGE);
   const driverEarnings = Number(ride.driver_earnings ?? fareAmount - platformFee);

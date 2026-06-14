@@ -203,6 +203,7 @@ interface RecentRoute {
   durationMinutes: number;
   fare: number;
   timestamp: number;
+<<<<<<< HEAD
   pickupTime?: string | null;
   source?: 'history' | 'cache';
 }
@@ -229,6 +230,10 @@ type RideHistoryRouteSource = {
   dropoff_location?: { lat?: number; lng?: number; latitude?: number; longitude?: number } | null;
 };
 
+=======
+}
+
+>>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
 interface PrewarmedCurrentLocation {
   raw: { latitude: number; longitude: number };
   resolved: LocationSearchResult;
@@ -387,6 +392,7 @@ async function saveRecentRoute(route: RecentRoute): Promise<void> {
   } catch (error) { console.error('Error saving recent route:', error); }
 }
 
+<<<<<<< HEAD
 function toFiniteNumber(value: unknown, fallback = 0): number {
   const numeric = typeof value === 'string' ? Number(value) : value;
   return typeof numeric === 'number' && Number.isFinite(numeric) ? numeric : fallback;
@@ -469,6 +475,8 @@ function dedupeRecentRoutes(routes: RecentRoute[]) {
   });
 }
 
+=======
+>>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
 // Find nearest named location within 1km radius
 function findNearestLocation(lat: number, lng: number): Location | null {
   const R = 6371; // Earth radius in km
@@ -703,6 +711,7 @@ export default function BookingScreen() {
 
   const loadRecentData = async () => {
     try {
+<<<<<<< HEAD
       const [searches, locations, cachedRoutes, historyResponse] = await Promise.all([
         getRecentSearches(),
         getRecentLocations(),
@@ -716,6 +725,9 @@ export default function BookingScreen() {
         .map(routeFromRideHistory)
         .filter(Boolean) as RecentRoute[];
       const routes = dedupeRecentRoutes([...historyRoutes, ...cachedRoutes]).slice(0, MAX_RECENT_ITEMS);
+=======
+      const [searches, locations, routes] = await Promise.all([getRecentSearches(), getRecentLocations(), getRecentRoutes()]);
+>>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
       setRecentSearches(searches);
       setRecentLocations(locations);
       setRecentRoutes(routes);
@@ -920,7 +932,11 @@ export default function BookingScreen() {
         if (route) {
           const routeKm = Math.max(1, route.distanceKm || 0);
           const kekeDurationMin = calculateKekeDurationMinutes(route.durationMin, routeKm, pricingConfig);
+<<<<<<< HEAD
           const roundedFare = calculateRideFare(routeKm, pricingConfig);
+=======
+          const roundedFare = calculateRideFare(routeKm, kekeDurationMin, pricingConfig);
+>>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
 
           setRouteCoordinates(route.coordinates);
           setEstimatedDistance(parseFloat(routeKm.toFixed(2)));
@@ -941,7 +957,11 @@ export default function BookingScreen() {
       const displayDistance = fallbackDistance < 1 ? 1 : parseFloat(fallbackDistance.toFixed(2));
       const roadAdjustedDistance = parseFloat((displayDistance * 1.28).toFixed(2));
       const fallbackDuration = calculateKekeDurationMinutes((roadAdjustedDistance / 18) * 60, roadAdjustedDistance, pricingConfig);
+<<<<<<< HEAD
       const roundedFare = calculateRideFare(roadAdjustedDistance, pricingConfig);
+=======
+      const roundedFare = calculateRideFare(roadAdjustedDistance, fallbackDuration, pricingConfig);
+>>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
 
       if (!isCancelled) {
         setRouteCoordinates([
@@ -1389,12 +1409,19 @@ export default function BookingScreen() {
         distanceKm: Number.isFinite(estimatedDistance) ? estimatedDistance : 0,
         durationMinutes: Number.isFinite(estimatedDuration) ? estimatedDuration : 0,
         fare: totalFare,
+<<<<<<< HEAD
         pickupTime: pendingPickupTime,
         source: 'cache',
         timestamp: Date.now(),
       };
       await saveRecentRoute(routeToSave);
       setRecentRoutes((routes) => dedupeRecentRoutes([routeToSave, ...routes]).slice(0, MAX_RECENT_ITEMS));
+=======
+        timestamp: Date.now(),
+      };
+      await saveRecentRoute(routeToSave);
+      setRecentRoutes((routes) => [routeToSave, ...routes].slice(0, MAX_RECENT_ITEMS));
+>>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
 
       setLastBookedRideId(rideId);
       setPickupLocation(null);
@@ -1525,13 +1552,21 @@ export default function BookingScreen() {
     const applyRecentRoute = (route: RecentRoute) => {
       setPickupLocation(route.pickup);
       setDropoffLocation(route.dropoff);
+<<<<<<< HEAD
       setPickupSearch('');
       setDropoffSearch('');
+=======
+      setPickupSearch(route.pickup.address);
+      setDropoffSearch(route.dropoff.address);
+>>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
       setEstimatedDistance(route.distanceKm);
       setEstimatedDuration(route.durationMinutes);
       setEstimatedFare(route.fare);
       setRouteCoordinates(undefined);
+<<<<<<< HEAD
       setPendingPickupTime(null);
+=======
+>>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
       setBookingStep('time');
       closeLocationSuggestions();
       Keyboard.dismiss();
@@ -1770,6 +1805,15 @@ export default function BookingScreen() {
           </View>
 
           {renderPreviousChoice()}
+          {isPickupStep && !isLocationSearchExpanded ? (
+            <BookingRecentRoutes
+              routes={recentRoutes}
+              theme={theme}
+              styles={styles}
+              sanitizeAddress={sanitizeAddress}
+              onSelect={applyRecentRoute}
+            />
+          ) : null}
 
           {isPickupStep || isDestinationStep ? renderLocationStep() : null}
           {isTimeStep ? renderTimeStep() : null}
@@ -2365,6 +2409,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   dragHandleZone: { paddingTop: 2, paddingBottom: 2 },
+<<<<<<< HEAD
   recentRoutesWrap: { marginBottom: 14 },
   recentRoutesTitle: { fontSize: 21, fontWeight: '900', marginBottom: 10, letterSpacing: 0 },
   recentRoutesList: { gap: 8, paddingRight: 8 },
@@ -2390,6 +2435,15 @@ const styles = StyleSheet.create({
   recentRouteMetaRow: { marginTop: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
   recentRouteFare: { fontSize: 12, fontWeight: '900' },
   recentRouteTime: { flex: 1, textAlign: 'right', fontSize: 10, fontWeight: '800' },
+=======
+  recentRoutesWrap: { marginBottom: 12 },
+  recentRoutesTitle: { fontSize: 11, fontWeight: '900', textTransform: 'uppercase', marginBottom: 8 },
+  recentRoutesList: { gap: 10, paddingRight: 8 },
+  recentRouteCard: { width: 190, borderWidth: 1, borderRadius: 16, padding: 12 },
+  recentRouteMain: { fontSize: 13, fontWeight: '900', marginTop: 8 },
+  recentRouteSub: { fontSize: 11, fontWeight: '700', marginTop: 3 },
+  recentRouteFare: { fontSize: 13, fontWeight: '900', marginTop: 8 },
+>>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
   stepSheet: {
     position: 'absolute',
     left: 0,

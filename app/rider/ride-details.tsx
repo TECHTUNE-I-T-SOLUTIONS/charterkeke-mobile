@@ -342,10 +342,18 @@ export default function RideDetailsScreen() {
     null;
 
   const activeRideStatus = String(rideDetails?.status || '').toLowerCase();
+<<<<<<< HEAD
   const shouldShowEta = activeRideStatus === 'pending' || activeRideStatus === 'dispatched' || activeRideStatus === 'accepted';
   const displayDistanceKm = routeDistanceKm || rideDetails?.distance_km || 0;
   const displayEtaMin = routeDurationMin || rideDetails?.eta_minutes || rideDetails?.duration_minutes || 0;
   const displayDurationMin = rideDetails?.duration_minutes || routeDurationMin || 0;
+=======
+  const shouldUseLiveEta = activeRideStatus === 'accepted' || activeRideStatus === 'in_progress' || activeRideStatus === 'started';
+  const displayDistanceKm = routeDistanceKm || rideDetails?.distance_km || 0;
+  const displayDurationMin = shouldUseLiveEta
+    ? routeDurationMin || rideDetails?.duration_minutes || 0
+    : rideDetails?.duration_minutes || routeDurationMin || 0;
+>>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
 
   const handleCallDriver = async () => {
     const phoneNumber = driverDetails?.phone_number || rideDetails?.drivers?.users?.phone_number;

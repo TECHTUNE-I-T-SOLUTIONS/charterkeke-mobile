@@ -30,6 +30,7 @@ const PRICING_CACHE_MAX_AGE_MS = 10 * 60 * 1000;
 export const BOOKING_PRICING: BookingPricingConfig = {
   id: 'fallback-rail-v1',
   name: 'RAIL v1',
+<<<<<<< HEAD
   baseFare: 700,
   minimumFare: 1500,
   perMinute: 0,
@@ -44,6 +45,22 @@ export const BOOKING_PRICING: BookingPricingConfig = {
     { maxKm: 3, rate: 450 },
     { maxKm: 10, rate: 550 },
     { maxKm: null, rate: 650 },
+=======
+  baseFare: 800,
+  minimumFare: 1500,
+  perMinute: 15,
+  platformFeeRate: 0.15,
+  etaPerKm: {
+    lowTraffic: 4,
+    normalTraffic: 6,
+    heavyTraffic: 8,
+  },
+  learningWeight: 0.1,
+  distanceBands: [
+    { maxKm: 3, rate: 500 },
+    { maxKm: 10, rate: 600 },
+    { maxKm: null, rate: 700 },
+>>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
   ],
   source: 'fallback',
 } as const;
@@ -120,20 +137,37 @@ export function calculateKekeDurationMinutes(
 ): number {
   const safeDistance = Math.max(0.1, Number.isFinite(routeDistanceKm) ? routeDistanceKm : 0.1);
   const mapDuration = Number.isFinite(routeDurationMin) && routeDurationMin > 0 ? routeDurationMin : 0;
+<<<<<<< HEAD
   const deterministicEta = safeDistance * Number(config.etaPerKm[traffic] || config.etaPerKm.normalTraffic || 3);
   const blendedEta = mapDuration > 0 ? Math.min(mapDuration, deterministicEta * 1.15) : deterministicEta;
 
   return Math.max(1, Math.ceil(blendedEta));
+=======
+  const deterministicEta = safeDistance * Number(config.etaPerKm[traffic] || config.etaPerKm.normalTraffic || 6);
+
+  return Math.max(1, Math.ceil(Math.max(mapDuration, deterministicEta)));
+>>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
 }
 
 export function calculateRideFare(
   distanceKm: number,
+<<<<<<< HEAD
   config: BookingPricingConfig = getCurrentBookingPricingConfig()
 ): number {
   const safeDistance = Math.max(0, Number.isFinite(distanceKm) ? distanceKm : 0);
   const band = config.distanceBands.find((item) => item.maxKm === null || safeDistance <= item.maxKm) || config.distanceBands[config.distanceBands.length - 1];
   const distanceRate = Number(band?.rate || 0);
   const rawFare = config.baseFare + safeDistance * distanceRate;
+=======
+  durationMin: number,
+  config: BookingPricingConfig = getCurrentBookingPricingConfig()
+): number {
+  const safeDistance = Math.max(0, Number.isFinite(distanceKm) ? distanceKm : 0);
+  const safeDuration = Math.max(1, Number.isFinite(durationMin) ? durationMin : 1);
+  const band = config.distanceBands.find((item) => item.maxKm === null || safeDistance <= item.maxKm) || config.distanceBands[config.distanceBands.length - 1];
+  const distanceRate = Number(band?.rate || 0);
+  const rawFare = config.baseFare + safeDistance * distanceRate + safeDuration * config.perMinute;
+>>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
 
   return Math.max(config.minimumFare, Math.round(rawFare));
 }
@@ -159,11 +193,16 @@ export function buildRideBookingPayload(input: {
   pricingConfig?: BookingPricingConfig;
 }) {
   const config = input.pricingConfig || getCurrentBookingPricingConfig();
+<<<<<<< HEAD
   const distanceKm = Number.isFinite(input.distanceKm) && input.distanceKm > 0 ? input.distanceKm : 1;
   const durationMinutes = Number.isFinite(input.durationMinutes) && input.durationMinutes > 0 ? input.durationMinutes : calculateKekeDurationMinutes(0, distanceKm, config);
   const fare = Number.isFinite(input.fare) && input.fare > 0 ? input.fare : calculateRideFare(distanceKm, config);
   const settlement = calculateDriverSettlement(fare, config);
   const band = config.distanceBands.find((item) => item.maxKm === null || distanceKm <= item.maxKm) || config.distanceBands[config.distanceBands.length - 1];
+=======
+  const settlement = calculateDriverSettlement(input.fare, config);
+  const band = config.distanceBands.find((item) => item.maxKm === null || input.distanceKm <= item.maxKm) || config.distanceBands[config.distanceBands.length - 1];
+>>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
 
   return {
     pickup_location: {
@@ -176,16 +215,25 @@ export function buildRideBookingPayload(input: {
       lng: input.dropoff.lng,
       address: input.dropoff.address,
     },
+<<<<<<< HEAD
     estimated_distance: distanceKm,
     eta_minutes: durationMinutes,
     duration_minutes: 0,
     estimated_duration_minutes: durationMinutes,
     number_of_seats: 1,
+=======
+    estimated_distance: Number.isFinite(input.distanceKm) ? input.distanceKm : 0,
+    duration_minutes: Number.isFinite(input.durationMinutes) ? input.durationMinutes : 0,
+    estimated_duration_minutes: Number.isFinite(input.durationMinutes) ? input.durationMinutes : 0,
+>>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
     pickup_time: input.pickupTime,
     fare_amount: settlement.fare,
     platform_fee: settlement.platformFee,
     driver_earnings: settlement.driverReceives,
+<<<<<<< HEAD
     seats_available: 4,
+=======
+>>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
     pricing_model: config.name || 'RAIL v1',
     pricing_breakdown: {
       pricingSettingId: config.id,
@@ -196,8 +244,13 @@ export function buildRideBookingPayload(input: {
       distanceRate: band?.rate || 0,
       distanceBands: config.distanceBands,
       etaPerKm: config.etaPerKm,
+<<<<<<< HEAD
       distanceKm,
       etaMinutes: durationMinutes,
+=======
+      distanceKm: input.distanceKm,
+      durationMinutes: input.durationMinutes,
+>>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
       platformFeeRate: config.platformFeeRate,
     },
   };
