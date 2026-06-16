@@ -342,18 +342,13 @@ export default function RideDetailsScreen() {
     null;
 
   const activeRideStatus = String(rideDetails?.status || '').toLowerCase();
-<<<<<<< HEAD
   const shouldShowEta = activeRideStatus === 'pending' || activeRideStatus === 'dispatched' || activeRideStatus === 'accepted';
-  const displayDistanceKm = routeDistanceKm || rideDetails?.distance_km || 0;
-  const displayEtaMin = routeDurationMin || rideDetails?.eta_minutes || rideDetails?.duration_minutes || 0;
+  const shouldUseLiveRoute = activeRideStatus === 'accepted' || activeRideStatus === 'in_progress';
+  const storedDistanceKm = Number(rideDetails?.distance_km || 0);
+  const storedEtaMin = Number(rideDetails?.eta_minutes || rideDetails?.duration_minutes || 0);
+  const displayDistanceKm = shouldUseLiveRoute ? (routeDistanceKm || storedDistanceKm || 0) : (storedDistanceKm || routeDistanceKm || 0);
+  const displayEtaMin = shouldUseLiveRoute ? (routeDurationMin || storedEtaMin || 0) : (storedEtaMin || routeDurationMin || 0);
   const displayDurationMin = rideDetails?.duration_minutes || routeDurationMin || 0;
-=======
-  const shouldUseLiveEta = activeRideStatus === 'accepted' || activeRideStatus === 'in_progress' || activeRideStatus === 'started';
-  const displayDistanceKm = routeDistanceKm || rideDetails?.distance_km || 0;
-  const displayDurationMin = shouldUseLiveEta
-    ? routeDurationMin || rideDetails?.duration_minutes || 0
-    : rideDetails?.duration_minutes || routeDurationMin || 0;
->>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
 
   const handleCallDriver = async () => {
     const phoneNumber = driverDetails?.phone_number || rideDetails?.drivers?.users?.phone_number;
@@ -639,7 +634,7 @@ export default function RideDetailsScreen() {
               </View>
             </View>
             <Text style={[styles.totalValue, { color: BRAND.primary }]}>
-              ₦{formatCurrency((rideDetails.fare_amount || 0) + (rideDetails.platform_fee || 0))}
+              ₦{formatCurrency(rideDetails.fare_amount)}
             </Text>
           </View>
         </View>

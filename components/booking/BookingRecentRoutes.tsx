@@ -1,10 +1,5 @@
 import React from 'react';
-<<<<<<< HEAD
 import { Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
-=======
-import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
->>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
 import { BRAND } from '@/utils/colors';
 
 type Location = {
@@ -20,10 +15,7 @@ export type BookingRecentRoute = {
   durationMinutes: number;
   fare: number;
   timestamp: number;
-<<<<<<< HEAD
   pickupTime?: string | null;
-=======
->>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
 };
 
 type Props = {
@@ -39,11 +31,7 @@ export function BookingRecentRoutes({ routes, theme, styles, sanitizeAddress, on
 
   return (
     <View style={styles.recentRoutesWrap}>
-<<<<<<< HEAD
       <Text style={[styles.recentRoutesTitle, { color: theme.colors.textPrimary }]}>Quick Booking</Text>
-=======
-      <Text style={[styles.recentRoutesTitle, { color: theme.colors.textSecondary }]}>Recent routes</Text>
->>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.recentRoutesList}>
         {routes.map((route, index) => (
           <TouchableOpacity
@@ -52,21 +40,15 @@ export function BookingRecentRoutes({ routes, theme, styles, sanitizeAddress, on
             activeOpacity={0.86}
             onPress={() => onSelect(route)}
           >
-<<<<<<< HEAD
             <View style={styles.recentRouteIconBadge}>
               <Image source={require('@assets/charter keke.png')} style={styles.recentRouteIconBadge} resizeMode="contain" />
             </View>
             <Text numberOfLines={2} style={[styles.recentRouteMain, { color: theme.colors.textPrimary }]}>
-=======
-            <MaterialCommunityIcons name="routes" size={18} color={BRAND.primary} />
-            <Text numberOfLines={1} style={[styles.recentRouteMain, { color: theme.colors.textPrimary }]}>
->>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
               {sanitizeAddress(route.dropoff.address)}
             </Text>
             <Text numberOfLines={1} style={[styles.recentRouteSub, { color: theme.colors.textSecondary }]}>
               From {sanitizeAddress(route.pickup.address)}
             </Text>
-<<<<<<< HEAD
             <Text numberOfLines={1} style={[styles.recentRouteSub, { color: theme.colors.textSecondary }]}>
               To {sanitizeAddress(route.dropoff.address)}
             </Text>
@@ -79,9 +61,6 @@ export function BookingRecentRoutes({ routes, theme, styles, sanitizeAddress, on
                 Book again
               </Text>
             </View>
-=======
-            <Text style={[styles.recentRouteFare, { color: BRAND.primary }]}>N{route.fare.toLocaleString()}</Text>
->>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
           </TouchableOpacity>
         ))}
       </ScrollView>

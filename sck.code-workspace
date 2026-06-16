@@ -5,6 +5,12 @@
 		},
 		{
 			"path": "../easely"
+		},
+		{
+			"path": "../CharterKekeAdmin"
+		},
+		{
+			"path": "../CharterKEKE Status"
 		}
 	],
 	"settings": {}

@@ -224,19 +224,11 @@ const calculateKekeDurationMinutes = (routeDurationMin: number, routeDistanceKm:
   return Math.max(1, Math.ceil(mapDuration * KEKE_ROUTE_TIME_MULTIPLIER + KEKE_STOP_BUFFER_MINUTES + distanceBuffer));
 };
 
-<<<<<<< HEAD
 const calculateRideFare = (distanceKm: number): number => {
   const safeDistance = Math.max(1, Number.isFinite(distanceKm) ? distanceKm : 0);
   const bandRate = safeDistance <= 3 ? 450 : safeDistance <= 10 ? 550 : 650;
   const rawFare = 700 + safeDistance * bandRate;
   return Math.max(1500, Math.round(rawFare));
-=======
-const calculateRideFare = (distanceKm: number, durationMin: number): number => {
-  const safeDistance = Math.max(1, Number.isFinite(distanceKm) ? distanceKm : 0);
-  const safeDuration = Math.max(1, Number.isFinite(durationMin) ? durationMin : 0);
-  const rawFare = BASE_PICKUP_FARE + safeDistance * BASE_FARE_PER_KM + safeDuration * TIME_FARE_PER_MINUTE;
-  return Math.max(MINIMUM_RIDE_FARE, Math.ceil(rawFare / 50) * 50);
->>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
 };
 
 // --- HELPER FUNCTIONS ---
@@ -772,11 +764,7 @@ export default function BookingScreen() {
         if (route) {
           const routeKm = Math.max(1, route.distanceKm || 0);
           const kekeDurationMin = calculateKekeDurationMinutes(route.durationMin, routeKm);
-<<<<<<< HEAD
           const roundedFare = calculateRideFare(routeKm);
-=======
-          const roundedFare = calculateRideFare(routeKm, kekeDurationMin);
->>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
 
           setRouteCoordinates(route.coordinates);
           setEstimatedDistance(parseFloat(routeKm.toFixed(2)));
@@ -797,11 +785,7 @@ export default function BookingScreen() {
       const displayDistance = fallbackDistance < 1 ? 1 : parseFloat(fallbackDistance.toFixed(2));
       const roadAdjustedDistance = parseFloat((displayDistance * 1.28).toFixed(2));
       const fallbackDuration = calculateKekeDurationMinutes((roadAdjustedDistance / 18) * 60, roadAdjustedDistance);
-<<<<<<< HEAD
       const roundedFare = calculateRideFare(roadAdjustedDistance);
-=======
-      const roundedFare = calculateRideFare(roadAdjustedDistance, fallbackDuration);
->>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
 
       if (!isCancelled) {
         setRouteCoordinates([

@@ -1,6 +1,6 @@
 {
-  "version": "2.1.12",
-  "buildNumber": 224,
+  "version": "2.1.13",
+  "buildNumber": 225,
   "releaseDate": "2026-06-04",
-  "changelog": "Refreshes the mobile binary with the latest remittance fixes, production environment sync, and animated home promotional carousel."
+  "changelog": "Adds Android quick actions, launcher widget scaffold, deep-link prefill, and support AI memory improvements."
 }

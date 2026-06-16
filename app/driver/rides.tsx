@@ -19,6 +19,7 @@ import { useTheme } from '@/context/ThemeContext';
 import { useAlert } from '@/context/AlertContext';
 import { apiService } from '@/services/api';
 import { cacheService } from '@/services/cache';
+import { WidgetStorage, WIDGET_STORAGE_KEYS } from '@/services/widgetStorage';
 import { formatCurrency } from '@/utils/formatting';
 import { BRAND, COLORS } from '@/utils/colors';
 import { ListScreenSkeleton } from '@/components/ListScreenSkeleton';
@@ -105,6 +106,19 @@ export default function RidesListScreen() {
       setRides(nextRides);
       if (cacheKey) {
         await cacheService.set(cacheKey, nextRides);
+      }
+      if (activeTab === 'available') {
+        await WidgetStorage.setItem(WIDGET_STORAGE_KEYS.driver, {
+          primaryAction: 'View Available Rides',
+          screen: '/driver/available-rides',
+          availableRides: nextRides.slice(0, 5).map((ride) => ({
+            id: ride.id,
+            pickup: ride.pickup_zone,
+            dropoff: ride.destination_zone,
+            fare: ride.driver_earnings || ride.fare_amount || 0,
+            status: ride.status,
+          })),
+        }).catch(() => undefined);
       }
     } catch (error) {
       setRides([]);

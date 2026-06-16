@@ -77,6 +77,7 @@ export default function RideDetailsScreen() {
     if (!Number.isFinite(lat as number) || !Number.isFinite(lng as number)) return null;
     return [lng as number, lat as number] as [number, number];
   };
+  const safeRideStatus = String(ride?.status || '').trim().toUpperCase() || 'DETAILS';
 
   useEffect(() => {
     if (rideData) {
@@ -358,18 +359,13 @@ export default function RideDetailsScreen() {
     ...(driverCoordinate ? [driverCoordinate] : []),
   ];
   const rideStatus = String(ride.status || '').toLowerCase();
-<<<<<<< HEAD
   const shouldShowEta = rideStatus === 'pending' || rideStatus === 'dispatched' || rideStatus === 'accepted';
-  const displayDistanceKm = routeDistanceKm || Number(ride.distance_km || 0);
-  const displayEtaMin = routeDurationMin || Number(ride.eta_minutes || ride.duration_minutes || 0);
+  const shouldUseLiveRoute = rideStatus === 'accepted' || rideStatus === 'in_progress';
+  const storedDistanceKm = Number(ride.distance_km || 0);
+  const storedEtaMin = Number(ride.eta_minutes || ride.duration_minutes || 0);
+  const displayDistanceKm = shouldUseLiveRoute ? (routeDistanceKm || storedDistanceKm || 0) : (storedDistanceKm || routeDistanceKm || 0);
+  const displayEtaMin = shouldUseLiveRoute ? (routeDurationMin || storedEtaMin || 0) : (storedEtaMin || routeDurationMin || 0);
   const displayDurationMin = Number(ride.duration_minutes || 0) || routeDurationMin;
-=======
-  const shouldUseLiveEta = rideStatus === 'accepted' || rideStatus === 'in_progress' || rideStatus === 'started';
-  const displayDistanceKm = routeDistanceKm || Number(ride.distance_km || 0);
-  const displayDurationMin = shouldUseLiveEta
-    ? routeDurationMin || Number(ride.duration_minutes || 0)
-    : Number(ride.duration_minutes || 0) || routeDurationMin;
->>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
   const fareAmount = Number(ride.fare_amount || ride.fare || 0);
   const platformFee = Number(ride.platform_fee ?? fareAmount * PLATFORM_FEE_PERCENTAGE);
   const driverEarnings = Number(ride.driver_earnings ?? fareAmount - platformFee);
@@ -515,7 +511,7 @@ export default function RideDetailsScreen() {
                   <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.textPrimary} />
                </TouchableOpacity>
                <View style={[styles.statusPill, { backgroundColor: BRAND.primary }]}>
-                  <Text style={[styles.statusText, { color: '#000' }]}>{ride.status?.toUpperCase() || 'DETAILS'}</Text>
+                  <Text style={[styles.statusText, { color: '#000' }]}>{safeRideStatus}</Text>
                </View>
             </View>
          </SafeAreaView>
@@ -550,7 +546,14 @@ export default function RideDetailsScreen() {
                   <Text style={[styles.riderSub, { color: theme.colors.textSecondary }]}>Rating: {ride.users?.rating || '5.0'} ★</Text>
                </View>
                <View style={styles.actionButtons}>
-                  <TouchableOpacity onPress={() => Linking.openURL(`tel:${ride.users?.phone_number}`)} style={[styles.callBtn, { backgroundColor: theme.colors.inputBackground }]}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      const phoneNumber = String(ride.users?.phone_number || '').trim();
+                      if (!phoneNumber) return;
+                      Linking.openURL(`tel:${phoneNumber.replace(/[\s\-\(\)]/g, '')}`).catch(() => undefined);
+                    }}
+                    style={[styles.callBtn, { backgroundColor: theme.colors.inputBackground }]}
+                  >
                      <MaterialCommunityIcons name="phone" size={20} color={BRAND.primary} />
                   </TouchableOpacity>
                   <TouchableOpacity

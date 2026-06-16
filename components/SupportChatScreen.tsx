@@ -60,6 +60,7 @@ type SupportMessage = {
   sender_id?: string;
   local_status?: 'sending' | 'sent' | 'failed';
   client_id?: string;
+  local_attachment?: any | null;
 };
 
 interface SupportChatScreenProps {
@@ -87,6 +88,8 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
   const [previewImage, setPreviewImage] = useState<{ url: string; name?: string | null } | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const messageListRef = useRef<FlatList<SupportMessage> | null>(null);
+  const inFlightMessageRef = useRef<Set<string>>(new Set());
+  const sentMessageGuardRef = useRef<Map<string, number>>(new Map());
   const ticketDrawerVisible = false;
   const setTicketDrawerVisible = (..._args: any[]) => undefined;
 
@@ -100,6 +103,9 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
 
   const getMessageKey = (item: SupportMessage) =>
     `${item.sender_id || item.users?.id || item.sender_type || ''}:${(item.message || '').trim()}:${item.attachment_url || item.attachment_name || ''}`;
+
+  const buildSendSignature = (message: string, selectedAttachment?: any | null) =>
+    `${(message || '').trim().toLowerCase()}::${selectedAttachment?.fileName || ''}::${selectedAttachment?.mimeType || ''}::${selectedAttachment?.uri || ''}`;
 
   const mergeMessages = (serverMessages: SupportMessage[]) => {
     setMessages((current) => {
@@ -258,10 +264,6 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
     }
 
     if (activeTicket) {
-      if (['resolved', 'closed'].includes(String(activeTicket.status).toLowerCase())) {
-        await apiService.patch(`/support/tickets/${activeTicket.id}`, { status: 'open' });
-        setActiveTicket((current) => current ? { ...current, status: 'open' } : current);
-      }
       return activeTicket;
     }
 
@@ -318,12 +320,18 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
     return data;
   };
 
-  const sendMessage = async () => {
-    if (!text.trim() && !attachment) return;
+  const sendMessage = async (override?: { messageText?: string; attachment?: any | null; localId?: string; retryKey?: string }) => {
+    const messageText = (override?.messageText ?? text).trim();
+    const selectedAttachment = override?.attachment ?? attachment;
+    if (!messageText && !selectedAttachment) return;
 
-    const messageText = text.trim();
-    const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const selectedAttachment = attachment;
+    const signature = buildSendSignature(messageText, selectedAttachment);
+    const now = Date.now();
+    const lastSentAt = sentMessageGuardRef.current.get(signature) || 0;
+    if (!override?.localId && inFlightMessageRef.current.has(signature)) return;
+    if (!override?.localId && now - lastSentAt < 12000) return;
+
+    const localId = override?.localId || `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const optimisticMessage: SupportMessage = {
       id: localId,
       client_id: localId,
@@ -333,12 +341,16 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
       sender_type: 'user',
       local_status: 'sending',
       attachment_name: selectedAttachment?.fileName || null,
+      local_attachment: selectedAttachment || null,
       users: myId ? { id: myId, role: 'user' } : undefined,
     };
 
+    inFlightMessageRef.current.add(signature);
     setMessages((current) => [...current, optimisticMessage]);
-    setText('');
-    setAttachment(null);
+    if (!override) {
+      setText('');
+      setAttachment(null);
+    }
     setSupportTyping(true);
 
     try {
@@ -347,21 +359,17 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
       if (!ticket) {
         ticket = await createTicket();
       }
-      if (['resolved', 'closed'].includes(String(ticket.status).toLowerCase())) {
-        await apiService.patch(`/support/tickets/${ticket.id}`, { status: 'open' });
-        ticket = { ...ticket, status: 'open' };
-        setActiveTicket(ticket);
-      }
 
       const uploaded = await uploadAttachment(ticket.id, selectedAttachment);
 
-      await apiService.post(`/support/tickets/${ticket.id}/messages`, {
+      const response = await apiService.post<{ ticketId?: string; reopened?: boolean; message?: SupportMessage }>(`/support/tickets/${ticket.id}/messages`, {
         message: messageText,
         messageType: uploaded ? 'image' : 'text',
         attachmentUrl: uploaded?.url,
         attachmentName: uploaded?.name,
         attachmentMimeType: uploaded?.mimeType,
         attachmentSize: uploaded?.size,
+        clientId: localId,
         attachments: uploaded
           ? [
               {
@@ -375,18 +383,44 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
           : [],
       });
 
+      sentMessageGuardRef.current.set(signature, Date.now());
       setMessages((current) => current.map((item) => item.id === localId ? { ...item, local_status: 'sent' } : item));
       setIsCreatingNewTicket(false);
+      if (response?.reopened) {
+        setActiveTicket((current) => current ? { ...current, status: 'in_progress' } : current);
+      }
       await loadTickets();
-      await loadThread(ticket.id, true);
+      await loadThread(response?.ticketId || ticket.id, true);
     } catch (error) {
       console.error('[SUPPORT] send message error', error);
       setSupportTyping(false);
       setMessages((current) => current.map((item) => item.id === localId ? { ...item, local_status: 'failed' } : item));
-      showError('Message not sent', 'Check your internet connection and try again.');
+      const message =
+        (error as any)?.response?.data?.error ||
+        (error as any)?.details?.error ||
+        (error as any)?.message ||
+        'Check your internet connection and try again.';
+      showError('Message not sent', 'Bad network connection. Please try again.');
+      return { ok: false, error: message, localId, signature };
     } finally {
+      inFlightMessageRef.current.delete(signature);
       setSending(false);
     }
+  };
+
+  const retryMessage = async (item: SupportMessage) => {
+    if (!item.message) return;
+    const nextAttachment = item.attachment_url
+      ? {
+          uri: item.local_attachment?.uri || item.attachment_url,
+          fileName: item.local_attachment?.fileName || item.attachment_name || 'attachment',
+          mimeType: item.local_attachment?.mimeType || item.metadata?.mimeType || 'image/jpeg',
+        }
+      : null;
+    setMessages((current) => current.map((currentItem) => (
+      currentItem.id === item.id ? { ...currentItem, local_status: 'sending' } : currentItem
+    )));
+    await sendMessage({ messageText: item.message, attachment: nextAttachment, localId: item.id });
   };
 
   const confirmResolved = async () => {
@@ -415,6 +449,7 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
           item.message.toLowerCase().includes('journey assistant')));
     const senderName = [item.users?.first_name, item.users?.last_name].filter(Boolean).join(' ').trim();
     const senderDepartment = item.department_key || item.users?.department || (senderRole.includes('admin') ? 'support' : '');
+    const deepLink = typeof item.metadata?.deepLink === 'string' ? item.metadata.deepLink : null;
     const senderLabel = isMine
       ? 'You'
       : item.sender_label
@@ -463,6 +498,19 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
             </TouchableOpacity>
           ) : null}
 
+          {deepLink ? (
+            <TouchableOpacity
+              onPress={() => router.push(deepLink as any)}
+              style={[styles.inlineLinkBtn, { borderColor: isMine ? '#00000022' : theme.colors.primary }]}
+              activeOpacity={0.85}
+            >
+              <MaterialCommunityIcons name="open-in-new" size={14} color={isMine ? '#000' : theme.colors.primary} />
+              <Text style={{ color: isMine ? '#000' : theme.colors.primary, fontSize: 12, fontWeight: '800' }}>
+                Open in app
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+
           <Text style={{ color: isMine ? '#00000088' : theme.colors.textSecondary, fontSize: 10 }}>
             {new Date(item.created_at).toLocaleString()}
           </Text>
@@ -477,6 +525,12 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
                 {item.local_status === 'failed' ? 'Not sent' : item.local_status === 'sending' ? 'Sending' : 'Sent'}
               </Text>
             </View>
+          ) : null}
+          {isMine && item.local_status === 'failed' ? (
+            <TouchableOpacity onPress={() => retryMessage(item)} style={styles.resendBtn} activeOpacity={0.85}>
+              <MaterialCommunityIcons name="refresh" size={13} color="#fff" />
+              <Text style={styles.resendBtnText}>Resend</Text>
+            </TouchableOpacity>
           ) : null}
         </View>
       </View>
@@ -595,9 +649,9 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
             multiline
           />
           <TouchableOpacity
-            onPress={sendMessage}
-            disabled={!text.trim() && !attachment}
-            style={[styles.sendBtn, { backgroundColor: theme.colors.primary, opacity: (!text.trim() && !attachment) ? 0.45 : 1 }]}
+            onPress={() => { void sendMessage(); }}
+            disabled={sending || (!text.trim() && !attachment)}
+            style={[styles.sendBtn, { backgroundColor: theme.colors.primary, opacity: sending || (!text.trim() && !attachment) ? 0.45 : 1 }]}
           >
             <MaterialCommunityIcons name={sending ? 'send-clock' : 'send'} size={18} color="#000" />
           </TouchableOpacity>
@@ -821,6 +875,29 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   attachmentPreview: { width: 170, height: 120, borderRadius: 10, marginBottom: 6 },
+  resendBtn: {
+    marginTop: 8,
+    alignSelf: 'flex-end',
+    borderRadius: 999,
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  resendBtnText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  inlineLinkBtn: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
   inputRow: {
     borderTopWidth: 1,
     flexDirection: 'row',

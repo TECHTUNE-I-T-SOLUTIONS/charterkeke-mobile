@@ -11,6 +11,7 @@ export type BookingPricingConfig = {
   name: string;
   baseFare: number;
   minimumFare: number;
+  ratePerKm: number;
   perMinute: number;
   platformFeeRate: number;
   etaPerKm: {
@@ -27,12 +28,17 @@ export type BookingPricingConfig = {
 const PRICING_CACHE_KEY = '@charter_keke_rail_pricing';
 const PRICING_CACHE_MAX_AGE_MS = 10 * 60 * 1000;
 
+export function roundDistanceKm(distanceKm: number): number {
+  const safeDistance = Number.isFinite(distanceKm) ? distanceKm : 0;
+  return Math.round(Math.max(0, safeDistance) * 100) / 100;
+}
+
 export const BOOKING_PRICING: BookingPricingConfig = {
   id: 'fallback-rail-v1',
   name: 'RAIL v1',
-<<<<<<< HEAD
-  baseFare: 700,
+  baseFare: 800,
   minimumFare: 1500,
+  ratePerKm: 500,
   perMinute: 0,
   platformFeeRate: 0.15,
   etaPerKm: {
@@ -45,22 +51,6 @@ export const BOOKING_PRICING: BookingPricingConfig = {
     { maxKm: 3, rate: 450 },
     { maxKm: 10, rate: 550 },
     { maxKm: null, rate: 650 },
-=======
-  baseFare: 800,
-  minimumFare: 1500,
-  perMinute: 15,
-  platformFeeRate: 0.15,
-  etaPerKm: {
-    lowTraffic: 4,
-    normalTraffic: 6,
-    heavyTraffic: 8,
-  },
-  learningWeight: 0.1,
-  distanceBands: [
-    { maxKm: 3, rate: 500 },
-    { maxKm: 10, rate: 600 },
-    { maxKm: null, rate: 700 },
->>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
   ],
   source: 'fallback',
 } as const;
@@ -76,11 +66,24 @@ function normalizePricing(input: Partial<BookingPricingConfig> | null | undefine
     : BOOKING_PRICING.distanceBands;
 
   return {
-    id: String(input?.id || BOOKING_PRICING.id),
-    name: String(input?.name || BOOKING_PRICING.name),
-    baseFare: Number.isFinite(Number(input?.baseFare)) ? Number(input?.baseFare) : BOOKING_PRICING.baseFare,
-    minimumFare: Number.isFinite(Number(input?.minimumFare)) ? Number(input?.minimumFare) : BOOKING_PRICING.minimumFare,
-    perMinute: Number.isFinite(Number(input?.perMinute)) ? Number(input?.perMinute) : BOOKING_PRICING.perMinute,
+  id: String(input?.id || BOOKING_PRICING.id),
+  name: String(input?.name || BOOKING_PRICING.name),
+  baseFare: Number.isFinite(Number(input?.baseFare)) ? Number(input?.baseFare) : BOOKING_PRICING.baseFare,
+  minimumFare: Number.isFinite(Number(input?.minimumFare)) ? Number(input?.minimumFare) : BOOKING_PRICING.minimumFare,
+  ratePerKm: Number.isFinite(Number(input?.ratePerKm))
+    ? Number(input?.ratePerKm)
+    : Number.isFinite(Number((input as any)?.distanceRate))
+      ? Number((input as any).distanceRate)
+      : (() => {
+          const bands = Array.isArray(input?.distanceBands) && input.distanceBands.length
+            ? input.distanceBands.map((band) => ({
+                maxKm: band.maxKm === null || !Number.isFinite(Number(band.maxKm)) ? null : Number(band.maxKm),
+                rate: Number.isFinite(Number(band.rate)) ? Number(band.rate) : 0,
+              }))
+            : BOOKING_PRICING.distanceBands;
+          return bands[0]?.rate ?? BOOKING_PRICING.ratePerKm;
+        })(),
+  perMinute: Number.isFinite(Number(input?.perMinute)) ? Number(input?.perMinute) : BOOKING_PRICING.perMinute,
     platformFeeRate: Number.isFinite(Number(input?.platformFeeRate)) ? Number(input?.platformFeeRate) : BOOKING_PRICING.platformFeeRate,
     etaPerKm: {
       lowTraffic: Number.isFinite(Number(input?.etaPerKm?.lowTraffic)) ? Number(input?.etaPerKm?.lowTraffic) : BOOKING_PRICING.etaPerKm.lowTraffic,
@@ -137,37 +140,19 @@ export function calculateKekeDurationMinutes(
 ): number {
   const safeDistance = Math.max(0.1, Number.isFinite(routeDistanceKm) ? routeDistanceKm : 0.1);
   const mapDuration = Number.isFinite(routeDurationMin) && routeDurationMin > 0 ? routeDurationMin : 0;
-<<<<<<< HEAD
   const deterministicEta = safeDistance * Number(config.etaPerKm[traffic] || config.etaPerKm.normalTraffic || 3);
   const blendedEta = mapDuration > 0 ? Math.min(mapDuration, deterministicEta * 1.15) : deterministicEta;
 
   return Math.max(1, Math.ceil(blendedEta));
-=======
-  const deterministicEta = safeDistance * Number(config.etaPerKm[traffic] || config.etaPerKm.normalTraffic || 6);
-
-  return Math.max(1, Math.ceil(Math.max(mapDuration, deterministicEta)));
->>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
 }
 
 export function calculateRideFare(
   distanceKm: number,
-<<<<<<< HEAD
   config: BookingPricingConfig = getCurrentBookingPricingConfig()
 ): number {
   const safeDistance = Math.max(0, Number.isFinite(distanceKm) ? distanceKm : 0);
-  const band = config.distanceBands.find((item) => item.maxKm === null || safeDistance <= item.maxKm) || config.distanceBands[config.distanceBands.length - 1];
-  const distanceRate = Number(band?.rate || 0);
+  const distanceRate = Number.isFinite(Number(config.ratePerKm)) ? Number(config.ratePerKm) : BOOKING_PRICING.ratePerKm;
   const rawFare = config.baseFare + safeDistance * distanceRate;
-=======
-  durationMin: number,
-  config: BookingPricingConfig = getCurrentBookingPricingConfig()
-): number {
-  const safeDistance = Math.max(0, Number.isFinite(distanceKm) ? distanceKm : 0);
-  const safeDuration = Math.max(1, Number.isFinite(durationMin) ? durationMin : 1);
-  const band = config.distanceBands.find((item) => item.maxKm === null || safeDistance <= item.maxKm) || config.distanceBands[config.distanceBands.length - 1];
-  const distanceRate = Number(band?.rate || 0);
-  const rawFare = config.baseFare + safeDistance * distanceRate + safeDuration * config.perMinute;
->>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
 
   return Math.max(config.minimumFare, Math.round(rawFare));
 }
@@ -193,16 +178,10 @@ export function buildRideBookingPayload(input: {
   pricingConfig?: BookingPricingConfig;
 }) {
   const config = input.pricingConfig || getCurrentBookingPricingConfig();
-<<<<<<< HEAD
-  const distanceKm = Number.isFinite(input.distanceKm) && input.distanceKm > 0 ? input.distanceKm : 1;
+  const distanceKm = roundDistanceKm(Number.isFinite(input.distanceKm) && input.distanceKm > 0 ? input.distanceKm : 1);
   const durationMinutes = Number.isFinite(input.durationMinutes) && input.durationMinutes > 0 ? input.durationMinutes : calculateKekeDurationMinutes(0, distanceKm, config);
   const fare = Number.isFinite(input.fare) && input.fare > 0 ? input.fare : calculateRideFare(distanceKm, config);
   const settlement = calculateDriverSettlement(fare, config);
-  const band = config.distanceBands.find((item) => item.maxKm === null || distanceKm <= item.maxKm) || config.distanceBands[config.distanceBands.length - 1];
-=======
-  const settlement = calculateDriverSettlement(input.fare, config);
-  const band = config.distanceBands.find((item) => item.maxKm === null || input.distanceKm <= item.maxKm) || config.distanceBands[config.distanceBands.length - 1];
->>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
 
   return {
     pickup_location: {
@@ -215,25 +194,16 @@ export function buildRideBookingPayload(input: {
       lng: input.dropoff.lng,
       address: input.dropoff.address,
     },
-<<<<<<< HEAD
     estimated_distance: distanceKm,
     eta_minutes: durationMinutes,
     duration_minutes: 0,
     estimated_duration_minutes: durationMinutes,
     number_of_seats: 1,
-=======
-    estimated_distance: Number.isFinite(input.distanceKm) ? input.distanceKm : 0,
-    duration_minutes: Number.isFinite(input.durationMinutes) ? input.durationMinutes : 0,
-    estimated_duration_minutes: Number.isFinite(input.durationMinutes) ? input.durationMinutes : 0,
->>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
     pickup_time: input.pickupTime,
     fare_amount: settlement.fare,
     platform_fee: settlement.platformFee,
     driver_earnings: settlement.driverReceives,
-<<<<<<< HEAD
     seats_available: 4,
-=======
->>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
     pricing_model: config.name || 'RAIL v1',
     pricing_breakdown: {
       pricingSettingId: config.id,
@@ -241,16 +211,11 @@ export function buildRideBookingPayload(input: {
       baseFare: config.baseFare,
       minimumFare: config.minimumFare,
       perMinuteFee: config.perMinute,
-      distanceRate: band?.rate || 0,
+      ratePerKm: config.ratePerKm,
       distanceBands: config.distanceBands,
       etaPerKm: config.etaPerKm,
-<<<<<<< HEAD
       distanceKm,
       etaMinutes: durationMinutes,
-=======
-      distanceKm: input.distanceKm,
-      durationMinutes: input.durationMinutes,
->>>>>>> 78984306a14c5eb266b550c4fbc5a980a065d47c
       platformFeeRate: config.platformFeeRate,
     },
   };
