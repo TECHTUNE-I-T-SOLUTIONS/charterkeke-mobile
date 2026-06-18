@@ -616,7 +616,7 @@ export default function SignupMultiStepScreen() {
         if (!formData.lastName.trim()) newErrors.lastName = 'Last name required';
         if (!normalizeEmail(formData.email).includes('@')) newErrors.email = 'Valid email required';
         if (normalizePhone(formData.phone).replace(/\D/g, '').length < 13) newErrors.phone = 'Valid phone number required';
-        if (!formData.profileImage) newErrors.profileImage = 'Profile photo required';
+        if (role === 'driver' && !formData.profileImage) newErrors.profileImage = 'Profile photo required';
         break;
 
       case 'emergency':
@@ -2470,7 +2470,9 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: scale(20),
   },
   modalCard: {
     borderTopLeftRadius: moderateScale(18),
@@ -2581,11 +2583,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   errorModalCard: {
-    width: '88%',
+    width: '100%',
+    maxWidth: scale(420),
     borderRadius: scale(20),
     borderWidth: 1,
     padding: scale(18),
     elevation: 8,
+    alignSelf: 'center',
   },
   errorModalHeader: {
     flexDirection: 'row',

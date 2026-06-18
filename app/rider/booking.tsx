@@ -12,7 +12,6 @@ import {
   StatusBar,
   Modal,
   Platform,
-  PanResponder,
   Dimensions,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -36,6 +35,7 @@ import {
 } from '@/services/bookingService';
 import { createRideBooking } from '@/services/ridesService';
 import { BRAND, COLORS } from '@/utils/colors';
+import { bookingStyles, mapDarkStyle } from './booking.styles';
 import { ErrorDialog } from '@/components/ErrorDialog';
 import { SuccessDialog } from '@/components/SuccessDialog';
 import { OperationalAreasModal } from '@/components/OperationalAreasModal';
@@ -43,8 +43,11 @@ import { OutOfServiceAreaModal } from '@/components/OutOfServiceAreaModal';
 import { PickupTimeModal } from '@/components/PickupTimeModal';
 import AlertDialog from '@/components/ui/AlertDialog';
 import { TourTarget, useGuidedTour } from '@/components/GuidedTour';
-import { BookingPreviousChoice } from '@/components/booking/BookingPreviousChoice';
-import { BookingRecentRoutes } from '@/components/booking/BookingRecentRoutes';
+import { BookingLocationField } from '@/components/booking/BookingLocationField';
+import { BookingStepPanel } from '@/components/booking/BookingStepPanel';
+import { BookingFareSummary } from '@/components/booking/BookingFareSummary';
+import { BookingReviewCard } from '@/components/booking/BookingReviewCard';
+import { BookingSearchResultsList } from '@/components/booking/BookingSearchResultsList';
 import { WidgetStorage, WIDGET_STORAGE_KEYS } from '@/services/widgetStorage';
 import {
   validateLocationInOperationalArea,
@@ -62,11 +65,6 @@ import {
 } from '@/utils/googlePlacesSearch';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-const SHEET_SNAP_HEIGHTS = {
-  compact: Math.round(SCREEN_HEIGHT * 0.42),
-  medium: Math.round(SCREEN_HEIGHT * 0.56),
-  tall: Math.round(SCREEN_HEIGHT * 0.74),
-} as const;
 // const DRIVER_COMMISSION_PERCENTAGE = 0.85;
 
 // Storage keys
@@ -523,7 +521,7 @@ const resolveCurrentLocationAddress = async (
   return {
     lat: currentLocation.latitude,
     lng: currentLocation.longitude,
-    address: fallbackAddress || `Current location (${currentLocation.latitude.toFixed(5)}, ${currentLocation.longitude.toFixed(5)})`,
+    address: fallbackAddress || 'Current location',
     source: 'local',
   };
 };
@@ -545,7 +543,6 @@ export default function BookingScreen() {
   const [dropoffSearch, setDropoffSearch] = useState('');
   const [activeLocationPicker, setActiveLocationPicker] = useState<'pickup' | 'dropoff' | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const [sheetHeight, setSheetHeight] = useState(SHEET_SNAP_HEIGHTS.medium);
   const [pickupSearchResults, setPickupSearchResults] = useState<SearchResult[]>([]);
   const [dropoffSearchResults, setDropoffSearchResults] = useState<SearchResult[]>([]);
   const [showPickupResults, setShowPickupResults] = useState(false);
@@ -556,17 +553,14 @@ export default function BookingScreen() {
   const dropoffSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pickupSearchRequest = useRef(0);
   const dropoffSearchRequest = useRef(0);
-  const sheetStartHeightRef = useRef(SHEET_SNAP_HEIGHTS.medium);
   const pickupGoogleSessionToken = useRef(`pickup-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const dropoffGoogleSessionToken = useRef(`dropoff-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const [locationWarningVisible, setLocationWarningVisible] = useState(false);
-  const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [recentLocations, setRecentLocations] = useState<RecentLocation[]>([]);
   const [recentRoutes, setRecentRoutes] = useState<RecentRoute[]>([]);
   const [pricingConfig, setPricingConfig] = useState<BookingPricingConfig>(BOOKING_PRICING);
   const [estimatedDistance, setEstimatedDistance] = useState(0);
   const [estimatedDuration, setEstimatedDuration] = useState(0);
-  const [estimatedFare, setEstimatedFare] = useState(0);
   const [routeCoordinates, setRouteCoordinates] = useState<[number, number][] | undefined>(undefined);
   const [routeLoading, setRouteLoading] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
@@ -583,7 +577,6 @@ export default function BookingScreen() {
     locationType?: 'pickup' | 'dropoff';
   }>({});
   const [showPickupTimeModal, setShowPickupTimeModal] = useState(false);
-  const [selectedPickupTime, setSelectedPickupTime] = useState<string | null>(null);
   const [pendingPickupTime, setPendingPickupTime] = useState<string | null>(null);
   const [bookingConfirmationVisible, setBookingConfirmationVisible] = useState(false);
   const [currentLocationPrompt, setCurrentLocationPrompt] = useState<'pickup' | 'dropoff' | null>(null);
@@ -592,15 +585,13 @@ export default function BookingScreen() {
   const prewarmedCurrentLocationRef = useRef<PrewarmedCurrentLocation | null>(null);
   const prewarmCurrentLocationPromise = useRef<Promise<PrewarmedCurrentLocation | null> | null>(null);
   const [currentLocationUnavailableVisible, setCurrentLocationUnavailableVisible] = useState(false);
-  const [currentLocationUsedAs, setCurrentLocationUsedAs] = useState<'pickup' | 'dropoff' | null>(null);
   const [voiceLocationTarget, setVoiceLocationTarget] = useState<'pickup' | 'dropoff' | null>(null);
   const [voiceLocationText, setVoiceLocationText] = useState('');
   const [voiceLocationError, setVoiceLocationError] = useState('');
   const [isVoiceListening, setIsVoiceListening] = useState(false);
   const [isVoiceAvailable, setIsVoiceAvailable] = useState(true);
-  const launchPrefillHandledRef = useRef(false);
-
   const isLight = theme.mode === 'light';
+  const styles = bookingStyles;
 
   useEffect(() => {
     loadRecentData();
@@ -638,8 +629,6 @@ export default function BookingScreen() {
   }, [startTour]);
 
   useEffect(() => {
-    if (launchPrefillHandledRef.current) return;
-
     const pickup = typeof params.pickup === 'string' ? params.pickup.trim() : '';
     const destination = typeof params.destination === 'string' ? params.destination.trim() : '';
     const routeData = typeof params.routeData === 'string' ? params.routeData.trim() : '';
@@ -664,10 +653,8 @@ export default function BookingScreen() {
         if (pickup) setPickupSearch(pickup);
         if (destination) setDropoffSearch(destination);
       }
-      launchPrefillHandledRef.current = true;
     } catch (error) {
       console.log('[Booking] Failed to apply launch prefill:', error);
-      launchPrefillHandledRef.current = true;
     }
   }, [params.pickup, params.destination, params.routeData]);
 
@@ -754,7 +741,6 @@ export default function BookingScreen() {
         .map(routeFromRideHistory)
         .filter(Boolean) as RecentRoute[];
       const routes = dedupeRecentRoutes([...historyRoutes, ...cachedRoutes]).slice(0, MAX_RECENT_ITEMS);
-      setRecentSearches(searches);
       setRecentLocations(locations);
       setRecentRoutes(routes);
       WidgetStorage.setItem(WIDGET_STORAGE_KEYS.rider, {
@@ -872,7 +858,6 @@ export default function BookingScreen() {
       setDropoffSearch(location.address);
       setShowDropoffResults(false);
     }
-    setCurrentLocationUsedAs(type);
     setCameraCenter([location.lng, location.lat]);
     setCameraZoom(14);
     if (entry.resolved.placeId) {
@@ -948,7 +933,6 @@ export default function BookingScreen() {
       if (!pickupLocation || !dropoffLocation) {
         setEstimatedDistance(0);
         setEstimatedDuration(0);
-        setEstimatedFare(0);
         setRouteCoordinates(undefined);
         return;
       }
@@ -972,7 +956,6 @@ export default function BookingScreen() {
           setRouteCoordinates(route.coordinates);
           setEstimatedDistance(parseFloat(routeKm.toFixed(2)));
           setEstimatedDuration(kekeDurationMin);
-          setEstimatedFare(roundedFare);
           return;
         }
       } catch (error) {
@@ -997,7 +980,6 @@ export default function BookingScreen() {
         ]);
         setEstimatedDistance(roadAdjustedDistance);
         setEstimatedDuration(fallbackDuration);
-        setEstimatedFare(roundedFare);
       }
     };
 
@@ -1230,7 +1212,6 @@ export default function BookingScreen() {
     
     if (type === 'pickup') {
       setPickupLocation(location);
-      setCurrentLocationUsedAs((current) => (current === 'pickup' ? null : current));
       setPickupSearch('');
       setPickupSearchResults([]);
       setShowPickupResults(false);
@@ -1239,7 +1220,6 @@ export default function BookingScreen() {
       setShowDropoffResults(false);
     } else {
       setDropoffLocation(location);
-      setCurrentLocationUsedAs((current) => (current === 'dropoff' ? null : current));
       setDropoffSearch('');
       setDropoffSearchResults([]);
       setShowDropoffResults(false);
@@ -1275,23 +1255,23 @@ export default function BookingScreen() {
         entry = await prewarmCurrentLocationPromise.current;
       }
 
-      if (!entry && currentLocation) {
-        entry = {
-          raw: currentLocation,
-          resolved: {
-            lat: currentLocation.latitude,
-            lng: currentLocation.longitude,
-            address: `Current location (${currentLocation.latitude.toFixed(5)}, ${currentLocation.longitude.toFixed(5)})`,
-            source: 'local',
-          },
-          location: {
-            lat: currentLocation.latitude,
-            lng: currentLocation.longitude,
-            address: `Current location (${currentLocation.latitude.toFixed(5)}, ${currentLocation.longitude.toFixed(5)})`,
-          },
-          timestamp: Date.now(),
-        };
-        prewarmCurrentLocation().catch(() => {});
+    if (!entry && currentLocation) {
+      entry = {
+        raw: currentLocation,
+        resolved: {
+          lat: currentLocation.latitude,
+          lng: currentLocation.longitude,
+          address: 'Current location',
+          source: 'local',
+        },
+        location: {
+          lat: currentLocation.latitude,
+          lng: currentLocation.longitude,
+          address: 'Current location',
+        },
+        timestamp: Date.now(),
+      };
+      prewarmCurrentLocation().catch(() => {});
       }
 
       if (!entry) {
@@ -1313,18 +1293,35 @@ export default function BookingScreen() {
   const handleMapLocationPick = async (coordinate: { latitude: number; longitude: number }) => {
     if (!activeLocationPicker) return;
 
+    let resolvedAddress = '';
+    try {
+      const placeResult = await reverseGeocodeWithGooglePlaces(coordinate.latitude, coordinate.longitude);
+      resolvedAddress = sanitizeAddress(placeResult?.address || '');
+    } catch (error) {
+      console.log('Google Places reverse lookup failed for map pick:', error);
+    }
+
+    if (!resolvedAddress) {
+      try {
+        resolvedAddress = sanitizeAddress((await reverseGeocodeLocation({ ...coordinate, timestamp: Date.now() } as any)) || '');
+      } catch (error) {
+        console.log('Fallback reverse geocode failed for map pick:', error);
+      }
+    }
+
     const nearest = findNearestLocation(coordinate.latitude, coordinate.longitude);
     const location: Location = {
       lat: coordinate.latitude,
       lng: coordinate.longitude,
       address: sanitizeAddress(
-        nearest?.address || `Pinned location (${coordinate.latitude.toFixed(5)}, ${coordinate.longitude.toFixed(5)})`
+        resolvedAddress ||
+        nearest?.address ||
+        `Pinned location (${coordinate.latitude.toFixed(5)}, ${coordinate.longitude.toFixed(5)})`
       ),
     };
 
     if (activeLocationPicker === 'pickup') {
       setPickupLocation(location);
-      setCurrentLocationUsedAs((current) => (current === 'pickup' ? null : current));
       setPickupSearch('');
       setPickupSearchResults([]);
       setShowPickupResults(false);
@@ -1332,7 +1329,6 @@ export default function BookingScreen() {
       setShowDropoffResults(false);
     } else {
       setDropoffLocation(location);
-      setCurrentLocationUsedAs((current) => (current === 'dropoff' ? null : current));
       setDropoffSearch('');
       setDropoffSearchResults([]);
       setShowDropoffResults(false);
@@ -1394,7 +1390,6 @@ export default function BookingScreen() {
       return;
     }
     // Show pickup time modal instead of directly booking
-    setSelectedPickupTime(null);
     setShowPickupTimeModal(true);
   };
 
@@ -1456,7 +1451,6 @@ export default function BookingScreen() {
       setLastBookedRideId(rideId);
       setPickupLocation(null);
       setDropoffLocation(null);
-      setEstimatedFare(0);
       setEstimatedDistance(0);
       setPendingPickupTime(null);
       setBookingStep('pickup');
@@ -1530,328 +1524,141 @@ export default function BookingScreen() {
     (bookingStep === 'pickup' || bookingStep === 'destination') &&
     (showPickupResults || showDropoffResults || Boolean(pickupSearch || dropoffSearch));
 
-  const sheetPanResponder = useMemo(() => PanResponder.create({
-    onMoveShouldSetPanResponder: (_, gesture) => !isLocationSearchExpanded && Math.abs(gesture.dy) > 8,
-    onPanResponderGrant: () => {
-      sheetStartHeightRef.current = sheetHeight;
-    },
-    onPanResponderMove: (_, gesture) => {
-      const nextHeight = Math.max(
-        SHEET_SNAP_HEIGHTS.compact,
-        Math.min(SHEET_SNAP_HEIGHTS.tall, sheetStartHeightRef.current - gesture.dy)
-      );
-      setSheetHeight(nextHeight);
-    },
-    onPanResponderRelease: (_, gesture) => {
-      const projected = sheetStartHeightRef.current - gesture.dy;
-      const snaps = Object.values(SHEET_SNAP_HEIGHTS);
-      const nearest = snaps.reduce((best, value) =>
-        Math.abs(value - projected) < Math.abs(best - projected) ? value : best
-      , SHEET_SNAP_HEIGHTS.medium);
-      setSheetHeight(nearest);
-    },
-  }), [isLocationSearchExpanded, sheetHeight]);
-
   const renderStepSheet = () => {
     const isPickupStep = bookingStep === 'pickup';
     const isDestinationStep = bookingStep === 'destination';
     const isTimeStep = bookingStep === 'time';
     const isReviewStep = bookingStep === 'review';
     const locationType: 'pickup' | 'dropoff' = isPickupStep ? 'pickup' : 'dropoff';
-    const activeSearch = isPickupStep ? pickupSearch : dropoffSearch;
-    const activeResults = isPickupStep
-      ? (pickupSearch ? pickupSearchResults : recentLocations)
-      : (dropoffSearch ? dropoffSearchResults : recentLocations);
-    const activeResultsTitle = activeSearch ? 'Search Results' : 'Recent Locations';
-    const currentLocationAddress = prewarmedCurrentLocationRef.current?.location.address
-      ? sanitizeAddress(prewarmedCurrentLocationRef.current.location.address)
-      : 'Use my current location';
     const selectedTimeLabel = pendingPickupTime
       ? formatPickupTimeLabel(pendingPickupTime)
       : 'Choose pickup time';
 
     const goBackStep = () => {
-      if (isReviewStep) {
-        setBookingStep('time');
-      } else if (isTimeStep) {
-        setBookingStep('destination');
-      } else if (isDestinationStep) {
-        setBookingStep('pickup');
-      }
+      if (isReviewStep) setBookingStep('time');
+      else if (isTimeStep) setBookingStep('destination');
+      else if (isDestinationStep) setBookingStep('pickup');
     };
 
-    const applyRecentRoute = (route: RecentRoute) => {
-      setPickupLocation(route.pickup);
-      setDropoffLocation(route.dropoff);
-      setPickupSearch('');
-      setDropoffSearch('');
-      setEstimatedDistance(route.distanceKm);
-      setEstimatedDuration(route.durationMinutes);
-      setEstimatedFare(calculateRideFare(roundDistanceKm(route.distanceKm), pricingConfig));
-      setRouteCoordinates(undefined);
-      setPendingPickupTime(null);
-      setBookingStep('time');
-      closeLocationSuggestions();
-      Keyboard.dismiss();
-    };
-
-    const renderPreviousChoice = () => {
-      if (isPickupStep) return null;
-
-      const label = isDestinationStep
-        ? 'Pickup'
-        : isTimeStep
-          ? 'Destination'
-          : 'Pickup time';
-      const value = isDestinationStep
-        ? sanitizeAddress(pickupLocation?.address || '')
-        : isTimeStep
-          ? sanitizeAddress(dropoffLocation?.address || '')
-          : selectedTimeLabel;
-      const icon = isDestinationStep ? 'map-marker' : isTimeStep ? 'map-marker-check' : 'clock-outline';
-      const editStep: BookingStep = isDestinationStep ? 'pickup' : isTimeStep ? 'destination' : 'time';
-
-      return (
-        <BookingPreviousChoice
-          label={label}
-          value={value}
-          icon={icon}
-          theme={theme}
-          styles={styles}
-          onEdit={() => setBookingStep(editStep)}
-        />
-      );
-    };
-
-    const renderLocationStep = () => (
-      <>
-        <TourTarget id={isPickupStep ? 'booking-pickup' : 'booking-destination'}>
-          <View style={[styles.stepSearchCard, { backgroundColor: theme.colors.inputBackground, borderColor: theme.colors.border }]}>
-            <MaterialCommunityIcons
-              name={isPickupStep ? 'map-marker' : 'map-marker-check'}
-              size={22}
-              color={BRAND.primary}
-            />
-            <TextInput
-              style={[styles.stepSearchInput, { color: theme.colors.textPrimary }]}
-              placeholder={isPickupStep ? 'Search pickup location' : 'Search destination'}
-              placeholderTextColor={theme.colors.textTertiary}
-              value={isPickupStep ? pickupSearch : dropoffSearch}
-              onChangeText={(text) => {
-                if (isPickupStep) {
-                  setPickupSearch(text);
-                } else {
-                  setDropoffSearch(text);
-                }
-                scheduleSearch(text, locationType);
-              }}
-              onFocus={() => {
-                if (isPickupStep) {
-                  openPickupSearch();
-                } else {
-                  openDropoffSearch();
-                }
-              }}
-            />
-            {!!activeSearch && (
-              <TouchableOpacity
-                onPress={isPickupStep ? clearPickupSearch : clearDropoffSearch}
-                style={styles.stepIconButton}
-                activeOpacity={0.75}
-              >
-                <MaterialCommunityIcons name="close-circle" size={19} color={theme.colors.textTertiary} />
-              </TouchableOpacity>
-            )}
-          </View>
-        </TourTarget>
-
-        <View style={styles.quickPickRow}>
-          <TouchableOpacity
-            style={[styles.quickPickButton, { backgroundColor: theme.colors.inputBackground, borderColor: theme.colors.border }]}
-            onPress={() => selectCurrentLocationOption(locationType)}
-            activeOpacity={0.85}
-          >
-            {resolvingCurrentLocation === locationType ? (
-              <ActivityIndicator size="small" color={BRAND.primary} />
-            ) : (
-              <MaterialCommunityIcons name="crosshairs-gps" size={18} color={BRAND.primary} />
-            )}
-            <Text numberOfLines={1} style={[styles.quickPickText, { color: theme.colors.textPrimary }]}>
-              {currentLocationAddress}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.quickIconButton, { backgroundColor: theme.colors.inputBackground, borderColor: theme.colors.border }]}
-            onPress={() => openMapLocationPicker(locationType)}
-            activeOpacity={0.85}
-          >
-            <MaterialCommunityIcons name={isPickupStep ? 'map-marker-plus' : 'map-marker-check'} size={20} color={BRAND.primary} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.quickIconButton, { backgroundColor: theme.colors.inputBackground, borderColor: theme.colors.border }]}
-            onPress={() => openVoiceLocation(locationType)}
-            activeOpacity={0.85}
-          >
-            <MaterialCommunityIcons name="microphone-outline" size={20} color={BRAND.primary} />
-          </TouchableOpacity>
-        </View>
-
-        <SearchResultsList
-          results={activeResults}
-          onSelect={(result: SearchResult) => selectSearchResult(result, locationType)}
-          onClose={() => {
-            closeLocationSuggestions(locationType);
-          }}
-          theme={theme}
-          title={activeResultsTitle}
-        />
-      </>
-    );
-
-    const renderTimeStep = () => (
-      <View style={[styles.whenPanel, { backgroundColor: theme.colors.inputBackground, borderColor: theme.colors.border }]}>
-        <MaterialCommunityIcons name="calendar-clock" size={28} color={BRAND.primary} />
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.whenSelectedLabel, { color: theme.colors.textSecondary }]}>Pickup time</Text>
-          <Text style={[styles.whenSelectedValue, { color: theme.colors.textPrimary }]}>{selectedTimeLabel}</Text>
-        </View>
-        <TouchableOpacity
-          style={[styles.whenButton, { backgroundColor: BRAND.primary }]}
-          onPress={() => setShowPickupTimeModal(true)}
-          activeOpacity={0.9}
-        >
-          <Text style={styles.whenButtonText}>When</Text>
-        </TouchableOpacity>
-      </View>
-    );
-
-    const renderReviewStep = () => (
-      <>
-        <View style={[styles.simpleFareCard, { backgroundColor: isLight ? '#FFF7EA' : '#281A05', borderColor: BRAND.primary }]}>
-          <View>
-            <Text style={[styles.simpleFareLabel, { color: theme.colors.textSecondary }]}>
-              {routeLoading ? 'Calculating route...' : 'Estimated fare'}
-            </Text>
-            <Text style={[styles.simpleFareValue, { color: BRAND.primary }]}>N{bookingTotalFare.toLocaleString()}</Text>
-          </View>
-          <View style={styles.simpleFareMeta}>
-            <Text style={[styles.simpleFareMetaText, { color: theme.colors.textSecondary }]}>
-              {roundDistanceKm(estimatedDistance) || 0} km
-            </Text>
-            <Text style={[styles.simpleFareMetaText, { color: theme.colors.textSecondary }]}>
-              {estimatedDuration > 0 ? `${estimatedDuration} min` : 'ETA pending'}
-            </Text>
-          </View>
-          <View style={[styles.compactFareBreakdown, { borderTopColor: theme.colors.border }]}>
-            {/* <Text style={[styles.simpleFareMetaText, { color: theme.colors.textSecondary }]}>
-              Platform fee: N{bookingPlatformFee.toLocaleString()}
-            </Text> */}
-            {/* <Text style={[styles.simpleFareMetaText, { color: theme.colors.textPrimary }]}>
-              Driver receives about N{bookingEstimatedDriverFare.toLocaleString()}
-            </Text> */}
-            <Text style={[styles.simpleFareMetaText, { color: theme.colors.textPrimary }]}>
-              Kindly pay to the driver directly. The actual time of arrival may vary based on traffic and distance.
-            </Text>
-
-          </View>
-        </View>
-        <TourTarget id="booking-confirm">
-          <TouchableOpacity
-            style={[styles.reviewButton, { backgroundColor: isBooking ? theme.colors.border : BRAND.primary }]}
-            disabled={isBooking}
-            onPress={() => setBookingConfirmationVisible(true)}
-            activeOpacity={0.9}
-          >
-            {isBooking ? <ActivityIndicator color="#000" /> : <Text style={styles.reviewButtonText}>Review Ride</Text>}
-          </TouchableOpacity>
-        </TourTarget>
-      </>
-    );
-
-    const keyboardLift = isLocationSearchExpanded ? 0 : keyboardHeight > 0 ? Math.min(84, Math.round(keyboardHeight * 0.22)) : 0;
-    const keyboardScrollPadding = keyboardHeight > 0
-      ? Math.max(160, keyboardHeight + 24)
-      : insets.bottom + 18;
+    const locationResults = isPickupStep
+      ? (pickupSearch ? pickupSearchResults : recentLocations)
+      : (dropoffSearch ? dropoffSearchResults : recentLocations);
+    const locationResultsTitle = isPickupStep ? 'Pickup suggestions' : 'Destination suggestions';
+    const shouldShowLocationResults = isPickupStep
+      ? (showPickupResults || Boolean(pickupSearch))
+      : (showDropoffResults || Boolean(dropoffSearch));
 
     return (
-      <View
-        style={[
-          styles.stepSheet,
-          {
-            backgroundColor: theme.colors.surface,
-            bottom: keyboardLift,
-            top: isLocationSearchExpanded ? insets.top + 4 : undefined,
-            height: isLocationSearchExpanded ? undefined : sheetHeight,
-            borderTopLeftRadius: isLocationSearchExpanded ? 0 : 24,
-            borderTopRightRadius: isLocationSearchExpanded ? 0 : 24,
-            maxHeight: isLocationSearchExpanded ? undefined : keyboardHeight > 0 ? '72%' : undefined,
-            paddingBottom: keyboardHeight > 0 ? 8 : insets.bottom + 18,
-          },
-        ]}
+      <BookingStepPanel
+        theme={theme}
+        styles={styles}
+        insets={insets}
+        currentStep={bookingStep}
+        title={isPickupStep ? 'From where?' : isDestinationStep ? 'Where to?' : isTimeStep ? 'When?' : 'Review your ride'}
+        stepLabel={`Step ${bookingStep === 'pickup' ? '1' : bookingStep === 'destination' ? '2' : bookingStep === 'time' ? '3' : '4'} of 4`}
+        showBack={bookingStep !== 'pickup'}
+        onBack={goBackStep}
       >
-        <View {...sheetPanResponder.panHandlers} style={styles.dragHandleZone}>
-          <View style={styles.handleIndicator} />
-        </View>
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={[styles.stepContent, { paddingBottom: keyboardScrollPadding }]}
-        >
-          <View style={styles.stepHeader}>
-            {bookingStep !== 'pickup' ? (
-              <TouchableOpacity
-                onPress={goBackStep}
-                style={[styles.stepBackButton, { backgroundColor: theme.colors.inputBackground }]}
-                activeOpacity={0.8}
-              >
-                <MaterialCommunityIcons name="arrow-left" size={20} color={theme.colors.textPrimary} />
-              </TouchableOpacity>
-            ) : null}
-            <View style={styles.stepTitleWrap}>
-              {/* {isPickupStep ? (
-                <BookingRecentRoutes
-                  routes={recentRoutes}
-                  theme={theme}
-                  styles={styles}
-                  sanitizeAddress={sanitizeAddress}
-                  onSelect={applyRecentRoute}
-                />
-              ) : null} */}
-
-              <Text style={[styles.stepEyebrow, { color: BRAND.primary }]}>
-                Step {bookingStep === 'pickup' ? '1' : bookingStep === 'destination' ? '2' : bookingStep === 'time' ? '3' : '4'} of 4
-              </Text>
-              <Text style={[styles.stepTitle, { color: theme.colors.textPrimary }]}>
-                {isPickupStep ? 'From where?' : isDestinationStep ? 'Where to?' : isTimeStep ? 'When?' : 'Review your ride'}
-              </Text>
-            </View>
-          </View>
-
-          {renderPreviousChoice()}
-          {isPickupStep && !isLocationSearchExpanded ? (
-            <BookingRecentRoutes
-              routes={recentRoutes}
+        {isPickupStep || isDestinationStep ? (
+          <>
+            <BookingLocationField
+              label={isPickupStep ? 'Pickup location' : 'Where to?'}
+              value={isPickupStep ? pickupSearch : dropoffSearch}
+              placeholder={isPickupStep ? 'Search pickup location' : 'Search destination'}
+              icon={isPickupStep ? 'map-marker' : 'map-marker-check'}
               theme={theme}
               styles={styles}
-              sanitizeAddress={sanitizeAddress}
-              onSelect={applyRecentRoute}
+              onChangeText={(text) => {
+                if (isPickupStep) setPickupSearch(text);
+                else setDropoffSearch(text);
+                scheduleSearch(text, locationType);
+              }}
+              onFocus={() => (isPickupStep ? openPickupSearch() : openDropoffSearch())}
+              onClear={isPickupStep ? clearPickupSearch : clearDropoffSearch}
             />
-          ) : null}
 
-          {isPickupStep || isDestinationStep ? renderLocationStep() : null}
-          {isTimeStep ? renderTimeStep() : null}
-          {isReviewStep ? renderReviewStep() : null}
-
-          {activeLocationPicker && (isPickupStep || isDestinationStep) && !isLocationSearchExpanded ? (
-            <View style={[styles.guideBox, styles.guideBoxCompact, { backgroundColor: theme.colors.inputBackground }]}>
-              <MaterialCommunityIcons name="gesture-tap" size={20} color={BRAND.primary} />
-              <Text style={[styles.guideText, { color: theme.colors.textSecondary }]}>
-                Tap the map to set {activeLocationPicker === 'pickup' ? 'pickup' : 'destination'}.
-              </Text>
+            <View style={styles.locationActionsRow}>
+              <TouchableOpacity
+                style={[styles.locationActionButton, { backgroundColor: theme.colors.inputBackground, borderColor: theme.colors.border }]}
+                onPress={() => selectCurrentLocationOption(locationType)}
+                activeOpacity={0.85}
+              >
+                <MaterialCommunityIcons name="crosshairs-gps" size={18} color={BRAND.primary} />
+                <Text style={[styles.locationActionText, { color: theme.colors.textPrimary }]}>Use current location</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.locationActionButton, { backgroundColor: theme.colors.inputBackground, borderColor: theme.colors.border }]}
+                onPress={() => openMapLocationPicker(locationType)}
+                activeOpacity={0.85}
+              >
+                <MaterialCommunityIcons name="map-marker-outline" size={18} color={BRAND.primary} />
+                <Text style={[styles.locationActionText, { color: theme.colors.textPrimary }]}>Pick on map</Text>
+              </TouchableOpacity>
             </View>
-          ) : null}
-        </ScrollView>
-      </View>
+
+            {shouldShowLocationResults ? (
+              <BookingSearchResultsList
+                results={locationResults}
+                onSelect={(result) => selectSearchResult(result, locationType)}
+                onClose={() => closeLocationSuggestions(locationType)}
+                theme={theme}
+                styles={styles}
+                title={locationResultsTitle}
+                subtitle="Tap once or double tap to set the location"
+              />
+            ) : null}
+          </>
+        ) : null}
+
+        {isTimeStep ? (
+          <View style={[styles.whenPanel, { backgroundColor: theme.colors.inputBackground, borderColor: theme.colors.border }]}>
+            <MaterialCommunityIcons name="calendar-clock" size={28} color={BRAND.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.whenSelectedLabel, { color: theme.colors.textSecondary }]}>Pickup time</Text>
+              <Text style={[styles.whenSelectedValue, { color: theme.colors.textPrimary }]}>{selectedTimeLabel}</Text>
+            </View>
+            <TouchableOpacity style={[styles.whenButton, { backgroundColor: BRAND.primary }]} onPress={() => setShowPickupTimeModal(true)} activeOpacity={0.9}>
+              <Text style={styles.whenButtonText}>Choose</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {isReviewStep ? (
+          <>
+            <BookingFareSummary
+              theme={theme}
+              styles={styles}
+              isLight={isLight}
+              routeLoading={routeLoading}
+              estimatedDistance={roundDistanceKm(estimatedDistance)}
+              estimatedDuration={estimatedDuration}
+              bookingTotalFare={bookingTotalFare}
+              bookingPlatformFee={bookingPlatformFee}
+              bookingEstimatedDriverFare={bookingEstimatedDriverFare}
+            />
+            <TourTarget id="booking-confirm">
+              <BookingReviewCard
+                theme={theme}
+                styles={styles}
+                pickupAddress={sanitizeAddress(pickupLocation?.address || '')}
+                dropoffAddress={sanitizeAddress(dropoffLocation?.address || '')}
+                bookingTotalFare={bookingTotalFare}
+                isBooking={isBooking}
+                onReview={() => setBookingConfirmationVisible(true)}
+              />
+            </TourTarget>
+          </>
+        ) : null}
+
+        {activeLocationPicker && (isPickupStep || isDestinationStep) ? (
+          <View style={[styles.guideBox, styles.guideBoxCompact, { backgroundColor: theme.colors.inputBackground }]}>
+            <MaterialCommunityIcons name="gesture-tap" size={20} color={BRAND.primary} />
+            <Text style={[styles.guideText, { color: theme.colors.textSecondary }]}>
+              Tap the map to set {activeLocationPicker === 'pickup' ? 'pickup' : 'destination'}.
+            </Text>
+          </View>
+        ) : null}
+      </BookingStepPanel>
     );
   };
 
@@ -1921,191 +1728,6 @@ export default function BookingScreen() {
       ) : null}
 
       {renderStepSheet()}
-
-      {false ? (
-      <>
-        {/* Bottom Sheet */}
-        <View style={[styles.bottomSheet, { backgroundColor: theme.colors.surface, paddingBottom: insets.bottom + 20 }]}>
-        <View style={styles.handleIndicator} />
-        {/* <ScrollView style={styles.sheetContent} showsVerticalScrollIndicator={false}> */}
-          {/* Greeting / Prompt */}
-          {!pickupLocation && !dropoffLocation && !activeLocationPicker && (
-            <View style={styles.greetingSection}>
-              <Text style={[styles.greetingText, { color: theme.colors.textSecondary }]}>{getGreeting()}</Text>
-              <Text style={[styles.promptText, { color: theme.colors.textPrimary }]}>Select your pickup and destination</Text>
-            </View>
-          )}
-
-
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-          {/* Pickup Input */}
-          <TourTarget id="booking-pickup">
-          <View style={styles.inputRow}>
-            <MaterialCommunityIcons name="map-marker" size={20} color={BRAND.primary} style={styles.inputIcon} />
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.label, { color: theme.colors.textSecondary }]}>Pickup Location</Text>
-              {pickupLocation ? (
-                <View style={styles.selectedRow}>
-                   <Text numberOfLines={2} style={[styles.selectedText, { color: theme.colors.textPrimary }]}>{sanitizeAddress(pickupLocation?.address || '')}</Text>
-                   <TouchableOpacity onPress={() => {
-                     setPickupLocation(null);
-                     setCurrentLocationUsedAs((current) => (current === 'pickup' ? null : current));
-                   }}>
-                     <MaterialCommunityIcons name="close-circle" size={18} color={theme.colors.textSecondary} />
-                   </TouchableOpacity>
-                </View>
-              ) : (
-                <View style={styles.searchInputWrap}>
-                  <TextInput
-                    style={[styles.input, { color: theme.colors.textPrimary }]}
-                    placeholder="Where are you?"
-                    placeholderTextColor={theme.colors.textTertiary}
-                    value={pickupSearch}
-                    onChangeText={(t) => { setPickupSearch(t); scheduleSearch(t, 'pickup'); }}
-                    onFocus={() => {
-                      openPickupSearch();
-                      if (!pickupLocation) promptForCurrentLocation('pickup');
-                    }}
-                    onBlur={scheduleClosePickupResults}
-                  />
-                  {!!pickupSearch && (
-                    <TouchableOpacity onPress={clearPickupSearch} style={styles.clearButton}>
-                      <MaterialCommunityIcons name="close-circle" size={18} color={theme.colors.textTertiary} />
-                    </TouchableOpacity>
-                  )}
-                </View>
-              )}
-            </View>
-            <TouchableOpacity onPress={() => openMapLocationPicker('pickup')} style={styles.mapIconBtn}>
-              {resolvingCurrentLocation === 'pickup' ? (
-                <ActivityIndicator size="small" color={BRAND.primary} />
-              ) : (
-                <MaterialCommunityIcons name="crosshairs-gps" size={22} color={activeLocationPicker === 'pickup' ? BRAND.primary : theme.colors.textSecondary} />
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => openVoiceLocation('pickup')} style={styles.mapIconBtn}>
-              <MaterialCommunityIcons name="microphone-outline" size={21} color={BRAND.primary} />
-            </TouchableOpacity>
-          </View>
-          </TourTarget>
-
-          {showPickupResults && activeLocationPicker === 'pickup' && !pickupLocation && (
-             <SearchResultsList results={pickupSearch ? pickupSearchResults : recentLocations} onSelect={(r: SearchResult) => selectSearchResult(r, 'pickup')} onClose={() => closeLocationSuggestions('pickup')} theme={theme} title={pickupSearch ? "Search Results" : "Recent Locations"} />
-          )}
-
-          <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
-
-          {/* Dropoff Input */}
-          <TourTarget id="booking-destination">
-          <View style={styles.inputRow}>
-            <MaterialCommunityIcons name="map-marker-check" size={20} color={theme.colors.textPrimary} style={styles.inputIcon} />
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.label, { color: theme.colors.textSecondary }]}>Destination</Text>
-              {dropoffLocation ? (
-                <View style={styles.selectedRow}>
-                   <Text numberOfLines={2} style={[styles.selectedText, { color: theme.colors.textPrimary }]}>{sanitizeAddress(dropoffLocation?.address || '')}</Text>
-                   <TouchableOpacity onPress={() => {
-                     setDropoffLocation(null);
-                     setCurrentLocationUsedAs((current) => (current === 'dropoff' ? null : current));
-                   }}>
-                     <MaterialCommunityIcons name="close-circle" size={18} color={theme.colors.textSecondary} />
-                   </TouchableOpacity>
-                </View>
-              ) : (
-                <View style={styles.searchInputWrap}>
-                  <TextInput
-                    style={[styles.input, { color: theme.colors.textPrimary }]}
-                    placeholder="Where to?"
-                    placeholderTextColor={theme.colors.textTertiary}
-                    value={dropoffSearch}
-                    onChangeText={(t) => { setDropoffSearch(t); scheduleSearch(t, 'dropoff'); }}
-                    onFocus={() => {
-                      openDropoffSearch();
-                      if (!dropoffLocation && currentLocationUsedAs !== 'pickup') promptForCurrentLocation('dropoff');
-                    }}
-                    onBlur={scheduleCloseDropoffResults}
-                  />
-                  {!!dropoffSearch && (
-                    <TouchableOpacity onPress={clearDropoffSearch} style={styles.clearButton}>
-                      <MaterialCommunityIcons name="close-circle" size={18} color={theme.colors.textTertiary} />
-                    </TouchableOpacity>
-                  )}
-                </View>
-              )}
-            </View>
-            <TouchableOpacity onPress={() => openMapLocationPicker('dropoff')} style={styles.mapIconBtn}>
-              {resolvingCurrentLocation === 'dropoff' ? (
-                <ActivityIndicator size="small" color={BRAND.primary} />
-              ) : (
-                <MaterialCommunityIcons name="crosshairs-gps" size={22} color={activeLocationPicker === 'dropoff' ? BRAND.primary : theme.colors.textSecondary} />
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => openVoiceLocation('dropoff')} style={styles.mapIconBtn}>
-              <MaterialCommunityIcons name="microphone-outline" size={21} color={BRAND.primary} />
-            </TouchableOpacity>
-          </View>
-          </TourTarget>
-
-          {showDropoffResults && activeLocationPicker === 'dropoff' && !dropoffLocation && (
-             <SearchResultsList results={dropoffSearch ? dropoffSearchResults : recentLocations} onSelect={(r: SearchResult) => selectSearchResult(r, 'dropoff')} onClose={() => closeLocationSuggestions('dropoff')} theme={theme} title={dropoffSearch ? "Search Results" : "Recent Locations"} />
-          )}
-
-          {/* Fare Card */}
-          {pickupLocation && dropoffLocation && (
-            <View style={[styles.fareCard, { backgroundColor: isLight ? '#FFF5E5' : '#2A1800', borderColor: BRAND.primary }]}>
-              <View style={styles.fareRow}>
-                 <View>
-                   <Text style={[styles.fareLabel, { color: theme.colors.textSecondary }]}>{routeLoading ? 'Calculating route...' : 'Total fare'}</Text>
-                   <Text style={[styles.fareValue, { color: BRAND.primary }]}>₦{bookingTotalFare.toLocaleString()}</Text>
-                 </View>
-                 <View style={{ alignItems: 'flex-end' }}>
-                   <Text style={[styles.fareLabel, { color: theme.colors.textSecondary }]}>Distance</Text>
-                   <Text style={[styles.fareValueSmall, { color: theme.colors.textPrimary }]}>{roundDistanceKm(estimatedDistance)} km</Text>
-                 </View>
-              </View>
-              <View style={[styles.fareMetaRow, { marginTop: 8 }]}>
-                <Text style={[styles.fareMetaText, { color: theme.colors.textSecondary }]}>ETA</Text>
-                <Text style={[styles.fareMetaText, { color: theme.colors.textPrimary }]}>{estimatedDuration > 0 ? `${estimatedDuration} min` : '—'}</Text>
-              </View>
-              <View style={[styles.fareBreakdown, { borderTopColor: theme.colors.border }]}>
-                <View style={styles.fareMetaRow}>
-                  <Text style={[styles.fareMetaText, { color: theme.colors.textSecondary }]}>Platform fee deducted (15%)</Text>
-                  <Text style={[styles.fareMetaText, { color: theme.colors.textPrimary }]}>₦{bookingPlatformFee.toLocaleString()}</Text>
-                </View>
-                <View style={styles.fareMetaRow}>
-                  <Text style={[styles.fareTotalLabel, { color: theme.colors.textPrimary }]}>Estimated driver fare</Text>
-                  <Text style={[styles.fareTotalValue, { color: BRAND.primary }]}>₦{bookingEstimatedDriverFare.toLocaleString()}</Text>
-                </View>
-              </View>
-            </View>
-          )}
-                <View style={[styles.guideBox, { backgroundColor: theme.colors.inputBackground }]}>
-                   <MaterialCommunityIcons name="gesture-tap" size={20} color={BRAND.primary} />
-                   <Text style={[styles.guideText, { color: theme.colors.textSecondary }]}>
-                    {activeLocationPicker
-                      ? `Tap anywhere on the map to set ${activeLocationPicker === 'pickup' ? 'pickup' : 'destination'} location.`
-                      : 'Tip: You can tap the map icon to directly set a location on the map.'}
-                   </Text>
-                </View>
-
-
-          {/* Action Button */}
-          <TourTarget id="booking-confirm">
-            <TouchableOpacity
-              style={[styles.bookBtn, { backgroundColor: (!pickupLocation || !dropoffLocation || isBooking) ? theme.colors.border : BRAND.primary }]}
-              disabled={!pickupLocation || !dropoffLocation || isBooking}
-              onPress={handleBookRide}
-              activeOpacity={0.9}
-            >
-              {isBooking ? <ActivityIndicator color="#000" /> : <Text style={styles.bookBtnText}>Book Ride Now</Text>}
-            </TouchableOpacity>
-          </TourTarget>
-
-        </ScrollView>
-        </View>
-      </>
-      ) : null}
-
       {/* Success Dialog */}
       <SuccessDialog
         visible={bookingSuccessVisible}
@@ -2233,14 +1855,6 @@ export default function BookingScreen() {
               <Text numberOfLines={2} style={[styles.confirmAddress, { color: theme.colors.textPrimary }]}>{sanitizeAddress(dropoffLocation?.address || '')}</Text>
             </View>
             <View style={styles.confirmRows}>
-              {/* <View style={styles.confirmRow}>
-                <Text style={[styles.confirmLabel, { color: theme.colors.textSecondary }]}>Estimated driver fare</Text>
-                <Text style={[styles.confirmValue, { color: theme.colors.textPrimary }]}>₦{bookingEstimatedDriverFare.toLocaleString()}</Text>
-              </View>
-              <View style={styles.confirmRow}>
-                <Text style={[styles.confirmLabel, { color: theme.colors.textSecondary }]}>Platform fee deducted</Text>
-                <Text style={[styles.confirmValue, { color: theme.colors.textPrimary }]}>₦{bookingPlatformFee.toLocaleString()}</Text>
-              </View> */}
               <View style={[styles.confirmRow, styles.confirmTotalRow, { borderTopColor: theme.colors.border }]}>
                 <Text style={[styles.confirmTotalLabel, { color: theme.colors.textPrimary }]}>Total payable fare</Text>
                 <Text style={[styles.confirmTotalValue, { color: BRAND.primary }]}>₦{bookingTotalFare.toLocaleString()}</Text>
@@ -2316,584 +1930,3 @@ export default function BookingScreen() {
     </View>
   );
 }
-
-const SearchResultsList = ({ results, onSelect, onClose, theme, title }: any) => (
-  <View style={[styles.resultsList, { backgroundColor: theme.colors.inputBackground }]}>
-    <View style={styles.resultsHeader}>
-      <Text style={[styles.resultsTitle, { color: theme.colors.textSecondary }]}>{title}</Text>
-      <TouchableOpacity
-        onPress={() => onClose?.()}
-        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-        style={styles.resultsCloseButton}
-      >
-        <MaterialCommunityIcons name="close" size={18} color={theme.colors.textSecondary} />
-      </TouchableOpacity>
-    </View>
-    <View style={[styles.resultsHint, { borderColor: theme.colors.border }]}>
-      <MaterialCommunityIcons name="gesture-tap" size={14} color={BRAND.primary} />
-      <Text style={[styles.resultsHintText, { color: theme.colors.textSecondary }]}>Double Tap a location to select it.</Text>
-    </View>
-    <ScrollView 
-      style={styles.resultsScrollView}
-      nestedScrollEnabled={true}
-      keyboardShouldPersistTaps="always"
-      keyboardDismissMode="none"
-      showsVerticalScrollIndicator={true}
-      contentContainerStyle={{ paddingBottom: 8 }}
-    >
-      {results.map((item: any, idx: number) => (
-        <TouchableOpacity 
-          key={idx} 
-          style={[
-            styles.resultItem, 
-            { 
-              borderBottomColor: theme.colors.border, 
-              borderBottomWidth: idx < results.length - 1 ? 1 : 0 
-            }
-          ]} 
-          onPress={() => {
-            onSelect(item);
-            Keyboard.dismiss();
-          }}
-          activeOpacity={0.75}
-        >
-          <MaterialCommunityIcons name="map-marker" size={18} color={BRAND.primary} />
-          <Text numberOfLines={2} style={[styles.resultText, { color: theme.colors.textPrimary }]}>
-            {sanitizeAddress(item.address)}
-          </Text>
-        </TouchableOpacity>
-      ))}
-      {results.length === 0 && (
-        <View style={styles.emptyResults}>
-          <MaterialCommunityIcons name="map-search" size={32} color={theme.colors.textTertiary} />
-          <Text style={[styles.emptyText, { color: theme.colors.textTertiary }]}>No locations found</Text>
-        </View>
-      )}
-    </ScrollView>
-  </View>
-);
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  map: { flex: 1 },
-  searchExpandedBackground: { ...StyleSheet.absoluteFillObject },
-  header: {
-    position: 'absolute',
-    left: 20,
-    right: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  iconButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  pillBadge: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  pillText: { color: '#000', fontWeight: '700', fontSize: 16 },
-  bottomSheet: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 10,
-  },
-  handleIndicator: {
-    width: 40,
-    height: 4,
-    backgroundColor: '#E0E0E0',
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  dragHandleZone: { paddingTop: 2, paddingBottom: 2 },
-  recentRoutesWrap: { marginBottom: 14 },
-  recentRoutesTitle: { fontSize: 21, fontWeight: '900', marginBottom: 10, letterSpacing: 0 },
-  recentRoutesList: { gap: 8, paddingRight: 8 },
-  recentRouteCard: {
-    width: 132,
-    minHeight: 128,
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 10,
-    justifyContent: 'space-between',
-  },
-  recentRouteIconBadge: {
-    width: 44,
-    height: 36,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255, 149, 0, 0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 6,
-  },
-  recentRouteMain: { fontSize: 13, lineHeight: 16, fontWeight: '900', minHeight: 32 },
-  recentRouteSub: { fontSize: 10, lineHeight: 13, fontWeight: '700', marginTop: 3 },
-  recentRouteMetaRow: { marginTop: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
-  recentRouteFare: { fontSize: 12, fontWeight: '900' },
-  recentRouteTime: { flex: 1, textAlign: 'right', fontSize: 10, fontWeight: '800' },
-  stepSheet: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    elevation: 12,
-  },
-  guideBoxCompact: { marginTop: 10, paddingVertical: 9 },
-  stepContent: { paddingHorizontal: 20, paddingBottom: 14 },
-  stepHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
-  stepBackButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepTitleWrap: { flex: 1 },
-  stepEyebrow: { fontSize: 11, fontWeight: '900', textTransform: 'uppercase', marginBottom: 2 },
-  stepTitle: { fontSize: 22, fontWeight: '900', letterSpacing: 0 },
-  previousChoiceCard: {
-    minHeight: 48,
-    borderRadius: 16,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    marginBottom: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  previousChoiceLabel: { fontSize: 10, fontWeight: '900', textTransform: 'uppercase', marginBottom: 2 },
-  previousChoiceValue: { fontSize: 13, fontWeight: '800' },
-  previousChoiceEdit: { fontSize: 12, fontWeight: '900' },
-  choiceSummary: { flexDirection: 'row', gap: 8, marginBottom: 14 },
-  choiceChip: {
-    flex: 1,
-    minHeight: 40,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255, 149, 0, 0.08)',
-    paddingHorizontal: 10,
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 6,
-  },
-  choiceChipActive: {
-    backgroundColor: 'rgba(255, 149, 0, 0.18)',
-    borderWidth: 1,
-    borderColor: BRAND.primary,
-  },
-  choiceChipText: { flex: 1, fontSize: 11, fontWeight: '800' },
-  stepSearchCard: {
-    minHeight: 54,
-    borderRadius: 18,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  stepSearchInput: { flex: 1, minHeight: 44, fontSize: 18, fontWeight: '800', paddingVertical: 0 },
-  stepIconButton: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  quickPickRow: { flexDirection: 'row', gap: 8, marginTop: 8, marginBottom: 8 },
-  quickPickButton: {
-    flex: 1,
-    minHeight: 40,
-    borderRadius: 14,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  quickPickText: { flex: 1, fontSize: 12, fontWeight: '800' },
-  quickIconButton: {
-    width: 44,
-    height: 40,
-    borderRadius: 14,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  whenPanel: {
-    minHeight: 84,
-    borderRadius: 18,
-    borderWidth: 1,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  whenButton: { height: 42, borderRadius: 14, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center' },
-  whenButtonText: { color: '#000', fontSize: 14, fontWeight: '900' },
-  whenSelectedLabel: { fontSize: 12, fontWeight: '800', marginBottom: 4 },
-  whenSelectedValue: { fontSize: 17, fontWeight: '900' },
-  simpleFareCard: { marginTop: 2, padding: 16, borderRadius: 18, borderWidth: 1 },
-  simpleFareLabel: { fontSize: 12, fontWeight: '800' },
-  simpleFareValue: { fontSize: 30, fontWeight: '900', marginTop: 2 },
-  simpleFareMeta: { flexDirection: 'row', gap: 12, marginTop: 8 },
-  simpleFareMetaText: { fontSize: 12, fontWeight: '800' },
-  compactFareBreakdown: { marginTop: 12, paddingTop: 10, borderTopWidth: 1, gap: 4 },
-  reviewButton: {
-    marginTop: 14,
-    height: 56,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: BRAND.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.24,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  reviewButtonText: { color: '#000', fontSize: 16, fontWeight: '900' },
-  scrollContent: { padding: 20 },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 8,
-  },
-  inputIcon: { marginTop: 4 },
-  label: { fontSize: 12, fontWeight: '600', marginBottom: 4 },
-  input: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '500',
-    padding: 0,
-    paddingRight: 30,
-    height: 24,
-  },
-  searchInputWrap: { flexDirection: 'row', alignItems: 'center', flex: 1, position: 'relative' },
-  clearButton: { position: 'absolute', right: 0, top: -2, padding: 4 },
-  selectedRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingTop: 2 },
-  selectedText: { fontSize: 15, fontWeight: '600', flex: 1, marginRight: 8, lineHeight: 20 },
-  mapIconBtn: { padding: 8 },
-  divider: { height: 1, marginVertical: 12, marginLeft: 32 },
-  resultsList: {
-    marginTop: 8,
-    borderRadius: 12,
-    padding: 10,
-    maxHeight: 210,
-  },
-  resultsScrollView: {
-    maxHeight: 154,
-  },
-  resultsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 },
-  resultsTitle: { flex: 1, fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
-  resultsCloseButton: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  resultsHint: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    marginBottom: 8,
-  },
-  resultsHintText: { flex: 1, fontSize: 11, fontWeight: '600', lineHeight: 15 },
-  resultItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 9, paddingHorizontal: 4 },
-  resultText: { fontSize: 13, flex: 1, lineHeight: 18 },
-  emptyResults: { alignItems: 'center', paddingVertical: 22 },
-  emptyText: { fontSize: 13, marginTop: 8 },
-  fareCard: {
-    marginTop: 20,
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  fareRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  fareLabel: { fontSize: 12, fontWeight: '500' },
-  fareValue: { fontSize: 24, fontWeight: '700', marginTop: 2 },
-  fareValueSmall: { fontSize: 16, fontWeight: '600', marginTop: 2 },
-  fareMetaRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  fareMetaText: { fontSize: 12, fontWeight: '500' },
-  fareBreakdown: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, gap: 8 },
-  fareTotalLabel: { fontSize: 13, fontWeight: '800' },
-  fareTotalValue: { fontSize: 15, fontWeight: '900' },
-  bookBtn: {
-    marginTop: 24,
-    height: 56,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: BRAND.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  bookBtnText: { color: '#000', fontSize: 16, fontWeight: '700' },
-  successOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-  },
-  successCard: {
-    width: '100%',
-    borderRadius: 16,
-    padding: 20,
-    alignItems: 'center',
-  },
-  successTitle: {
-    marginTop: 10,
-    fontSize: 20,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  successMessage: {
-    marginTop: 8,
-    fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  successBtn: {
-    marginTop: 18,
-    backgroundColor: BRAND.primary,
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    width: '100%',
-    alignItems: 'center',
-  },
-  successBtnText: {
-    color: '#000',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 22,
-  },
-  confirmModal: {
-    width: '100%',
-    maxWidth: 430,
-    borderRadius: 24,
-    borderWidth: 1,
-    padding: 20,
-  },
-  confirmIcon: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    alignItems: 'center',
-    justifyContent: 'center',
-    alignSelf: 'center',
-    marginBottom: 12,
-  },
-  confirmTitle: { fontSize: 22, fontWeight: '900', textAlign: 'center' },
-  confirmCopy: { marginTop: 8, fontSize: 13, lineHeight: 19, textAlign: 'center' },
-  confirmRoute: { marginTop: 16, borderWidth: 1, borderRadius: 16, padding: 14, gap: 8 },
-  confirmAddress: { fontSize: 13, fontWeight: '700', lineHeight: 18 },
-  confirmRows: { marginTop: 16, gap: 10 },
-  confirmRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
-  confirmLabel: { fontSize: 13, flex: 1 },
-  confirmValue: { fontSize: 14, fontWeight: '800' },
-  confirmTotalRow: { marginTop: 2, paddingTop: 12, borderTopWidth: 1 },
-  confirmTotalLabel: { fontSize: 15, fontWeight: '900', flex: 1 },
-  confirmTotalValue: { fontSize: 20, fontWeight: '900' },
-  confirmActions: { flexDirection: 'row', gap: 10, marginTop: 20 },
-  confirmButton: { flex: 1, minHeight: 48, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
-  confirmButtonText: { fontSize: 14, fontWeight: '900', textAlign: 'center' },
-  voiceModal: {
-    width: '100%',
-    borderRadius: 22,
-    borderWidth: 1,
-    padding: 20,
-    alignItems: 'center',
-  },
-  voiceIcon: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  voiceTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    textAlign: 'center',
-  },
-  voiceCopy: {
-    marginTop: 8,
-    fontSize: 13,
-    lineHeight: 19,
-    textAlign: 'center',
-  },
-  voiceInput: {
-    width: '100%',
-    marginTop: 16,
-    minHeight: 52,
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  voiceRecordButton: {
-    minHeight: 48,
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 18,
-    marginTop: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  voiceRecordText: {
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  voiceErrorText: {
-    marginTop: 10,
-    color: '#B3261E',
-    fontSize: 12,
-    lineHeight: 17,
-    textAlign: 'center',
-    fontWeight: '700',
-  },
-  voiceActions: {
-    width: '100%',
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 14,
-  },
-  voiceButton: {
-    flex: 1,
-    minHeight: 48,
-    borderRadius: 14,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  voiceButtonText: {
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  guideBox: { marginTop: 20, padding: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  guideText: { fontSize: 12, flex: 1, lineHeight: 18 },
-  greetingSection: { marginBottom: 20 },
-  greetingText: { fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5, marginLeft: 10 },
-  promptText: { fontSize: 24, fontWeight: '700', marginTop: 4, marginLeft: 10},
-  warningOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-  },
-  warningCard: {
-    width: '100%',
-    borderRadius: 18,
-    padding: 18,
-    alignItems: 'center',
-    borderWidth: 1,
-  },
-  warningTitle: {
-    marginTop: 10,
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  warningText: {
-    marginTop: 8,
-    fontSize: 13,
-    lineHeight: 19,
-    textAlign: 'center',
-  },
-  warningButton: {
-    marginTop: 16,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    width: '100%',
-    alignItems: 'center',
-  },
-  warningButtonText: {
-    color: '#000',
-    fontWeight: '800',
-  },
-  locationWaitOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-  },
-  locationWaitCard: {
-    width: '100%',
-    maxWidth: 320,
-    borderWidth: 1,
-    borderRadius: 18,
-    padding: 18,
-    alignItems: 'center',
-  },
-  locationWaitTitle: {
-    marginTop: 12,
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  locationWaitText: {
-    marginTop: 6,
-    fontSize: 13,
-    lineHeight: 18,
-    textAlign: 'center',
-  },
-});
-
-const mapDarkStyle = [
-  { "elementType": "geometry", "stylers": [{ "color": "#242f3e" }] },
-  { "elementType": "labels.text.fill", "stylers": [{ "color": "#746855" }] },
-  { "elementType": "labels.text.stroke", "stylers": [{ "color": "#242f3e" }] },
-  { "featureType": "administrative.locality", "elementType": "labels.text.fill", "stylers": [{ "color": "#d59563" }] },
-  { "featureType": "poi", "elementType": "labels.text.fill", "stylers": [{ "color": "#d59563" }] },
-  { "featureType": "poi.park", "elementType": "geometry", "stylers": [{ "color": "#263c3f" }] },
-  { "featureType": "poi.park", "elementType": "labels.text.fill", "stylers": [{ "color": "#6b9a76" }] },
-  { "featureType": "road", "elementType": "geometry", "stylers": [{ "color": "#38414e" }] },
-  { "featureType": "road", "elementType": "geometry.stroke", "stylers": [{ "color": "#212a37" }] },
-  { "featureType": "road", "elementType": "labels.text.fill", "stylers": [{ "color": "#9ca5b3" }] },
-  { "featureType": "road.highway", "elementType": "geometry", "stylers": [{ "color": "#746855" }] },
-  { "featureType": "road.highway", "elementType": "geometry.stroke", "stylers": [{ "color": "#1f2835" }] },
-  { "featureType": "road.highway", "elementType": "labels.text.fill", "stylers": [{ "color": "#f3d19c" }] },
-  { "featureType": "transit", "elementType": "geometry", "stylers": [{ "color": "#2f3948" }] },
-  { "featureType": "transit.station", "elementType": "labels.text.fill", "stylers": [{ "color": "#d59563" }] },
-  { "featureType": "water", "elementType": "geometry", "stylers": [{ "color": "#17263c" }] },
-  { "featureType": "water", "elementType": "labels.text.fill", "stylers": [{ "color": "#515c6d" }] },
-  { "featureType": "water", "elementType": "labels.text.stroke", "stylers": [{ "color": "#17263c" }] }
-];

@@ -220,8 +220,15 @@ class APIService {
 
   async logout(): Promise<void> {
     try {
-      // Send empty object as body to satisfy server requirements
-      return await this.post('/auth/logout', {});
+      // Send empty object as body to satisfy server requirements.
+      // If the session is already expired or missing server-side, treat it as a successful local logout.
+      const response = await this.api.post('/auth/logout', {}, {
+        validateStatus: (status) => status < 500,
+      });
+
+      if (response?.status === 401 || response?.status === 403) {
+        console.warn('⚠️  [API] Logout returned unauthorized; continuing with local logout.');
+      }
     } catch (error: any) {
       // Log but don't fail logout - user should be able to logout even if API fails
       console.warn('⚠️  [API] Logout API request failed:', error?.message);

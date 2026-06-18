@@ -16,6 +16,7 @@ import {
   Animated,
   BackHandler,
   Platform,
+  Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -118,7 +119,7 @@ export default function DriverHomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, isAuthenticated, logout } = useAuth();
-  const { currentLocation } = useLocation();
+  const { currentLocation, hasLocationPermission, requestLocationPermission } = useLocation();
   const { theme, mode, toggleTheme } = useTheme();
   const { unreadCount, resetUnreadCount, incrementUnreadCount } = useNotificationBadge();
   
@@ -144,6 +145,8 @@ export default function DriverHomeScreen() {
   const [remittanceModalVisible, setRemittanceModalVisible] = useState(false);
   const [remittanceModalAmount, setRemittanceModalAmount] = useState(0);
   const [driverStats, setDriverStats] = useState({ completedTrips: 0, averageRating: 0 });
+  const [locationPermissionVisible, setLocationPermissionVisible] = useState(false);
+  const [checkingLocationPermission, setCheckingLocationPermission] = useState(false);
   const { startTour } = useGuidedTour();
   const hasCheckedDriverTourRef = useRef(false);
 
@@ -231,6 +234,31 @@ export default function DriverHomeScreen() {
     const timer = setInterval(() => setCountdownNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    const ensureLocationEnabled = async () => {
+      if (!isAuthenticated) return;
+      try {
+        setCheckingLocationPermission(true);
+        const granted = await hasLocationPermission();
+        if (!granted) {
+          setLocationPermissionVisible(true);
+          const requested = await requestLocationPermission();
+          if (!requested) return;
+        }
+        if (!currentLocation) {
+          await requestLocationPermission();
+        }
+      } catch (error) {
+        console.warn('[DRIVER-HOME] Location permission check failed:', error);
+        setLocationPermissionVisible(true);
+      } finally {
+        setCheckingLocationPermission(false);
+      }
+    };
+
+    ensureLocationEnabled().catch(() => undefined);
+  }, [isAuthenticated, currentLocation, hasLocationPermission, requestLocationPermission]);
 
   const loadDashboard = async () => {
     if (!isMountedRef.current || isLoadingRef.current) return;
@@ -762,6 +790,41 @@ export default function DriverHomeScreen() {
         </ScrollView>
       )}
 
+      <Modal
+        transparent
+        visible={locationPermissionVisible}
+        animationType="fade"
+        onRequestClose={() => setLocationPermissionVisible(false)}
+      >
+        <View style={styles.permissionOverlay}>
+          <View style={[styles.permissionCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+            <MaterialCommunityIcons name="crosshairs-gps" size={32} color={BRAND.primary} />
+            <Text style={[styles.permissionTitle, { color: theme.colors.textPrimary }]}>Turn on location</Text>
+            <Text style={[styles.permissionText, { color: theme.colors.textSecondary }]}>
+              Driver mode needs location access to receive rides, keep your status accurate, and update tracking while the app is open.
+            </Text>
+            <View style={styles.permissionActions}>
+              <TouchableOpacity
+                onPress={async () => {
+                  const granted = await requestLocationPermission().catch(() => false);
+                  if (granted) setLocationPermissionVisible(false);
+                }}
+                disabled={checkingLocationPermission}
+                style={[styles.permissionButton, { backgroundColor: BRAND.primary, opacity: checkingLocationPermission ? 0.7 : 1 }]}
+              >
+                <Text style={styles.permissionButtonText}>Enable</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => Linking.openSettings().catch(() => {})}
+                style={[styles.permissionButton, { backgroundColor: theme.colors.inputBackground, borderColor: theme.colors.border, borderWidth: 1 }]}
+              >
+                <Text style={[styles.permissionButtonText, { color: theme.colors.textPrimary }]}>Open Settings</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <SupportFloatingWidget route="/driver/help-and-support" tourId="driver-support" />
 
       <Modal
@@ -952,6 +1015,13 @@ const styles = StyleSheet.create({
     color: '#000',
     fontWeight: '900',
   },
+  permissionOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.68)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  permissionCard: { width: '100%', maxWidth: 420, borderRadius: 24, padding: 24, borderWidth: 1, alignItems: 'center', gap: 12 },
+  permissionTitle: { fontSize: 20, fontWeight: '800', textAlign: 'center' },
+  permissionText: { fontSize: 14, lineHeight: 20, textAlign: 'center' },
+  permissionActions: { width: '100%', gap: 10, marginTop: 4 },
+  permissionButton: { borderRadius: 16, paddingVertical: 14, alignItems: 'center' },
+  permissionButtonText: { fontSize: 14, fontWeight: '800' },
 });
 
 const mapDarkStyle = [

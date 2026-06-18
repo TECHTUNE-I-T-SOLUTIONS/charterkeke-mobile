@@ -1,0 +1,14 @@
+<resources>
+  <string name="app_name">Charter Keke</string>
+  <string name="widget_title">Charter Keke</string>
+  <string name="widget_subtitle">Quick rider and driver actions</string>
+  <string name="widget_primary_action">Book Ride</string>
+  <string name="widget_secondary_action">Available Rides</string>
+  <string name="shortcut_book_now">Book now</string>
+  <string name="shortcut_available_rides">Available rides</string>
+  <string name="shortcut_recent_rides">Recent rides</string>
+  <string name="shortcut_support">Support</string>
+  <string name="expo_splash_screen_resize_mode" translatable="false">contain</string>
+  <string name="expo_splash_screen_status_bar_translucent" translatable="false">false</string>
+  <string name="expo_system_ui_user_interface_style" translatable="false">automatic</string>
+</resources>

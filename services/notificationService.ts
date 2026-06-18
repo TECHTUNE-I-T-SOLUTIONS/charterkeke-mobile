@@ -51,9 +51,32 @@ const cleanRoute = (route?: any) => {
   const trimmed = route.trim();
   if (/^https?:\/\//i.test(trimmed)) {
     const match = trimmed.match(/^https?:\/\/[^/]+(\/[^#]*)?/i);
-    return match?.[1] || null;
+    const path = match?.[1] || null;
+    if (!path) return null;
+    return path.startsWith('/rider/') || path.startsWith('/driver/') ? path : null;
   }
-  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  const path = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  if (path.startsWith('/admin/') || path.startsWith('/auth/') || path.startsWith('/api/')) return null;
+  return path.startsWith('/rider/') || path.startsWith('/driver/') ? path : null;
+};
+
+const recordCampaignOpen = async (data: any) => {
+  const payload = normalizeNotificationPayload(data);
+  const campaignId = payload?.campaignId || payload?.campaign_id;
+
+  if (!campaignId) {
+    return;
+  }
+
+  try {
+    await apiService.post('/mobile-push/open', {
+      campaignId,
+      notificationId: payload?.notificationId || payload?.notification_id || null,
+      recipientUserId: payload?.recipientUserId || payload?.recipient_user_id || payload?.userId || null,
+    });
+  } catch (error) {
+    console.log('Failed to record mobile push open:', error);
+  }
 };
 
 export const resolveNotificationRoute = (data: any, userRole?: 'driver' | 'rider' | string) => {
@@ -102,13 +125,17 @@ export const resolveNotificationRoute = (data: any, userRole?: 'driver' | 'rider
         ? rideId ? `/driver/ride-details?rideId=${rideId}` : '/driver/rides'
         : rideId ? `/rider/ride-details?rideId=${rideId}` : '/rider/rides-history';
     case 'support_message':
+    case 'support_reply':
     case 'support_ticket':
+    case 'ticket_updated':
+    case 'ticket_reply':
       return ticketId ? `/${role === 'driver' ? 'driver' : 'rider'}/help-and-support?ticketId=${ticketId}` : `/${role === 'driver' ? 'driver' : 'rider'}/help-and-support`;
     case 'message':
     case 'chat_message':
       return `/${role === 'driver' ? 'driver' : 'rider'}/chat${rideId ? `?rideId=${rideId}` : chatId ? `?chatId=${chatId}` : ''}`;
     case 'remittance_due':
     case 'remittance_reminder':
+    case 'remittance_countdown':
     case 'payment_received':
     case 'payment':
       return '/driver/wallet';
@@ -134,6 +161,27 @@ export const configureNotifications = async () => {
         identifier: 'RIDE_REJECT_ACTION',
         buttonTitle: 'Reject',
         options: { opensAppToForeground: false, isDestructive: true },
+      },
+    ]);
+
+    await Notifications.setNotificationCategoryAsync('ride_update_action', [
+      {
+        identifier: 'OPEN_RIDE',
+        buttonTitle: 'Open Ride',
+        options: { opensAppToForeground: true },
+      },
+      {
+        identifier: 'VIEW_CHAT',
+        buttonTitle: 'Chat',
+        options: { opensAppToForeground: true },
+      },
+    ]);
+
+    await Notifications.setNotificationCategoryAsync('support_action', [
+      {
+        identifier: 'OPEN_SUPPORT',
+        buttonTitle: 'Open Support',
+        options: { opensAppToForeground: true },
       },
     ]);
 
@@ -491,6 +539,8 @@ const handleNotificationResponse = async (response: Notifications.NotificationRe
   const data = notification.request.content.data;
   const actionId = response.actionIdentifier;
 
+  void recordCampaignOpen(data);
+
   if (actionId === 'RIDE_ACCEPT_ACTION' && data.rideId) {
     try {
       await apiService.post('/driver/accept-ride', { rideId: data.rideId });
@@ -510,6 +560,23 @@ const handleNotificationResponse = async (response: Notifications.NotificationRe
     } catch (error) {
       console.error('❌ [NOTIFICATIONS] Failed to reject ride from notification action:', error);
     }
+    return;
+  }
+
+  if (actionId === 'OPEN_RIDE' && data.rideId) {
+    const role = String(data.userRole || data.role || '');
+    navigate(resolveNotificationRoute({ ...data, type: data.type || 'ride_update' }, role) || `/rider/active-ride?rideId=${data.rideId}`);
+    return;
+  }
+
+  if (actionId === 'VIEW_CHAT' && data.rideId) {
+    navigate(`/${data.userRole === 'driver' ? 'driver' : 'rider'}/chat?rideId=${data.rideId}`);
+    return;
+  }
+
+  if (actionId === 'OPEN_SUPPORT') {
+    const role = String(data.userRole || data.role || '');
+    navigate(resolveNotificationRoute({ ...data, type: 'support_ticket' }, role) || `/${role === 'driver' ? 'driver' : 'rider'}/help-and-support`);
     return;
   }
 

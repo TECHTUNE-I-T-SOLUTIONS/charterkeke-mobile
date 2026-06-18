@@ -204,7 +204,18 @@ class LocationService {
       const result = await Location.reverseGeocodeAsync(location);
       if (result.length > 0) {
         const addr = result[0];
-        return `${addr.street || ''} ${addr.city || ''} ${addr.region || ''}`.trim();
+        const parts = [
+          addr.name,
+          addr.street,
+          addr.district,
+          addr.city,
+          addr.region,
+          addr.postalCode,
+          addr.country,
+        ]
+          .map((part) => String(part || '').trim())
+          .filter(Boolean);
+        return parts.join(', ');
       }
       return null;
     } catch (error) {

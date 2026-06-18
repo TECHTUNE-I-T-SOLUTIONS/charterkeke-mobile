@@ -1,6 +1,6 @@
 {
-  "version": "2.1.13",
-  "buildNumber": 225,
+  "version": "2.1.14",
+  "buildNumber": 226,
   "releaseDate": "2026-06-04",
   "changelog": "Adds Android quick actions, launcher widget scaffold, deep-link prefill, and support AI memory improvements."
 }

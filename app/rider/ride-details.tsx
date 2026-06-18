@@ -127,8 +127,10 @@ export default function RideDetailsScreen() {
   const [showFullMap, setShowFullMap] = useState(false);
   const [liveRiderLocation, setLiveRiderLocation] = useState<[number, number] | null>(null);
   const [liveDriverLocation, setLiveDriverLocation] = useState<[number, number] | null>(null);
+  const [liveDriverEtaMin, setLiveDriverEtaMin] = useState(0);
   const [receiptModalMode, setReceiptModalMode] = useState<'share' | 'download' | null>(null);
   const receiptRef = useRef<View>(null);
+  const etaRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const parseMapCoordinate = (value: any): [number, number] | null => {
     if (Array.isArray(value) && value.length === 2 && Number.isFinite(Number(value[0])) && Number.isFinite(Number(value[1]))) {
       return [Number(value[0]), Number(value[1])];
@@ -321,6 +323,46 @@ export default function RideDetailsScreen() {
     };
   }, [rideDetails?.id, rideDetails?.status, rideIdParam]);
 
+  useEffect(() => {
+    const status = String(rideDetails?.status || '').toLowerCase();
+    const shouldRefreshEta = !!rideDetails?.id && !!pickupCoords && (status === 'accepted' || status === 'in_progress');
+    if (!shouldRefreshEta) {
+      setLiveDriverEtaMin(0);
+      if (etaRefreshTimer.current) clearTimeout(etaRefreshTimer.current);
+      return;
+    }
+
+    const driverOrigin = liveDriverLocation;
+    const target = status === 'in_progress' && destCoords
+      ? [destCoords.longitude, destCoords.latitude] as [number, number]
+      : [pickupCoords.longitude, pickupCoords.latitude] as [number, number];
+
+    if (!driverOrigin) {
+      return;
+    }
+
+    if (etaRefreshTimer.current) clearTimeout(etaRefreshTimer.current);
+    etaRefreshTimer.current = setTimeout(async () => {
+      try {
+        const route = await fetchMapboxRoute(
+          [driverOrigin[0], driverOrigin[1]],
+          [target[0], target[1]],
+          { profile: 'driving-traffic' }
+        );
+        const eta = route ? Math.max(1, Math.round(route.durationMin)) : 0;
+        if (eta > 0) {
+          setLiveDriverEtaMin(eta);
+        }
+      } catch (error) {
+        console.log('Failed to refresh rider live ETA:', error);
+      }
+    }, 600);
+
+    return () => {
+      if (etaRefreshTimer.current) clearTimeout(etaRefreshTimer.current);
+    };
+  }, [rideDetails?.id, rideDetails?.status, pickupCoords?.latitude, pickupCoords?.longitude, destCoords?.latitude, destCoords?.longitude, liveDriverLocation?.[0], liveDriverLocation?.[1]]);
+
   const routeFitCoordinates = routeCoordinates || (pickupCoords && destCoords
     ? [
         [pickupCoords.longitude, pickupCoords.latitude] as [number, number],
@@ -347,7 +389,7 @@ export default function RideDetailsScreen() {
   const storedDistanceKm = Number(rideDetails?.distance_km || 0);
   const storedEtaMin = Number(rideDetails?.eta_minutes || rideDetails?.duration_minutes || 0);
   const displayDistanceKm = shouldUseLiveRoute ? (routeDistanceKm || storedDistanceKm || 0) : (storedDistanceKm || routeDistanceKm || 0);
-  const displayEtaMin = shouldUseLiveRoute ? (routeDurationMin || storedEtaMin || 0) : (storedEtaMin || routeDurationMin || 0);
+  const displayEtaMin = shouldUseLiveRoute ? (liveDriverEtaMin || routeDurationMin || storedEtaMin || 0) : (storedEtaMin || routeDurationMin || 0);
   const displayDurationMin = rideDetails?.duration_minutes || routeDurationMin || 0;
 
   const handleCallDriver = async () => {

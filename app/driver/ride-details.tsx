@@ -327,22 +327,14 @@ export default function RideDetailsScreen() {
     }
   };
 
-   if (!ride) {
-      return (
-         <View style={[styles.container, { backgroundColor: theme.colors.background }]}> 
-            <ListScreenSkeleton itemCount={3} />
-         </View>
-      );
-   }
-
   const pickupCoordinate =
     extractCoordinate(ride, ['pickup_latitude', 'pickupLat', 'pickup_lat'], ['pickup_longitude', 'pickupLng', 'pickup_lon']) ||
-    parseDescriptionCoordinate(ride.pickup_description) ||
+    parseDescriptionCoordinate(ride?.pickup_description) ||
     routeCoordinates?.[0] ||
     [3.3792, 6.5244];
   const dropoffCoordinate =
     extractCoordinate(ride, ['dropoff_latitude', 'dropoffLat', 'dropoff_lat'], ['dropoff_longitude', 'dropoffLng', 'dropoff_lon']) ||
-    parseDescriptionCoordinate(ride.destination_description) ||
+    parseDescriptionCoordinate(ride?.destination_description) ||
     routeCoordinates?.[routeCoordinates.length - 1] ||
     [3.4292, 6.5844];
   const driverCoordinate =
@@ -358,17 +350,17 @@ export default function RideDetailsScreen() {
     ...(riderCoordinate ? [riderCoordinate] : []),
     ...(driverCoordinate ? [driverCoordinate] : []),
   ];
-  const rideStatus = String(ride.status || '').toLowerCase();
+  const rideStatus = String(ride?.status || '').toLowerCase();
   const shouldShowEta = rideStatus === 'pending' || rideStatus === 'dispatched' || rideStatus === 'accepted';
   const shouldUseLiveRoute = rideStatus === 'accepted' || rideStatus === 'in_progress';
-  const storedDistanceKm = Number(ride.distance_km || 0);
-  const storedEtaMin = Number(ride.eta_minutes || ride.duration_minutes || 0);
+  const storedDistanceKm = Number(ride?.distance_km || 0);
+  const storedEtaMin = Number(ride?.eta_minutes || ride?.duration_minutes || 0);
   const displayDistanceKm = shouldUseLiveRoute ? (routeDistanceKm || storedDistanceKm || 0) : (storedDistanceKm || routeDistanceKm || 0);
   const displayEtaMin = shouldUseLiveRoute ? (routeDurationMin || storedEtaMin || 0) : (storedEtaMin || routeDurationMin || 0);
-  const displayDurationMin = Number(ride.duration_minutes || 0) || routeDurationMin;
-  const fareAmount = Number(ride.fare_amount || ride.fare || 0);
-  const platformFee = Number(ride.platform_fee ?? fareAmount * PLATFORM_FEE_PERCENTAGE);
-  const driverEarnings = Number(ride.driver_earnings ?? fareAmount - platformFee);
+  const displayDurationMin = Number(ride?.duration_minutes || 0) || routeDurationMin;
+  const fareAmount = Number(ride?.fare_amount || ride?.fare || 0);
+  const platformFee = Number(ride?.platform_fee ?? fareAmount * PLATFORM_FEE_PERCENTAGE);
+  const driverEarnings = Number(ride?.driver_earnings ?? fareAmount - platformFee);
   const isAwaitingAcceptance = rideStatus === 'pending' || rideStatus === 'dispatched';
   const isCompleted = rideStatus === 'completed';
   const nextTripStatus = rideStatus === 'accepted' ? 'in_progress' : 'completed';
@@ -462,6 +454,14 @@ export default function RideDetailsScreen() {
       showError('Receipt unavailable', error?.message || 'Could not generate this ride sheet.');
     }
   };
+
+  if (!ride) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <ListScreenSkeleton itemCount={3} />
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>

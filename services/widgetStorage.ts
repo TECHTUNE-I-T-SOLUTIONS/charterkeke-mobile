@@ -4,6 +4,7 @@ const WidgetStorageModule = NativeModules.WidgetStorage as
   | {
       setItem?: (key: string, value: string) => Promise<boolean>;
       getItem?: (key: string) => Promise<string | null>;
+      refreshWidget?: () => Promise<boolean>;
     }
   | undefined;
 
@@ -13,6 +14,11 @@ export const WidgetStorage = {
   async setItem(key: string, value: unknown) {
     if (!isAvailable || !WidgetStorageModule?.setItem) return false;
     await WidgetStorageModule.setItem(key, JSON.stringify(value));
+    return true;
+  },
+  async refresh() {
+    if (!isAvailable || !WidgetStorageModule?.refreshWidget) return false;
+    await WidgetStorageModule.refreshWidget();
     return true;
   },
   async getItem<T = any>(key: string): Promise<T | null> {
