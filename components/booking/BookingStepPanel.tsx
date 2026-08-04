@@ -1,7 +1,9 @@
 import React from 'react';
-import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, Text, TouchableOpacity, View, Dimensions } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { BRAND } from '@/utils/colors';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 type StepPanelProps = {
   theme: any;
@@ -14,6 +16,7 @@ type StepPanelProps = {
   onBack: () => void;
   headerRight?: React.ReactNode;
   children: React.ReactNode;
+  keyboardHeight?: number;
 };
 
 export function BookingStepPanel({
@@ -27,7 +30,13 @@ export function BookingStepPanel({
   onBack,
   headerRight,
   children,
+  keyboardHeight = 0,
 }: StepPanelProps) {
+  // Calculate a safe max height that considers top offset, keyboard, and bottom insets
+  const topOffset = insets.top + 58;
+  const bottomSpace = keyboardHeight > 0 ? keyboardHeight + 20 : insets.bottom + 20;
+  const availableHeight = SCREEN_HEIGHT - topOffset - bottomSpace;
+
   return (
     <View
       style={[
@@ -36,9 +45,9 @@ export function BookingStepPanel({
           backgroundColor: theme.colors.surface,
           left: 12,
           right: 12,
-          top: insets.top + 58,
+          top: topOffset,
           bottom: undefined,
-          maxHeight: '43%',
+          maxHeight: Math.max(availableHeight, SCREEN_HEIGHT * 0.43), // Keep original as minimum but allow growth up to available space
           borderRadius: 26,
           paddingTop: 8,
           paddingBottom: 8,

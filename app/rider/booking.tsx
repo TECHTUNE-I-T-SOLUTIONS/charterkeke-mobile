@@ -49,6 +49,7 @@ import { BookingFareSummary } from '@/components/booking/BookingFareSummary';
 import { BookingReviewCard } from '@/components/booking/BookingReviewCard';
 import { BookingSearchResultsList } from '@/components/booking/BookingSearchResultsList';
 import { WidgetStorage, WIDGET_STORAGE_KEYS } from '@/services/widgetStorage';
+import { getWeatherImpact, WeatherImpact } from '@/services/weatherService';
 import {
   validateLocationInOperationalArea,
   getNearbyOperationalAreas,
@@ -556,10 +557,11 @@ export default function BookingScreen() {
   const pickupGoogleSessionToken = useRef(`pickup-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const dropoffGoogleSessionToken = useRef(`dropoff-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const [locationWarningVisible, setLocationWarningVisible] = useState(false);
-  const [recentLocations, setRecentLocations] = useState<RecentLocation[]>([]);
-  const [recentRoutes, setRecentRoutes] = useState<RecentRoute[]>([]);
-  const [pricingConfig, setPricingConfig] = useState<BookingPricingConfig>(BOOKING_PRICING);
-  const [estimatedDistance, setEstimatedDistance] = useState(0);
+    const [recentLocations, setRecentLocations] = useState<RecentLocation[]>([]);
+    const [recentRoutes, setRecentRoutes] = useState<RecentRoute[]>([]);
+    const [pricingConfig, setPricingConfig] = useState<BookingPricingConfig>(BOOKING_PRICING);
+    const [weatherImpact, setWeatherImpact] = useState<WeatherImpact | null>(null);
+    const [estimatedDistance, setEstimatedDistance] = useState(0);
   const [estimatedDuration, setEstimatedDuration] = useState(0);
   const [routeCoordinates, setRouteCoordinates] = useState<[number, number][] | undefined>(undefined);
   const [routeLoading, setRouteLoading] = useState(false);
@@ -601,8 +603,8 @@ export default function BookingScreen() {
       .catch((error) => console.warn('[Booking] Pricing config load failed:', error));
   }, []);
 
-  useEffect(() => {
-    const maybeShowBookingTour = async () => {
+    useEffect(() => {
+      const maybeShowBookingTour = async () => {
       const seen = await AsyncStorage.getItem('@charter_keke_tour_rider_booking_seen');
       if (seen) return;
       startTour([
@@ -624,9 +626,31 @@ export default function BookingScreen() {
       ], () => {
         AsyncStorage.setItem('@charter_keke_tour_rider_booking_seen', 'true').catch(() => {});
       });
-    };
-    maybeShowBookingTour().catch(() => {});
-  }, [startTour]);
+      };
+      maybeShowBookingTour().catch(() => {});
+    }, [startTour]);
+
+    useEffect(() => {
+      let cancelled = false;
+
+      const loadWeather = async () => {
+        if (!pickupLocation) {
+          setWeatherImpact(null);
+          return;
+        }
+
+        const impact = await getWeatherImpact(pickupLocation.lat, pickupLocation.lng);
+        if (!cancelled) {
+          setWeatherImpact(impact);
+        }
+      };
+
+      loadWeather().catch(() => setWeatherImpact(null));
+
+      return () => {
+        cancelled = true;
+      };
+    }, [pickupLocation?.lat, pickupLocation?.lng]);
 
   useEffect(() => {
     const pickup = typeof params.pickup === 'string' ? params.pickup.trim() : '';
@@ -1410,20 +1434,23 @@ export default function BookingScreen() {
     }
 
     setBookingConfirmationVisible(false);
-    setIsBooking(true);
+      setIsBooking(true);
 
-    try {
-      const normalizedDistance = roundDistanceKm(estimatedDistance);
-      const totalFare = calculateRideFare(normalizedDistance, pricingConfig);
-      const response = await createRideBooking({
-        pickup: pickupLocation,
-        dropoff: dropoffLocation,
-        distanceKm: normalizedDistance,
-        durationMinutes: Number.isFinite(estimatedDuration) ? estimatedDuration : 0,
-        pickupTime: pendingPickupTime,
-        fare: totalFare,
-        pricingConfig,
-      });
+      try {
+        const normalizedDistance = roundDistanceKm(estimatedDistance);
+        const baseFare = calculateRideFare(normalizedDistance, pricingConfig);
+        const weatherSurcharge = Math.round(baseFare * (weatherImpact?.surchargeRate || 0));
+        const totalFare = baseFare + weatherSurcharge;
+        const response = await createRideBooking({
+          pickup: pickupLocation,
+          dropoff: dropoffLocation,
+          distanceKm: normalizedDistance,
+          durationMinutes: Number.isFinite(estimatedDuration) ? estimatedDuration : 0,
+          pickupTime: pendingPickupTime,
+          fare: totalFare,
+          pricingConfig,
+          weatherImpact: weatherImpact ? { ...weatherImpact } : null,
+        });
       const rideId = response?.ride?.id || null;
 
       const routeToSave: RecentRoute = {
@@ -1516,9 +1543,19 @@ export default function BookingScreen() {
   }, [currentLocation, pickupLocation, dropoffLocation]);
 
   const bookingDistanceKm = roundDistanceKm(estimatedDistance);
-  const bookingTotalFare = calculateRideFare(bookingDistanceKm, pricingConfig);
+  const bookingBaseFare = calculateRideFare(bookingDistanceKm, pricingConfig);
+  const bookingWeatherSurcharge = Math.round(bookingBaseFare * (weatherImpact?.surchargeRate || 0));
+  const bookingTotalFare = bookingBaseFare + bookingWeatherSurcharge;
   const bookingPlatformFee = Math.round(bookingTotalFare * pricingConfig.platformFeeRate);
   const bookingEstimatedDriverFare = Math.max(0, bookingTotalFare - bookingPlatformFee);
+  const trafficLabel =
+    estimatedDistance > 0 && estimatedDuration > 0
+      ? estimatedDuration / Math.max(1, estimatedDistance) > pricingConfig.etaPerKm.heavyTraffic
+        ? 'Heavy traffic'
+        : estimatedDuration / Math.max(1, estimatedDistance) > pricingConfig.etaPerKm.normalTraffic
+          ? 'Normal traffic'
+          : 'Light traffic'
+      : 'Traffic-aware route';
   const isLocationSearchExpanded =
     keyboardHeight > 0 &&
     (bookingStep === 'pickup' || bookingStep === 'destination') &&
@@ -1558,6 +1595,7 @@ export default function BookingScreen() {
         stepLabel={`Step ${bookingStep === 'pickup' ? '1' : bookingStep === 'destination' ? '2' : bookingStep === 'time' ? '3' : '4'} of 4`}
         showBack={bookingStep !== 'pickup'}
         onBack={goBackStep}
+        keyboardHeight={keyboardHeight}
       >
         {isPickupStep || isDestinationStep ? (
           <>
@@ -1625,17 +1663,22 @@ export default function BookingScreen() {
 
         {isReviewStep ? (
           <>
-            <BookingFareSummary
-              theme={theme}
-              styles={styles}
-              isLight={isLight}
-              routeLoading={routeLoading}
-              estimatedDistance={roundDistanceKm(estimatedDistance)}
-              estimatedDuration={estimatedDuration}
-              bookingTotalFare={bookingTotalFare}
-              bookingPlatformFee={bookingPlatformFee}
-              bookingEstimatedDriverFare={bookingEstimatedDriverFare}
-            />
+              <BookingFareSummary
+                theme={theme}
+                styles={styles}
+                isLight={isLight}
+                routeLoading={routeLoading}
+                estimatedDistance={roundDistanceKm(estimatedDistance)}
+                estimatedDuration={estimatedDuration}
+                bookingTotalFare={bookingTotalFare}
+                baseFare={bookingBaseFare}
+                weatherLabel={weatherImpact?.label || 'Weather unavailable'}
+                weatherDetail={weatherImpact?.detail || 'We could not read live weather for this route.'}
+                weatherSurcharge={bookingWeatherSurcharge}
+                trafficLabel={trafficLabel}
+                bookingPlatformFee={bookingPlatformFee}
+                bookingEstimatedDriverFare={bookingEstimatedDriverFare}
+              />
             <TourTarget id="booking-confirm">
               <BookingReviewCard
                 theme={theme}

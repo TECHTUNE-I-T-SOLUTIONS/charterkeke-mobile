@@ -476,6 +476,15 @@ class APIService {
     });
   }
 
+  /**
+   * Notify the rider that the driver has arrived at the pickup point.
+   * This is a notification-only event — it does NOT change the ride status
+   * (that stays "accepted" until the driver starts the trip via updateRideStatus).
+   */
+  async notifyArrival(rideId: string): Promise<any> {
+    return this.post('/driver/notify-arrival', { rideId });
+  }
+
   async verifyDriverSettlementPayment(reference: string): Promise<any> {
     return this.post('/driver/payment-callback', { reference });
   }
@@ -520,6 +529,31 @@ class APIService {
   async getRide(rideId: string): Promise<any> {
     return this.get(`/rides/${rideId}`);
   }
+
+  /**
+   * Rider-side: fetch the rider's active rides (pending/dispatched/accepted/in_progress).
+   * Uses Bearer auth so it works on-device (relative fetch does NOT work on native).
+   */
+  async getRiderActiveRides(): Promise<any> {
+    try {
+      return await this.get('/user/active-rides');
+    } catch (error: any) {
+      console.warn('⚠️  [API] Failed to fetch rider active rides:', error?.message);
+      return { rides: [] };
+    }
+  }
+
+  /**
+   * Rider-side: fetch a single active ride by id. There is no dedicated
+   * /user/active-rides/:id endpoint, so we fetch the list and filter client-side.
+   */
+  async getRiderActiveRide(rideId: string): Promise<any> {
+    const data = await this.getRiderActiveRides();
+    const rides = data?.rides || [];
+    const match = rideId ? rides.find((r: any) => String(r.id) === String(rideId)) : rides[0];
+    return match || null;
+  }
+
 
   async getChatDriverProfile(driverId: string): Promise<any> {
     return this.get(`/chat/driver/${driverId}`);

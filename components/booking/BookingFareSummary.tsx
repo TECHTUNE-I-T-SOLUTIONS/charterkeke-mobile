@@ -11,6 +11,11 @@ type Props = {
   estimatedDistance: number;
   estimatedDuration: number;
   bookingTotalFare: number;
+  baseFare: number;
+  weatherLabel: string;
+  weatherDetail: string;
+  weatherSurcharge: number;
+  trafficLabel: string;
   bookingPlatformFee: number;
   bookingEstimatedDriverFare: number;
 };
@@ -23,6 +28,11 @@ export function BookingFareSummary({
   estimatedDistance,
   estimatedDuration,
   bookingTotalFare,
+  baseFare,
+  weatherLabel,
+  weatherDetail,
+  weatherSurcharge,
+  trafficLabel,
   bookingPlatformFee,
   bookingEstimatedDriverFare,
 }: Props) {
@@ -52,6 +62,21 @@ export function BookingFareSummary({
         <Text style={[styles.simpleFareMetaText, { color: theme.colors.textPrimary }]}>
           Kindly pay the driver directly. Arrival time may vary with traffic.
         </Text>
+        <View style={styles.simpleFareRow}>
+          <Text style={[styles.simpleFareMetaText, { color: theme.colors.textSecondary }]}>Base fare</Text>
+          <Text style={[styles.simpleFareMetaText, { color: theme.colors.textPrimary }]}>N{baseFare.toLocaleString()}</Text>
+        </View>
+        <View style={styles.simpleFareRow}>
+          <Text style={[styles.simpleFareMetaText, { color: theme.colors.textSecondary }]}>{weatherLabel}</Text>
+          <Text style={[styles.simpleFareMetaText, { color: weatherSurcharge > 0 ? '#E88B00' : theme.colors.textPrimary }]}>
+            {weatherSurcharge > 0 ? `+N${weatherSurcharge.toLocaleString()}` : 'N0'}
+          </Text>
+        </View>
+        <View style={styles.simpleFareRow}>
+          <Text style={[styles.simpleFareMetaText, { color: theme.colors.textSecondary }]}>Traffic</Text>
+          <Text style={[styles.simpleFareMetaText, { color: theme.colors.textPrimary }]}>{trafficLabel}</Text>
+        </View>
+        <Text style={[styles.simpleFareMetaText, { color: theme.colors.textSecondary }]}>{weatherDetail}</Text>
       </View>
     </View>
   );

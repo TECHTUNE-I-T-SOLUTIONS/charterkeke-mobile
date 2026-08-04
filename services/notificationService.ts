@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { apiService } from '@services/api';
 import { navigate } from '@services/navigationService';
+import { WidgetStorage, WIDGET_STORAGE_KEYS } from '@services/widgetStorage';
 
 const IS_DEV = process.env.EXPO_PUBLIC_DEVELOPMENT_MODE === 'true';
 const PENDING_PUSH_KEY = 'pending_push_subscription';
@@ -31,6 +32,136 @@ const parseMaybeJson = (value: any) => {
     return JSON.parse(value);
   } catch {
     return value;
+  }
+};
+
+const RECENT_NOTIFICATION_LIMIT = 3;
+
+/**
+ * Android notification channels.
+ * Android 8+ (API 26+) REQUIRES a channel for a heads-up banner + sound to show.
+ * Without this, remote pushes land silently in the tray. These IDs are referenced
+ * by the backend Expo push payload via `channelId`.
+ */
+export const ANDROID_CHANNELS = {
+  default: 'default',
+  rideRequests: 'ride-requests',
+  rideUpdates: 'ride-updates',
+  chat: 'chat',
+} as const;
+
+/**
+ * Map a notification `type` to the correct Android channel id.
+ * Used by the app for local notifications; the backend sends the same ids.
+ */
+export const channelIdForType = (type?: string): string => {
+  switch (String(type || '').toLowerCase()) {
+    case 'ride_request':
+      return ANDROID_CHANNELS.rideRequests;
+    case 'ride_accepted':
+    case 'ride_update':
+    case 'driver_arrived':
+    case 'trip_started':
+    case 'ride_completed':
+    case 'ride_cancelled':
+      return ANDROID_CHANNELS.rideUpdates;
+    case 'message':
+    case 'chat_message':
+    case 'support_message':
+      return ANDROID_CHANNELS.chat;
+    default:
+      return ANDROID_CHANNELS.default;
+  }
+};
+
+/**
+ * Create all Android notification channels. Safe to call repeatedly (idempotent).
+ */
+export const setupAndroidChannels = async () => {
+  if (Platform.OS !== 'android') return;
+  try {
+    await Notifications.setNotificationChannelAsync(ANDROID_CHANNELS.default, {
+      name: 'General',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#1a1a1a',
+      sound: 'default',
+    });
+
+    // High-urgency channel for drivers receiving new ride requests.
+    await Notifications.setNotificationChannelAsync(ANDROID_CHANNELS.rideRequests, {
+      name: 'Ride Requests',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 400, 250, 400],
+      lightColor: '#00C853',
+      sound: 'default',
+      bypassDnd: false,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      enableVibrate: true,
+    });
+
+    // Ride lifecycle updates for riders (accepted / arrived / started / completed).
+    await Notifications.setNotificationChannelAsync(ANDROID_CHANNELS.rideUpdates, {
+      name: 'Ride Updates',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#1a1a1a',
+      sound: 'default',
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    });
+
+    await Notifications.setNotificationChannelAsync(ANDROID_CHANNELS.chat, {
+      name: 'Messages',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 200, 150, 200],
+      sound: 'default',
+    });
+
+    console.log('✅ [NOTIFICATIONS] Android notification channels configured');
+  } catch (error) {
+    console.error('❌ [NOTIFICATIONS] Failed to configure Android channels:', error);
+  }
+};
+
+/**
+ * Resolve the EAS projectId from every source Expo may expose it on.
+ * A missing projectId is a common cause of getExpoPushTokenAsync failing in
+ * standalone builds, so we centralize the lookup.
+ */
+export const getExpoProjectId = (): string | undefined => {
+  return (
+    process.env.EXPO_PUBLIC_PROJECT_ID ||
+    (Constants as any)?.expoConfig?.extra?.eas?.projectId ||
+    (Constants as any)?.easConfig?.projectId ||
+    (Constants as any)?.expoConfig?.updates?.url?.match?.(/\/([0-9a-f-]{36})$/i)?.[1] ||
+    undefined
+  );
+};
+
+const toWidgetNotificationItem = (notificationOrData: any = {}) => {
+  const payload = normalizeNotificationPayload(notificationOrData);
+  return {
+    id: String(payload?.notificationId || payload?.id || Date.now()),
+    title: String(payload?.title || payload?.notification_title || 'Notification'),
+    body: String(payload?.body || payload?.message || payload?.notification_body || ''),
+    route: String(payload?.deeplink || payload?.deep_link || payload?.action_url || payload?.actionUrl || payload?.link || payload?.url || ''),
+    type: String(payload?.type || payload?.notification_type || ''),
+    createdAt: new Date().toISOString(),
+  };
+};
+
+const syncNotificationWidget = async (notificationOrData: any = {}) => {
+  try {
+    const current = await WidgetStorage.getItem<any[]>(WIDGET_STORAGE_KEYS.notifications);
+    const nextItem = toWidgetNotificationItem(notificationOrData);
+    const next = [nextItem, ...(Array.isArray(current) ? current : [])]
+      .filter((item, index, array) => index === array.findIndex((candidate) => candidate.id === item.id))
+      .slice(0, RECENT_NOTIFICATION_LIMIT);
+
+    await WidgetStorage.setItem(WIDGET_STORAGE_KEYS.notifications, next);
+    await WidgetStorage.refresh();
+  } catch (error) {
+    console.log('Failed to sync notification widget:', error);
   }
 };
 
@@ -151,6 +282,9 @@ export const resolveNotificationRoute = (data: any, userRole?: 'driver' | 'rider
  */
 export const configureNotifications = async () => {
   try {
+    // Android channels MUST exist before any notification is shown (API 26+).
+    await setupAndroidChannels();
+
     await Notifications.setNotificationCategoryAsync('ride_request_action', [
       {
         identifier: 'RIDE_ACCEPT_ACTION',
@@ -205,6 +339,7 @@ export const configureNotifications = async () => {
       if (onIncrementUnread) {
         onIncrementUnread();
       }
+      void syncNotificationWidget(notification.request.content);
     });
 
     // Handle notification when user taps it
@@ -248,10 +383,10 @@ export const requestNotificationPermissions = async () => {
     // Step 2: Try to get a native device push token first on real builds.
     // Expo Go may still require Expo push tokens, so we fall back gracefully.
     try {
-      const projectId =
-        process.env.EXPO_PUBLIC_PROJECT_ID ||
-        (Constants as any)?.expoConfig?.extra?.eas?.projectId ||
-        (Constants as any)?.easConfig?.projectId;
+      const projectId = getExpoProjectId();
+      if (!projectId) {
+        console.warn('⚠️ [NOTIFICATIONS] No EAS projectId resolved — push token may fail. Check app.json extra.eas.projectId');
+      }
       const tokenValue = (await Notifications.getExpoPushTokenAsync(
         projectId ? { projectId } : undefined
       )).data;
@@ -349,6 +484,7 @@ export const sendWelcomeNotification = async () => {
       trigger: {
         type: 'time' as any,
         seconds: 2,
+        channelId: ANDROID_CHANNELS.default,
       },
     });
 
@@ -477,11 +613,8 @@ const scheduleTokenRetry = async (userId: string, attempt: number = 1) => {
   setTimeout(async () => {
     try {
       console.log(`🔄 [NOTIFICATIONS] Retry attempt ${attempt}/${MAX_RETRIES} to get real push token`);
-      
-      const projectId =
-        process.env.EXPO_PUBLIC_PROJECT_ID ||
-        (Constants as any)?.expoConfig?.extra?.eas?.projectId ||
-        (Constants as any)?.easConfig?.projectId;
+
+      const projectId = getExpoProjectId();
       const realToken = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
 
       if (realToken?.data && !realToken.data.startsWith('placeholder')) {
@@ -535,10 +668,11 @@ const scheduleTokenRetry = async (userId: string, attempt: number = 1) => {
  * Handle notification action (accept ride, decline, etc)
  */
 const handleNotificationResponse = async (response: Notifications.NotificationResponse) => {
-  const { notification } = response;
-  const data = notification.request.content.data;
-  const actionId = response.actionIdentifier;
+    const { notification } = response;
+    const data = notification.request.content.data;
+    const actionId = response.actionIdentifier;
 
+  void syncNotificationWidget(notification.request.content);
   void recordCampaignOpen(data);
 
   if (actionId === 'RIDE_ACCEPT_ACTION' && data.rideId) {
@@ -658,6 +792,7 @@ export const sendLocalNotification = async (
       trigger: {
         type: 'time' as any,
         seconds: 1,
+        channelId: channelIdForType(data?.type),
       },
     });
     console.log('✅ [NOTIFICATIONS] Local notification sent:', title);
@@ -717,10 +852,11 @@ export const clearPushSubscription = async () => {
 export const manuallyRetryPushToken = async (userId: string) => {
   try {
     console.log('🔄 [NOTIFICATIONS] Manual push token retry initiated');
-    
-    const realToken = await Notifications.getExpoPushTokenAsync({
-      projectId: process.env.EXPO_PUBLIC_PROJECT_ID,
-    });
+
+    const projectId = getExpoProjectId();
+    const realToken = await Notifications.getExpoPushTokenAsync(
+      projectId ? { projectId } : undefined
+    );
 
     if (!realToken?.data) {
       console.warn('⚠️ [NOTIFICATIONS] Token still unavailable');

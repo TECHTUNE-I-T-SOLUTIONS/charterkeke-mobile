@@ -19,6 +19,8 @@ import { useLocation } from '@/context/LocationContext';
 import { useTheme } from '@/context/ThemeContext';
 import { COLORS } from '@/utils/colors';
 import { fetchMapboxRoute } from '@/utils/mapboxDirections';
+import { apiService } from '@/services/api';
+import { supabaseService } from '@/services/supabase';
 
 const { width, height } = Dimensions.get('window');
 
@@ -71,35 +73,35 @@ export default function ActiveRideScreen() {
     fetchActiveRide();
   }, [rideId]);
 
+  const normalizeRide = (ride: any): ActiveRide => {
+    if (!ride) return ride;
+    // Backend joins the driver under `drivers` (drivers:driver_id). The UI reads
+    // `driver`, so normalize and flatten vehicle/plate fields for display.
+    const d = ride.drivers || ride.driver;
+    return {
+      ...ride,
+      driver: d
+        ? {
+            ...d,
+            vehicle_type: d.vehicle_type || ride.vehicle_type || 'Keke',
+            plate_number: d.plate_number || ride.plate_number,
+            average_rating: d.average_rating ?? d.users?.rating ?? 5,
+          }
+        : undefined,
+    };
+  };
+
   const fetchActiveRide = async () => {
     try {
       setLoading(true);
-      let res;
-      
-      // If rideId is provided via deep-link, fetch that specific ride
-      if (rideId) {
-        res = await fetch(`/api/user/active-rides/${rideId}`);
-      } else {
-        // Otherwise fetch the current active ride
-        res = await fetch('/api/user/active-rides');
-      }
-      
-      const data = await res.json();
-      
-      if (data.rides && data.rides.length > 0) {
-        setActiveRide(data.rides[0]);
-        // Simulate driver location for demo
-        setDriverLocation({
-          latitude: (currentLocation?.latitude || 6.5244) + Math.random() * 0.02,
-          longitude: (currentLocation?.longitude || 3.3792) + Math.random() * 0.02,
-        });
-      } else if (data.ride) {
-        // Handle single ride response
-        setActiveRide(data.ride);
-        setDriverLocation({
-          latitude: (currentLocation?.latitude || 6.5244) + Math.random() * 0.02,
-          longitude: (currentLocation?.longitude || 3.3792) + Math.random() * 0.02,
-        });
+      // Use apiService (Bearer auth) — relative fetch('/api/...') does NOT
+      // resolve on a native device.
+      const ride = rideId
+        ? await apiService.getRiderActiveRide(rideId)
+        : (await apiService.getRiderActiveRides())?.rides?.[0] || null;
+
+      if (ride) {
+        setActiveRide(normalizeRide(ride));
       }
     } catch (error) {
       console.error('Failed to fetch active ride:', error);
@@ -107,6 +109,69 @@ export default function ActiveRideScreen() {
       setLoading(false);
     }
   };
+
+  // Subscribe to the driver's REAL live location over Supabase Realtime.
+  // The driver broadcasts on channel `ride-location-${rideId}`; we listen and
+  // move the driver marker as updates arrive (replaces the old Math.random mock).
+  const resolvedRideId = activeRide?.id || rideId;
+  useEffect(() => {
+    if (!resolvedRideId) return;
+
+    let channel: any = null;
+    let active = true;
+
+    (async () => {
+      try {
+        channel = await supabaseService.subscribeToRideLocationUpdates(
+          resolvedRideId,
+          (payload: any) => {
+            if (!active || !payload) return;
+            // We only care about the driver's position on the rider screen.
+            if (payload.role && payload.role !== 'driver') return;
+            if (
+              typeof payload.latitude === 'number' &&
+              typeof payload.longitude === 'number'
+            ) {
+              setDriverLocation({
+                latitude: payload.latitude,
+                longitude: payload.longitude,
+              });
+            }
+          }
+        );
+      } catch (err) {
+        console.log('Failed to subscribe to driver location:', err);
+      }
+    })();
+
+    return () => {
+      active = false;
+      supabaseService.unsubscribeRideLocation(resolvedRideId).catch(() => {});
+    };
+  }, [resolvedRideId]);
+
+  // Poll ride status so the screen reflects driver arrival / trip start /
+  // completion even if a push is missed. Stops once the ride is terminal.
+  useEffect(() => {
+    if (!resolvedRideId) return;
+
+    const terminal = ['completed', 'cancelled'];
+    if (terminal.includes(String(activeRide?.status || '').toLowerCase())) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const fresh = await apiService.getRiderActiveRide(resolvedRideId);
+        if (fresh) {
+          const norm = normalizeRide(fresh);
+          setActiveRide((prev) => (prev ? { ...prev, ...norm } : norm));
+        }
+      } catch {
+        // best-effort polling; ignore transient errors
+      }
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [resolvedRideId, activeRide?.status]);
 
   const onRefresh = async () => {
     setRefreshing(true);

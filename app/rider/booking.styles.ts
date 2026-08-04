@@ -320,6 +320,7 @@ export const bookingStyles = StyleSheet.create({
   simpleFareValue: { fontSize: 30, fontWeight: '900', marginTop: 2 },
   simpleFareMeta: { flexDirection: 'row', gap: 12, marginTop: 8, marginBottom: 4 },
   simpleFareMetaText: { fontSize: 12, fontWeight: '800' },
+  simpleFareRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
   compactFareBreakdown: { marginTop: 12, paddingTop: 10, borderTopWidth: 1, gap: 4 },
   reviewButton: {
     marginTop: 14,

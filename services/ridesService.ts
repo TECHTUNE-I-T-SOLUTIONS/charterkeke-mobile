@@ -11,6 +11,15 @@ export async function createRideBooking(input: {
   pickupTime: string;
   fare: number;
   pricingConfig?: BookingPricingConfig;
+  weatherImpact?: {
+    status: string;
+    label: string;
+    detail: string;
+    multiplier: number;
+    surchargeRate: number;
+    precipitationMm: number;
+    icon: string;
+  } | null;
 }): Promise<{ ride?: { id?: string }; [key: string]: any }> {
   return apiService.post('/user/book-ride', buildRideBookingPayload(input));
 }

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Charter Keke",
     "slug": "charter-keke-mobile",
-    "version": "2.1.14",
+    "version": "2.2.0",
     "runtimeVersion": "2",
     "orientation": "portrait",
     "icon": "./assets/charter keke.png",
@@ -66,7 +66,8 @@
     "ios": {
       "icon": "./assets/ios-app-icon-1024.png",
       "bundleIdentifier": "com.charterkeke.mobile",
-      "buildNumber": "227",
+      "buildNumber": "229",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "usesNonExemptEncryption": false
       },
@@ -91,10 +92,12 @@
         "backgroundColor": "#1a1a1a"
       },
       "package": "com.charterkeke.mobile",
-      "versionCode": 226,
+      "googleServicesFile": "./google-services.json",
+      "versionCode": 227,
       "permissions": [
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
@@ -102,6 +105,7 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "708132575710",
+    "project_id": "charter-keke-e36b1",
+    "storage_bucket": "charter-keke-e36b1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:708132575710:android:41c94ecbc470248d0a654f",
+        "android_client_info": {
+          "package_name": "com.charterkeke.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCeGf3giu9kKNLaLFSUmJS8fUqycJQ_jeY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

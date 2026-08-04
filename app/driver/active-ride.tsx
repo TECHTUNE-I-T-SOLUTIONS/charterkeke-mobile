@@ -1,6 +1,6 @@
 // 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,11 +13,14 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRide } from '@/context/RideContext';
+import { useLocation } from '@/context/LocationContext';
+import { apiService } from '@/services/api';
+import { supabaseService } from '@/services/supabase';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import { ListScreenSkeleton } from '@/components/ListScreenSkeleton';
@@ -27,17 +30,107 @@ const { width, height } = Dimensions.get('window');
 const scale = (size: number) => (width / 375) * size;
 const verticalScale = (size: number) => (height / 812) * size;
 
+// Map a persisted ride status to the local 4-step UI state.
+const uiStatusFromRide = (status?: string): 'accepted' | 'arrived' | 'started' | 'completed' => {
+  switch (String(status || '').toLowerCase()) {
+    case 'in_progress':
+      return 'started';
+    case 'completed':
+      return 'completed';
+    default:
+      return 'accepted';
+  }
+};
+
 export default function DriverActiveRideScreen() {
   const router = useRouter();
-  const { currentRide, completeRide, isLoading } = useRide();
+  const { currentRide } = useRide();
+  const { watchLocation } = useLocation();
+  const { rideId: rideIdParam } = useLocalSearchParams<{ rideId: string }>();
   const [isDark] = useState(false);
-  const [rideStatus, setRideStatus] = useState('accepted');
+  const [ride, setRide] = useState<any>(currentRide || null);
+  const [rideStatus, setRideStatus] = useState<'accepted' | 'arrived' | 'started' | 'completed'>('accepted');
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [odometer, setOdometer] = useState('0.0');
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
 
   const colors = isDark ? COLORS.dark : COLORS.light;
-  
+
+  const rideId = String(ride?.id || rideIdParam || currentRide?.id || '');
   const progressAnimation = React.useRef(new Animated.Value(0)).current;
+
+  // Load real ride data (params/currentRide -> active-rides).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        let resolved: any = currentRide || null;
+        if (rideIdParam) {
+          const list = await apiService.getActiveRides();
+          const rides = list?.rides || [];
+          resolved = rides.find((r: any) => String(r.id) === String(rideIdParam)) || resolved;
+        } else if (!resolved) {
+          const list = await apiService.getActiveRides();
+          resolved = list?.rides?.[0] || null;
+        }
+        if (!cancelled && resolved) {
+          setRide(resolved);
+          setRideStatus(uiStatusFromRide(resolved.status));
+        }
+      } catch (err) {
+        console.error('Failed to load driver active ride:', err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [rideIdParam]);
+
+  // Broadcast the driver's REAL location to the rider over Supabase Realtime
+  // while the ride is active (accepted -> in_progress). This is what powers the
+  // live driver marker on the rider's map.
+  useEffect(() => {
+    if (!rideId) return;
+    if (rideStatus === 'completed') return;
+
+    let unwatch: (() => void) | null = null;
+    let active = true;
+
+    (async () => {
+      try {
+        unwatch = await watchLocation((location) => {
+          if (!active) return;
+          supabaseService
+            .broadcastRideLocation(rideId, {
+              latitude: location.latitude,
+              longitude: location.longitude,
+              accuracy: (location as any).accuracy ?? null,
+              timestamp: (location as any).timestamp || 0,
+              role: 'driver',
+            })
+            .catch(() => {});
+        });
+      } catch (err) {
+        console.log('Failed to start driver location broadcast:', err);
+      }
+    })();
+
+    return () => {
+      active = false;
+      if (unwatch) unwatch();
+    };
+  }, [rideId, rideStatus, watchLocation]);
+
+  // Stop broadcasting once the ride is done.
+  useEffect(() => {
+    if (rideStatus === 'completed' && rideId) {
+      supabaseService.unsubscribeRideLocation(rideId).catch(() => {});
+    }
+  }, [rideStatus, rideId]);
 
   useEffect(() => {
     Animated.timing(progressAnimation, {
@@ -48,35 +141,75 @@ export default function DriverActiveRideScreen() {
     }).start();
   }, [rideStatus]);
 
+  const riderUser = ride?.rider?.users || ride?.riders?.users || ride?.rider || null;
   const rider = {
-    id: '456',
-    name: 'Zainab Ahmed',
-    rating: 4.9,
-    phone: '+2348098765432',
-    profileImage: 'https://avatar.vercel.sh/zainab?size=200',
+    id: ride?.rider_id || '',
+    name: riderUser
+      ? `${riderUser.first_name || ''} ${riderUser.last_name || ''}`.trim() || 'Rider'
+      : 'Rider',
+    rating: ride?.rider?.average_rating ?? riderUser?.rating ?? 5,
+    phone: riderUser?.phone_number || '',
+    profileImage:
+      riderUser?.profile_picture_url ||
+      `https://avatar.vercel.sh/${ride?.rider_id || 'rider'}?size=200`,
   };
 
-  const estimatedFare = 2500;
+  const estimatedFare = Number(ride?.fare_amount || 0);
 
-  const handleArrived = () => setRideStatus('arrived');
-  const handleStartRide = () => setRideStatus('started');
+  // "I've Arrived" — notification-only, does NOT change ride status server-side.
+  const handleArrived = useCallback(async () => {
+    if (!rideId) return;
+    setActionLoading(true);
+    try {
+      await apiService.notifyArrival(rideId);
+      setRideStatus('arrived');
+    } catch (err: any) {
+      console.error('Notify arrival error:', err);
+      Alert.alert('Error', err?.message || 'Failed to notify rider of arrival');
+    } finally {
+      setActionLoading(false);
+    }
+  }, [rideId]);
 
-  const handleCompleteRide = async () => {
+  // "Start Ride" — transitions the ride to in_progress (fires Trip Started push).
+  const handleStartRide = useCallback(async () => {
+    if (!rideId) return;
+    setActionLoading(true);
+    try {
+      await apiService.updateRideStatus(rideId, 'in_progress');
+      setRideStatus('started');
+    } catch (err: any) {
+      console.error('Start ride error:', err);
+      Alert.alert('Error', err?.message || 'Failed to start ride');
+    } finally {
+      setActionLoading(false);
+    }
+  }, [rideId]);
+
+  // "Complete Ride" — transitions to completed (fires Ride Completed push).
+  // NOTE: calls updateRideStatus directly so it hits /driver/update-ride-status
+  // (RideContext.completeRide uses a generic PUT that bypasses the push route).
+  const handleCompleteRide = useCallback(async () => {
     if (!odometer) {
       Alert.alert('Error', 'Please enter the distance traveled');
       return;
     }
-
+    if (!rideId) return;
+    setActionLoading(true);
     try {
-      const result = await completeRide(currentRide?.id || '');
-
-      if (result) {
-        router.replace('/driver/home');
-      }
-    } catch (error) {
-      console.error('Complete ride error:', error);
+      await apiService.updateRideStatus(rideId, 'completed');
+      setRideStatus('completed');
+      await supabaseService.unsubscribeRideLocation(rideId).catch(() => {});
+      router.replace('/driver/home');
+    } catch (err: any) {
+      console.error('Complete ride error:', err);
+      Alert.alert('Error', err?.message || 'Failed to complete ride');
+    } finally {
+      setActionLoading(false);
     }
-  };
+  }, [odometer, rideId]);
+
+  const isLoading = loading || actionLoading;
 
   const progressWidth = progressAnimation.interpolate({
     inputRange: [0, 100],
@@ -263,7 +396,7 @@ export default function DriverActiveRideScreen() {
               From
             </Text>
             <Text style={{ fontSize: scale(14), fontWeight: '600', color: colors.foreground }}>
-              📍 {(currentRide?.pickupLocation as any)?.address || 'Pickup Location'}
+              📍 {ride?.pickup_zone || (currentRide?.pickupLocation as any)?.address || 'Pickup Location'}
             </Text>
           </View>
 
@@ -274,7 +407,7 @@ export default function DriverActiveRideScreen() {
               To
             </Text>
             <Text style={{ fontSize: scale(14), fontWeight: '600', color: colors.foreground }}>
-              📍 {(currentRide as any)?.dropoffLocation?.address || 'Dropoff Location'}
+              📍 {ride?.destination_zone || (currentRide as any)?.dropoffLocation?.address || 'Dropoff Location'}
             </Text>
           </View>
         </Card>
@@ -353,10 +486,11 @@ export default function DriverActiveRideScreen() {
           {rideStatus === 'accepted' && (
             <>
               <Button
-                title="I've Arrived"
+                title={actionLoading ? 'Notifying rider…' : "I've Arrived"}
                 onPress={handleArrived}
                 isDark={isDark}
                 size="large"
+                disabled={actionLoading || !rideId}
               />
               <TouchableOpacity
                 onPress={() => setShowCancelConfirm(true)}
@@ -383,10 +517,11 @@ export default function DriverActiveRideScreen() {
 
           {rideStatus === 'arrived' && (
             <Button
-              title="Start Ride"
+              title={actionLoading ? 'Starting…' : 'Start Ride'}
               onPress={handleStartRide}
               isDark={isDark}
               size="large"
+              disabled={actionLoading || !rideId}
             />
           )}
 

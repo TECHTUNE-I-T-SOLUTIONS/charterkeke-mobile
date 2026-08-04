@@ -45,13 +45,15 @@ class WidgetStorageModule(private val reactContext: ReactApplicationContext) : R
   }
 
   private fun refreshWidget() {
-    val manager = AppWidgetManager.getInstance(reactContext)
-    val componentName = ComponentName(reactContext, CharterKekeWidgetProvider::class.java)
-    val intent = Intent(reactContext, CharterKekeWidgetProvider::class.java).apply {
-      action = "com.charterkeke.mobile.REFRESH_WIDGET"
+    listOf(
+      CharterKekeWidgetProvider::class.java,
+      CharterKekeNotificationsWidgetProvider::class.java
+    ).forEach { providerClass ->
+      val intent = Intent(reactContext, providerClass).apply {
+        action = "com.charterkeke.mobile.REFRESH_WIDGET"
+      }
+      reactContext.sendBroadcast(intent)
     }
-    reactContext.sendBroadcast(intent)
-    manager.notifyAppWidgetViewDataChanged(manager.getAppWidgetIds(componentName), android.R.id.content)
   }
 
   companion object {

@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:background="#121212"
+  android:fillViewport="true">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <TextView
+      android:id="@+id/notifications_widget_title"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:text="Notifications"
+      android:textColor="#FFFFFF"
+      android:textSize="16sp"
+      android:textStyle="bold" />
+
+    <TextView
+      android:id="@+id/notifications_widget_subtitle"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="2dp"
+      android:layout_marginBottom="10dp"
+      android:text="Your latest alerts will appear here"
+      android:textColor="#BDBDBD"
+      android:textSize="12sp" />
+
+    <LinearLayout
+      android:id="@+id/notifications_row_1"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="vertical"
+      android:background="#1B1B1B"
+      android:padding="10dp"
+      android:layout_marginBottom="6dp">
+
+      <TextView
+        android:id="@+id/notifications_title_1"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="#FFFFFF"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+      <TextView
+        android:id="@+id/notifications_body_1"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:textColor="#BDBDBD"
+        android:textSize="11sp" />
+    </LinearLayout>
+
+    <LinearLayout
+      android:id="@+id/notifications_row_2"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="vertical"
+      android:background="#1B1B1B"
+      android:padding="10dp"
+      android:layout_marginBottom="6dp">
+
+      <TextView
+        android:id="@+id/notifications_title_2"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="#FFFFFF"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+      <TextView
+        android:id="@+id/notifications_body_2"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:textColor="#BDBDBD"
+        android:textSize="11sp" />
+    </LinearLayout>
+
+    <LinearLayout
+      android:id="@+id/notifications_row_3"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="vertical"
+      android:background="#1B1B1B"
+      android:padding="10dp"
+      android:layout_marginBottom="10dp">
+
+      <TextView
+        android:id="@+id/notifications_title_3"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="#FFFFFF"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+      <TextView
+        android:id="@+id/notifications_body_3"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:textColor="#BDBDBD"
+        android:textSize="11sp" />
+    </LinearLayout>
+
+    <Button
+      android:id="@+id/notifications_widget_open"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:text="Open Charter Keke"
+      android:backgroundTint="#FF9101"
+      android:textColor="#000000" />
+  </LinearLayout>
+</ScrollView>

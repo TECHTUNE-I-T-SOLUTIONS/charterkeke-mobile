@@ -36,4 +36,5 @@ export const WidgetStorage = {
 export const WIDGET_STORAGE_KEYS = {
   rider: 'widget_rider_data',
   driver: 'widget_driver_data',
+  notifications: 'widget_notifications_data',
 } as const;

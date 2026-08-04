@@ -14,7 +14,11 @@ import org.json.JSONObject
 class CharterKekeWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
     appWidgetIds.forEach { appWidgetId ->
-      updateWidget(context, appWidgetManager, appWidgetId)
+      try {
+        updateWidget(context, appWidgetManager, appWidgetId)
+      } catch (_: Throwable) {
+        updateFallbackWidget(context, appWidgetManager, appWidgetId)
+      }
     }
   }
 
@@ -24,9 +28,36 @@ class CharterKekeWidgetProvider : AppWidgetProvider() {
       val manager = AppWidgetManager.getInstance(context)
       val componentName = ComponentName(context, CharterKekeWidgetProvider::class.java)
       manager.getAppWidgetIds(componentName)?.forEach {
-        updateWidget(context, manager, it)
+        try {
+          updateWidget(context, manager, it)
+        } catch (_: Throwable) {
+          updateFallbackWidget(context, manager, it)
+        }
       }
     }
+  }
+
+  private fun updateFallbackWidget(context: Context, manager: AppWidgetManager, appWidgetId: Int) {
+    val views = RemoteViews(context.packageName, R.layout.charter_keke_widget)
+    views.setTextViewText(R.id.widget_title, "Charter Keke")
+    views.setTextViewText(R.id.widget_subtitle, "Widget preview unavailable. Open the app to refresh.")
+    views.setTextViewText(R.id.widget_primary_action, "Open Booking")
+    views.setTextViewText(R.id.widget_secondary_action, "View Rides")
+    views.setViewVisibility(R.id.widget_rider_row_1, android.view.View.GONE)
+    views.setViewVisibility(R.id.widget_rider_row_2, android.view.View.GONE)
+    views.setViewVisibility(R.id.widget_rider_row_3, android.view.View.GONE)
+    views.setViewVisibility(R.id.widget_driver_row_1, android.view.View.GONE)
+    views.setViewVisibility(R.id.widget_driver_row_2, android.view.View.GONE)
+    views.setViewVisibility(R.id.widget_driver_row_3, android.view.View.GONE)
+    views.setOnClickPendingIntent(
+      R.id.widget_primary_action,
+      pendingIntent(context, 401, makeDeepLinkIntent(context, "charterkeke://rider/booking"))
+    )
+    views.setOnClickPendingIntent(
+      R.id.widget_secondary_action,
+      pendingIntent(context, 402, makeDeepLinkIntent(context, "charterkeke://rider/rides-history"))
+    )
+    manager.updateAppWidget(appWidgetId, views)
   }
 
   private fun updateWidget(context: Context, manager: AppWidgetManager, appWidgetId: Int) {

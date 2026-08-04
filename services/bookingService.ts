@@ -176,6 +176,15 @@ export function buildRideBookingPayload(input: {
   pickupTime: string;
   fare: number;
   pricingConfig?: BookingPricingConfig;
+  weatherImpact?: {
+    status: string;
+    label: string;
+    detail: string;
+    multiplier: number;
+    surchargeRate: number;
+    precipitationMm: number;
+    icon: string;
+  } | null;
 }) {
   const config = input.pricingConfig || getCurrentBookingPricingConfig();
   const distanceKm = roundDistanceKm(Number.isFinite(input.distanceKm) && input.distanceKm > 0 ? input.distanceKm : 1);
@@ -217,6 +226,7 @@ export function buildRideBookingPayload(input: {
       distanceKm,
       etaMinutes: durationMinutes,
       platformFeeRate: config.platformFeeRate,
+      weatherImpact: input.weatherImpact || null,
     },
   };
 }

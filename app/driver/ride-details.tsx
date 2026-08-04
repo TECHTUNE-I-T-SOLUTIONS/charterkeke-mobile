@@ -56,6 +56,7 @@ export default function RideDetailsScreen() {
   const [liveDriverLocation, setLiveDriverLocation] = useState<[number, number] | null>(null);
   const [liveRiderLocation, setLiveRiderLocation] = useState<[number, number] | null>(null);
   const [lastMapTap, setLastMapTap] = useState(0);
+  const [hasNotifiedArrival, setHasNotifiedArrival] = useState(false);
   const [receiptModalMode, setReceiptModalMode] = useState<'share' | 'download' | null>(null);
   const receiptRef = useRef<View>(null);
   const etaPersistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -321,6 +322,29 @@ export default function RideDetailsScreen() {
       console.error('❌ [RIDE] Accept failed:', error);
       setRide(previousRide);
       showError('Could not accept ride', error?.message || 'This ride may already have been accepted by another driver.');
+    } finally {
+      setActionLabel(null);
+      setUpdating(false);
+    }
+  };
+
+  const handleNotifyArrival = async () => {
+    if (updating) return;
+    const targetRideId = String(rideId || ride?.id || '');
+    if (!targetRideId) {
+      showError('Ride unavailable', 'We could not identify this ride yet. Please reopen the ride and try again.');
+      return;
+    }
+    try {
+      setUpdating(true);
+      setActionLabel('Notifying rider...');
+      // Notification-only — does NOT change ride status (stays "accepted").
+      await apiService.notifyArrival(targetRideId);
+      setHasNotifiedArrival(true);
+      showSuccess('Rider notified', 'We let the rider know you have arrived at the pickup point.');
+    } catch (error: any) {
+      console.error('❌ [RIDE] Notify arrival failed:', error);
+      showError('Could not notify rider', error?.message || 'Failed to send arrival notification');
     } finally {
       setActionLabel(null);
       setUpdating(false);
@@ -619,8 +643,28 @@ export default function RideDetailsScreen() {
 
          {/* Actions */}
          {!isCompleted && (
-            <TouchableOpacity 
-               style={[styles.mainBtn, { backgroundColor: BRAND.primary }]} 
+            <>
+            {rideStatus === 'accepted' && (
+               <TouchableOpacity
+                  style={[
+                    styles.mainBtn,
+                    {
+                      backgroundColor: hasNotifiedArrival ? theme.colors.surface : theme.colors.surface,
+                      borderColor: BRAND.primary,
+                      borderWidth: 1.5,
+                      marginBottom: 12,
+                    },
+                  ]}
+                  onPress={handleNotifyArrival}
+                  disabled={updating || hasNotifiedArrival}
+               >
+                  <Text style={[styles.btnText, { color: BRAND.primary }]}>
+                     {hasNotifiedArrival ? '✓ Rider Notified — You’ve Arrived' : "I’ve Arrived"}
+                  </Text>
+               </TouchableOpacity>
+            )}
+            <TouchableOpacity
+               style={[styles.mainBtn, { backgroundColor: BRAND.primary }]}
                onPress={isAwaitingAcceptance ? handleAcceptRide : () => handleUpdate(nextTripStatus)}
                disabled={updating}
             >
@@ -633,6 +677,7 @@ export default function RideDetailsScreen() {
                   <Text style={styles.btnText}>{primaryActionLabel}</Text>
                )}
             </TouchableOpacity>
+            </>
          )}
 
       </ScrollView>
