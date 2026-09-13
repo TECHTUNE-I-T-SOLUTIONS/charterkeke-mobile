@@ -19,7 +19,8 @@ export default function RiderLayout() {
             headerShown: false,
           }}
         >
-          <Stack.Screen name="home" />
+          {/* Home screen commented out for simplified rider experience */}
+          {/* <Stack.Screen name="home" /> */}
           <Stack.Screen name="booking" />
           <Stack.Screen name="active-ride" />
           <Stack.Screen name="ride-details" />
@@ -35,6 +36,8 @@ export default function RiderLayout() {
           <Stack.Screen name="about" />
           <Stack.Screen name="help-and-support" />
           <Stack.Screen name="notifications" />
+          {/* Replaced referrals with cashback */}
+          <Stack.Screen name="cashback" />
         </Stack>
         
         {/* Bottom Navigation - Outside Stack to prevent re-renders */}

@@ -362,7 +362,7 @@ export default function RatingScreen() {
         Alert.alert('Success', 'Thank you for your review!', [
           {
             text: 'OK',
-            onPress: () => router.replace('/rider/home'),
+            onPress: () => router.replace('/rider/booking'),
           },
         ]);
       } else {

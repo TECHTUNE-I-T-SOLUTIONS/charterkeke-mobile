@@ -69,43 +69,75 @@ export async function searchGoogleAutocomplete(
   const cleaned = query.trim();
   if (cleaned.length < 2) return [];
 
-  const response = await fetch(`${API_CONFIG.url}/places/autocomplete`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      input: cleaned,
-      sessionToken,
-      locationBias: options?.locationBias,
-      preferPreciseAddresses: options?.preferPreciseAddresses,
-    }),
-  });
+  try {
+    const response = await fetch(`${API_CONFIG.url}/places/autocomplete`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        input: cleaned,
+        sessionToken,
+        locationBias: options?.locationBias,
+        preferPreciseAddresses: options?.preferPreciseAddresses,
+      }),
+    });
 
-  if (!response.ok) {
-    const payload = await response.json().catch(() => null);
-    throw new Error(payload?.details || payload?.error || `Google Places autocomplete failed with status ${response.status}`);
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.details || payload?.error || `Google Places autocomplete failed with status ${response.status}`);
+    }
+
+    const payload = await response.json();
+    return (payload?.suggestions || [])
+      .map((suggestion: any) => {
+        const prediction = suggestion?.placePrediction;
+        const text = prediction?.text?.text;
+        const lat = Number(prediction?.location?.latitude);
+        const lng = Number(prediction?.location?.longitude);
+        if (!prediction?.placeId || !text) return null;
+
+        return {
+          address: text,
+          lat: Number.isFinite(lat) ? lat : null,
+          lng: Number.isFinite(lng) ? lng : null,
+          placeId: prediction.placeId,
+          name: prediction?.structuredFormat?.mainText?.text || text,
+          source: payload?.source === 'textSearchFallback' ? 'cache' : 'google',
+        };
+      })
+      .filter(Boolean);
+  } catch (googleError) {
+    console.log('Google Places search failed, trying fallback:', googleError);
+    
+    // Fallback to backend API using LocationIQ/OSM
+    try {
+      const apiUrl = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.198.143:3000';
+      const cleanApiUrl = apiUrl.replace(/\/api$/, '');
+      const response = await fetch(
+        `${cleanApiUrl}/api/location/search-address?q=${encodeURIComponent(cleaned)}`
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.results && data.success) {
+          console.log('Using fallback search results:', data.results.length);
+          return data.results.map((result: any) => ({
+            address: result.address,
+            lat: result.lat,
+            lng: result.lon,
+            placeId: result.placeId,
+            name: result.name,
+            source: result.source as LocationSearchSource,
+          }));
+        }
+      }
+    } catch (fallbackError) {
+      console.log('Fallback search also failed:', fallbackError);
+    }
+    
+    return [];
   }
-
-  const payload = await response.json();
-  return (payload?.suggestions || [])
-    .map((suggestion: any) => {
-      const prediction = suggestion?.placePrediction;
-      const text = prediction?.text?.text;
-      const lat = Number(prediction?.location?.latitude);
-      const lng = Number(prediction?.location?.longitude);
-      if (!prediction?.placeId || !text) return null;
-
-      return {
-        address: text,
-        lat: Number.isFinite(lat) ? lat : null,
-        lng: Number.isFinite(lng) ? lng : null,
-        placeId: prediction.placeId,
-        name: prediction?.structuredFormat?.mainText?.text || text,
-        source: payload?.source === 'textSearchFallback' ? 'cache' : 'google',
-      };
-    })
-    .filter(Boolean);
 }
 
 export async function getGooglePlaceDetails(

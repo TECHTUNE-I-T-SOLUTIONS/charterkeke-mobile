@@ -567,7 +567,7 @@ export const subscribeToPushNotifications = async (userId: string) => {
 
       const backendResponse = await apiService.post('/notifications/subscribe', subscriptionPayload);
       console.log('✅ [NOTIFICATIONS] Push subscription synced to backend');
-      console.log('📡 [NOTIFICATIONS] Subscribe response:', JSON.stringify(backendResponse));
+      // console.log('📡 [NOTIFICATIONS] Subscribe response:', JSON.stringify(backendResponse));
       await AsyncStorage.removeItem(PENDING_PUSH_KEY);
     } catch (backendError) {
       console.error('❌ [NOTIFICATIONS] Failed syncing push subscription to backend:', backendError);
@@ -933,7 +933,7 @@ export const flushPendingPushSubscription = async (userId: string) => {
       action: 'subscribe',
       source: IS_DEV ? 'expo-go-or-dev-client' : 'production-build',
     });
-    console.log('📡 [NOTIFICATIONS] Flush response:', JSON.stringify(backendResponse));
+    // console.log('📡 [NOTIFICATIONS] Flush response:', JSON.stringify(backendResponse));
 
     await AsyncStorage.removeItem(PENDING_PUSH_KEY);
     console.log('✅ [NOTIFICATIONS] Pending push subscription flushed to backend');

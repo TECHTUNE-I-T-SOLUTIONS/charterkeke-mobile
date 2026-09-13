@@ -285,24 +285,6 @@ export default function WelcomeScreen() {
       <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
       
       {/* Video Background */}
-      <Video
-        ref={videoRef}
-        source={require('@assets/welcome-bg.mp4')}
-        shouldPlay
-        isLooping
-        isMuted
-        resizeMode={'cover' as any}
-        style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}
-        onError={(error) => {
-          logVideoError(error, 'Welcome Screen Video');
-          setVideoError(true);
-        }}
-        onLoad={() => {
-          console.log('🟢 Video loaded successfully');
-          setVideoError(false);
-        }}
-        progressUpdateIntervalMillis={500}
-      />
       
       {/* Background Gradient - subtle branding */}
       <LinearGradient

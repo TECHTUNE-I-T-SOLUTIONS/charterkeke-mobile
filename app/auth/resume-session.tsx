@@ -396,7 +396,7 @@ export default function ResumeSessionScreen() {
         if (nextRole === 'driver') {
           navigation.replace('/driver/home');
         } else if (nextRole === 'rider' || nextRole === 'user') {
-          navigation.replace('/rider/home');
+          navigation.replace('/rider/booking');
         } else {
           await handleLogout();
         }
@@ -488,7 +488,7 @@ export default function ResumeSessionScreen() {
         if (nextRole === 'driver') {
           navigation.replace('/driver/home');
         } else if (nextRole === 'rider' || nextRole === 'user') {
-          navigation.replace('/rider/home');
+          navigation.replace('/rider/booking');
         } else {
           await handleLogout();
         }
@@ -544,8 +544,8 @@ export default function ResumeSessionScreen() {
           console.log('🚗 [ROUTING] Verified via biometric, routing to /driver/home');
           navigation.replace('/driver/home');
         } else if (nextRole === 'rider' || nextRole === 'user') {
-          console.log('👤 [ROUTING] Verified via biometric, routing to /rider/home');
-          navigation.replace('/rider/home');
+          console.log('👤 [ROUTING] Verified via biometric, routing to /rider/booking');
+          navigation.replace('/rider/booking');
         } else {
           console.log('Unknown role after biometric verification, logging out');
           await handleLogout();

@@ -126,7 +126,7 @@ export default function LoginScreen() {
           router.replace('/driver/home');
         }
       }
-      else if (loggedInUser?.role === 'rider') router.push('/rider/home');
+      else if (loggedInUser?.role === 'rider') router.replace('/rider/booking');
     } catch (error: any) {
       setErrors({ submit: error?.message || 'Invalid credentials. Please try again.' });
     }

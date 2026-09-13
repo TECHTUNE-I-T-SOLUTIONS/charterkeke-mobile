@@ -1,7 +1,7 @@
 import { StyleSheet } from 'react-native';
 import { BRAND } from '@/utils/colors';
 
-export const bookingStyles = StyleSheet.create({
+const bookingStyles = StyleSheet.create({
   container: { flex: 1 },
   map: { flex: 1 },
   searchExpandedBackground: { ...StyleSheet.absoluteFillObject },
@@ -548,6 +548,23 @@ export const bookingStyles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: '700',
   },
+  simpleFareDiscount: {
+    fontSize: 12,
+    marginTop: 4,
+  },
+  cashbackDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    padding: 8,
+    backgroundColor: '#b36f02b0',
+    borderRadius: 6,
+  },
+  cashbackDisplayText: {
+    marginLeft: 8,
+    fontSize: 13,
+    fontWeight: '600',
+  },
   voiceActions: {
     width: '100%',
     flexDirection: 'row',
@@ -636,8 +653,7 @@ export const bookingStyles = StyleSheet.create({
   },
 });
 
-export { mapDarkStyle };
-
+export default bookingStyles;
 
 const mapDarkStyle = [
   { "elementType": "geometry", "stylers": [{ "color": "#242f3e" }] },
@@ -659,5 +675,7 @@ const mapDarkStyle = [
   { "featureType": "water", "elementType": "labels.text.fill", "stylers": [{ "color": "#515c6d" }] },
   { "featureType": "water", "elementType": "labels.text.stroke", "stylers": [{ "color": "#17263c" }] }
 ];
+
+export { mapDarkStyle };
 
 

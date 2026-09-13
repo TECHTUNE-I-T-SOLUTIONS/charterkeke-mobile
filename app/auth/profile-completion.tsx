@@ -56,7 +56,7 @@ export default function ProfileCompletionScreen() {
       };
       const result = await updateUserProfile(payload);
       if (result.success) {
-        router.replace(userType === 'driver' ? '/driver/home' : '/rider/home');
+        router.replace(userType === 'driver' ? '/driver/home' : '/rider/booking');
       }
     } catch (error) {
       console.error('Profile update error:', error);
@@ -276,7 +276,7 @@ export default function ProfileCompletionScreen() {
 
           {/* Skip Button */}
           <TouchableOpacity
-            onPress={() => router.replace(userType === 'driver' ? '/driver/home' : '/rider/home')}
+            onPress={() => router.replace(userType === 'driver' ? '/driver/home' : '/rider/booking')}
             style={{ marginTop: 16 }}
           >
             <Text

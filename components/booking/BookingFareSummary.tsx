@@ -18,6 +18,10 @@ type Props = {
   trafficLabel: string;
   bookingPlatformFee: number;
   bookingEstimatedDriverFare: number;
+  cashbackRewards?: any[];
+  selectedCashback?: any;
+  onSelectCashback?: (reward: any) => void;
+  originalFare?: number;
 };
 
 export function BookingFareSummary({
@@ -35,7 +39,13 @@ export function BookingFareSummary({
   trafficLabel,
   bookingPlatformFee,
   bookingEstimatedDriverFare,
+  cashbackRewards = [],
+  selectedCashback,
+  onSelectCashback,
+  originalFare,
 }: Props) {
+  const discountAmount = originalFare ? originalFare - bookingTotalFare : 0;
+
   return (
     <View style={[styles.simpleFareCard, { backgroundColor: isLight ? '#FFF7EA' : '#281A05', borderColor: BRAND.primary }]}>
       <View style={styles.simpleFareTop}>
@@ -44,6 +54,11 @@ export function BookingFareSummary({
             {routeLoading ? 'Calculating route...' : 'Estimated fare'}
           </Text>
           <Text style={[styles.simpleFareValue, { color: BRAND.primary }]}>N{bookingTotalFare.toLocaleString()}</Text>
+          {discountAmount > 0 && (
+            <Text style={[styles.simpleFareDiscount, { color: '#10B981' }]}>
+              N{originalFare?.toLocaleString()} - N{discountAmount.toLocaleString()} discount
+            </Text>
+          )}
         </View>
         <View style={styles.simpleFareBadge}>
           <MaterialCommunityIcons name="cash-multiple" size={16} color={BRAND.primary} />
@@ -54,10 +69,25 @@ export function BookingFareSummary({
         <Text style={[styles.simpleFareMetaText, { color: theme.colors.textSecondary }]}>
           {estimatedDuration > 0 ? `${estimatedDuration} min` : 'ETA pending'}
         </Text>
-        {/* <Text style={[styles.simpleFareMetaText, { color: theme.colors.textSecondary }]}>
-          Platform fee N{bookingPlatformFee.toLocaleString()} | Driver N{bookingEstimatedDriverFare.toLocaleString()}
-        </Text> */}
       </View>
+
+      {/* Cashback Rewards Section - Only show if rewards exist */}
+      {cashbackRewards.length > 0 && (
+        <View style={[styles.compactFareBreakdown, { borderTopColor: theme.colors.border }]}>
+          <Text style={[styles.simpleFareMetaText, { color: theme.colors.textPrimary, fontWeight: '600' }]}>
+            Available Cashback Rewards
+          </Text>
+          {cashbackRewards.map((reward: any) => (
+            <View key={reward.id} style={styles.cashbackDisplay}>
+              <MaterialCommunityIcons name="gift" size={20} color={BRAND.primary} />
+              <Text style={[styles.cashbackDisplayText, { color: theme.colors.textPrimary }]}>
+                {reward.discount_percentage}% off
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
+
       <View style={[styles.compactFareBreakdown, { borderTopColor: theme.colors.border }]}>
         <Text style={[styles.simpleFareMetaText, { color: theme.colors.textPrimary }]}>
           Kindly pay the driver directly. Arrival time may vary with traffic.

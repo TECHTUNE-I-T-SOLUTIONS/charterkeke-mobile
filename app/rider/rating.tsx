@@ -258,7 +258,7 @@ export default function RatingScreen() {
         Alert.alert('Success', 'Thank you for your review!', [
           {
             text: 'OK',
-            onPress: () => router.replace('/rider/home'),
+            onPress: () => router.replace('/rider/booking'),
           },
         ]);
       } else {
@@ -445,7 +445,7 @@ export default function RatingScreen() {
         )}
 
         <TouchableOpacity
-          onPress={() => router.replace('/rider/home')}
+          onPress={() => router.replace('/rider/booking')}
           activeOpacity={0.8}
           style={{
             marginTop: verticalScale(16),
@@ -957,7 +957,7 @@ export default function RatingScreen() {
               </TouchableOpacity>
 
               <TouchableOpacity
-                onPress={() => router.replace('/rider/home')}
+                onPress={() => router.replace('/rider/booking')}
                 disabled={submitting}
                 activeOpacity={0.8}
                 style={{

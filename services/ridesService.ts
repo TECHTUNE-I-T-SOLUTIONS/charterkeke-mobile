@@ -20,6 +20,7 @@ export async function createRideBooking(input: {
     precipitationMm: number;
     icon: string;
   } | null;
+  cashback_reward_id?: string;
 }): Promise<{ ride?: { id?: string }; [key: string]: any }> {
   return apiService.post('/user/book-ride', buildRideBookingPayload(input));
 }

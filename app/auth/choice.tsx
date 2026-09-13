@@ -214,24 +214,6 @@ export default function AuthChoiceScreen() {
       <ThemeToggle top={insets.top + 16} right={20} />
 
       {/* Video Background */}
-      <Video
-        ref={videoRef}
-        source={require('@assets/welcome-bg.mp4')}
-        shouldPlay
-        isLooping
-        isMuted
-        resizeMode={'cover' as any}
-        style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}
-        onError={(error) => {
-          logVideoError(error, 'Welcome Video');
-          setVideoError(true);
-        }}
-        onLoad={() => {
-          console.log('🟢 Video loaded successfully');
-          setVideoError(false);
-        }}
-        progressUpdateIntervalMillis={500}
-      />
 
       {/* Dark Overlay - more dimmed for better readability */}
       <View style={[styles.videoOverlay]} />

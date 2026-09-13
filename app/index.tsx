@@ -30,7 +30,7 @@ export default function Index() {
       ]);
       if (sessionResumed === 'true' && sessionResumedDate === localDayKey()) {
         const role = userRole || ((user as any)?.role as string | undefined);
-        router.replace(role === 'driver' ? '/driver/home' : '/rider/home');
+        router.replace(role === 'driver' ? '/driver/home' : '/rider/booking');
         return;
       }
 

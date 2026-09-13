@@ -4,13 +4,13 @@
 			"path": "."
 		},
 		{
-			"path": "../easely"
-		},
-		{
 			"path": "../CharterKekeAdmin"
 		},
 		{
 			"path": "../CharterKEKE Status"
+		},
+		{
+			"path": "../charter-keke-web"
 		}
 	],
 	"settings": {}

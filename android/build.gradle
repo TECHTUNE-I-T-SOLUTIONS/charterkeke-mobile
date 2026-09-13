@@ -6,12 +6,10 @@ buildscript {
     mavenCentral()
   }
   dependencies {
+        classpath 'com.google.gms:google-services:4.4.1'
     classpath('com.android.tools.build:gradle')
     classpath('com.facebook.react:react-native-gradle-plugin')
     classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
-    // Firebase/FCM: required so expo-notifications can obtain a real FCM token
-    // (fixes MISSING_INSTANCEID_SERVICE / placeholder push tokens on Android).
-    classpath('com.google.gms:google-services:4.4.2')
   }
 }
 
@@ -20,10 +18,6 @@ allprojects {
     google()
     mavenCentral()
     maven { url 'https://www.jitpack.io' }
-  }
-
-  configurations.configureEach {
-    exclude group: 'com.android.support'
   }
 }
 
@@ -51,3 +45,13 @@ allprojects {
 }
 
 // @generated end @rnmapbox/maps-v2-maven
+
+// Charter Keke: keep AndroidX and legacy support libraries from entering
+// the same release classpath. Some old transitive dependencies may still
+// request com.android.support:*; AndroidX already supplies the Jetifier
+// compatibility classes, so the legacy artifacts must be excluded.
+subprojects {
+  configurations.configureEach {
+    exclude group: 'com.android.support'
+  }
+}

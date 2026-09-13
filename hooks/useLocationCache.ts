@@ -59,7 +59,7 @@ export function useRideHistory() {
       console.log('🔃 Fetching fresh ride history');
       try {
         const data = await apiService.getRiderRides(50);
-        console.log('✅ Ride history fetched:', data);
+        // console.log('✅ Ride history fetched:', data);
         return data.rides || [];
       } catch (error) {
         console.error('❌ Error fetching ride history:', error);
@@ -86,7 +86,7 @@ export function useNotifications() {
       console.log('🔃 Fetching fresh notifications');
       try {
         const data = await apiService.getNotifications();
-        console.log('✅ Notifications fetched:', data);
+        // console.log('✅ Notifications fetched:', data);
         // Handle both direct array and object with notifications property
         return (data?.notifications || data) || [];
       } catch (error: any) {

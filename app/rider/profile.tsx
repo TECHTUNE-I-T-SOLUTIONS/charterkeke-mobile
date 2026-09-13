@@ -85,13 +85,13 @@ export default function ProfileScreen() {
         const fetchReferralCode = async () => {
           try {
             const res = await apiService.getReferralCode();
-            console.log('[Profile] getReferralCode response:', JSON.stringify(res));
+            // console.log('[Profile] getReferralCode response:', JSON.stringify(res));
             
             // Get the code string - must be a string
             const codeStr = (res?.referralCode?.referral_code || res?.referral_code || '');
             const finalCode = String(codeStr).trim();
             
-            console.log('[Profile] Extracted code:', finalCode, 'type:', typeof finalCode);
+            // console.log('[Profile] Extracted code:', finalCode, 'type:', typeof finalCode);
             setReferralCode(finalCode);
           } catch (err) {
             console.error('[Profile] Error fetching referral code:', err);
@@ -202,7 +202,7 @@ export default function ProfileScreen() {
   const handleReplayTour = async () => {
     await AsyncStorage.removeItem(getTourStorageKey('rider')).catch(() => {});
     await AsyncStorage.removeItem('@charter_keke_tour_rider_booking_seen').catch(() => {});
-    router.push('/rider/home');
+    router.push('/rider/booking');
   };
 
   const handlePickAndUploadAvatar = async () => {

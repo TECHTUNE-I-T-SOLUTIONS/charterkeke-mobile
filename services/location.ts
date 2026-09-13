@@ -53,35 +53,81 @@ class LocationService {
       }
 
       let location: Location.LocationObject | null = null;
+      let bestAccuracy = Infinity;
+      let bestLocation: Location.LocationObject | null = null;
+
+      // Try multiple approaches to get the best accuracy
       try {
-        const samples = await Promise.allSettled([
-          Location.getCurrentPositionAsync({
+        // Approach 1: Use watchPosition to sample multiple fixes and choose the best
+        const subscription = await Location.watchPositionAsync(
+          {
             accuracy: Location.Accuracy.BestForNavigation,
-            mayShowUserSettingsDialog: true,
-          }),
-          Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Highest,
-            mayShowUserSettingsDialog: true,
-          }),
-        ]);
-        location = this.chooseBestLocation(
-          samples
-            .filter((sample): sample is PromiseFulfilledResult<Location.LocationObject> => sample.status === 'fulfilled')
-            .map((sample) => sample.value)
+            timeInterval: 500, // Sample every 500ms for faster convergence
+            distanceInterval: 0,
+          },
+          (loc) => {
+            const currentAccuracy = loc.coords.accuracy ?? Infinity;
+            if (currentAccuracy < bestAccuracy) {
+              bestAccuracy = currentAccuracy;
+              bestLocation = loc;
+              console.log('New best location found with accuracy:', currentAccuracy, 'meters');
+              
+              // If we get a very accurate reading, stop watching
+              if (currentAccuracy <= 15) {
+                subscription.remove();
+              }
+            }
+          }
         );
-      } catch (primaryError) {
-        console.warn('High accuracy location fetch failed, trying balanced accuracy:', primaryError);
+
+        // Wait for at most 8 seconds to get a good fix (longer for better accuracy)
+        await new Promise((resolve) => setTimeout(() => resolve(undefined), 8000));
+        subscription.remove();
+
+        if (bestLocation && bestAccuracy <= 50) {
+          location = bestLocation;
+          console.log('Using best sampled location with accuracy:', bestAccuracy, 'meters');
+        }
+      } catch (watchError) {
+        console.warn('Watch position failed, falling back to single fetch:', watchError);
+      }
+
+      // Approach 2: Single high-accuracy fetch if watch didn't work well
+      if (!location || bestAccuracy > 50) {
         try {
-          location = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.High,
-            mayShowUserSettingsDialog: true,
-          });
-        } catch (secondaryError) {
-          console.warn('Balanced location fetch failed, falling back to recent last known position:', secondaryError);
-          location = await Location.getLastKnownPositionAsync({
-            maxAge: 15_000,
-            requiredAccuracy: 100,
-          });
+          const samples = await Promise.allSettled([
+            Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.BestForNavigation,
+              mayShowUserSettingsDialog: true,
+            }),
+            Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Highest,
+              mayShowUserSettingsDialog: true,
+            }),
+          ]);
+          location = this.chooseBestLocation(
+            samples
+              .filter((sample): sample is PromiseFulfilledResult<Location.LocationObject> => sample.status === 'fulfilled')
+              .map((sample) => sample.value)
+          );
+          
+          if (location) {
+            console.log('Using single fetch location with accuracy:', location.coords.accuracy, 'meters');
+          }
+        } catch (primaryError) {
+          console.warn('High accuracy location fetch failed, trying balanced accuracy:', primaryError);
+          try {
+            location = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.High,
+              mayShowUserSettingsDialog: true,
+            });
+          } catch (secondaryError) {
+            console.warn('Balanced location fetch failed, falling back to recent last known position:', secondaryError);
+            location = await Location.getLastKnownPositionAsync({
+              maxAge: 15_000,
+              requiredAccuracy: 100,
+            });
+          }
         }
       }
 
@@ -94,6 +140,12 @@ class LocationService {
       }
 
       const locationData = this.normalizeLocation(location);
+      
+      // Check if accuracy is acceptable
+      const accuracy = location.coords.accuracy ?? 0;
+      if (accuracy > 100) {
+        console.warn('Location accuracy is poor:', accuracy, 'meters. This may affect address resolution.');
+      }
 
       this.currentLocation = locationData;
       await cacheService.saveLastLocation(locationData);
@@ -201,6 +253,29 @@ class LocationService {
 
   async reverseGeocodeLocation(location: { latitude: number; longitude: number }): Promise<string | null> {
     try {
+      // Try backend API first (uses LocationIQ for better addresses)
+      const apiUrl = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.198.143:3000';
+      // Remove /api from the end if it exists to avoid double /api
+      const cleanApiUrl = apiUrl.replace(/\/api$/, '');
+      const response = await fetch(
+        `${cleanApiUrl}/api/location/reverse-geocode?lat=${location.latitude}&lon=${location.longitude}`
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.address && data.success) {
+          console.log('Using backend reverse geocoding result:', data.address);
+          return data.address;
+        }
+      } else {
+        console.warn('Backend reverse geocoding returned non-OK status:', response.status);
+      }
+    } catch (apiError) {
+      console.warn('Backend reverse geocoding failed, using fallback:', apiError);
+    }
+
+    // Fallback to Expo's reverse geocoding
+    try {
       const result = await Location.reverseGeocodeAsync(location);
       if (result.length > 0) {
         const addr = result[0];
@@ -215,7 +290,9 @@ class LocationService {
         ]
           .map((part) => String(part || '').trim())
           .filter(Boolean);
-        return parts.join(', ');
+        const fallbackAddress = parts.join(', ');
+        console.log('Using fallback reverse geocoding result:', fallbackAddress);
+        return fallbackAddress;
       }
       return null;
     } catch (error) {

@@ -35,7 +35,7 @@ import {
 } from '@/services/bookingService';
 import { createRideBooking } from '@/services/ridesService';
 import { BRAND, COLORS } from '@/utils/colors';
-import { bookingStyles, mapDarkStyle } from './booking.styles';
+import bookingStyles, { mapDarkStyle } from './booking.styles';
 import { ErrorDialog } from '@/components/ErrorDialog';
 import { SuccessDialog } from '@/components/SuccessDialog';
 import { OperationalAreasModal } from '@/components/OperationalAreasModal';
@@ -506,6 +506,31 @@ const resolveCurrentLocationAddress = async (
   fallbackReverseGeocode: (location: any) => Promise<string | null>
 ): Promise<LocationSearchResult> => {
   try {
+    // Try backend API first (uses LocationIQ)
+    const apiUrl = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.198.143:3000';
+    const cleanApiUrl = apiUrl.replace(/\/api$/, '');
+    const response = await fetch(
+      `${cleanApiUrl}/api/location/reverse-geocode?lat=${currentLocation.latitude}&lon=${currentLocation.longitude}`
+    );
+    
+    if (response.ok) {
+      const data = await response.json();
+      if (data.address && data.success) {
+        console.log('Using backend reverse geocoding for current location:', data.address);
+        return {
+          lat: currentLocation.latitude,
+          lng: currentLocation.longitude,
+          address: data.address,
+          source: 'local',
+        };
+      }
+    }
+  } catch (apiError) {
+    console.log('Backend reverse geocoding failed for current location, trying Google fallback:', apiError);
+  }
+
+  // Fallback to Google if backend fails
+  try {
     const googleResult = await reverseGeocodeWithGooglePlaces(
       currentLocation.latitude,
       currentLocation.longitude
@@ -592,8 +617,11 @@ export default function BookingScreen() {
   const [voiceLocationError, setVoiceLocationError] = useState('');
   const [isVoiceListening, setIsVoiceListening] = useState(false);
   const [isVoiceAvailable, setIsVoiceAvailable] = useState(true);
+  const [cashbackRewards, setCashbackRewards] = useState<any[]>([]);
+  const [selectedCashback, setSelectedCashback] = useState<any | null>(null);
+  const [originalFare, setOriginalFare] = useState(0);
+  const [showCashbackModal, setShowCashbackModal] = useState(false);
   const isLight = theme.mode === 'light';
-  const styles = bookingStyles;
 
   useEffect(() => {
     loadRecentData();
@@ -651,6 +679,21 @@ export default function BookingScreen() {
         cancelled = true;
       };
     }, [pickupLocation?.lat, pickupLocation?.lng]);
+
+  useEffect(() => {
+    const loadCashbackRewards = async () => {
+      try {
+        const response: any = await apiService.get('/user/cashback');
+        if (response?.availableRewards) {
+          setCashbackRewards(response.availableRewards);
+        }
+      } catch (error) {
+        console.error('Failed to load cashback rewards:', error);
+      }
+    };
+
+    loadCashbackRewards();
+  }, [lastBookedRideId]); // Reload cashback after ride completion
 
   useEffect(() => {
     const pickup = typeof params.pickup === 'string' ? params.pickup.trim() : '';
@@ -1269,6 +1312,8 @@ export default function BookingScreen() {
 
   const selectCurrentLocationOption = async (type: 'pickup' | 'dropoff') => {
     try {
+      setResolvingCurrentLocation(type); // Show loading state
+      
       const cached = prewarmedCurrentLocationRef.current;
       let entry =
         cached && Date.now() - cached.timestamp < PREWARMED_LOCATION_MAX_AGE_MS
@@ -1296,19 +1341,22 @@ export default function BookingScreen() {
         timestamp: Date.now(),
       };
       prewarmCurrentLocation().catch(() => {});
-      }
+    }
 
-      if (!entry) {
-        setResolvingCurrentLocation(type);
-        entry = await prewarmCurrentLocation(false);
-      }
+    if (!entry) {
+      entry = await prewarmCurrentLocation(false);
+    }
 
       if (!entry) {
         setCurrentLocationUnavailableVisible(true);
+        setResolvingCurrentLocation(null);
         return;
       }
 
       await applyCurrentLocation(type, entry);
+    } catch (error) {
+      console.error('Error selecting current location:', error);
+      setCurrentLocationUnavailableVisible(true);
     } finally {
       setResolvingCurrentLocation(null);
     }
@@ -1319,10 +1367,32 @@ export default function BookingScreen() {
 
     let resolvedAddress = '';
     try {
-      const placeResult = await reverseGeocodeWithGooglePlaces(coordinate.latitude, coordinate.longitude);
-      resolvedAddress = sanitizeAddress(placeResult?.address || '');
-    } catch (error) {
-      console.log('Google Places reverse lookup failed for map pick:', error);
+      // Try backend API first (uses LocationIQ)
+      const apiUrl = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.198.143:3000';
+      const cleanApiUrl = apiUrl.replace(/\/api$/, '');
+      const response = await fetch(
+        `${cleanApiUrl}/api/location/reverse-geocode?lat=${coordinate.latitude}&lon=${coordinate.longitude}`
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.address && data.success) {
+          resolvedAddress = sanitizeAddress(data.address);
+          console.log('Using backend reverse geocoding for map pick:', resolvedAddress);
+        }
+      }
+    } catch (apiError) {
+      console.log('Backend reverse geocoding failed for map pick, trying Google fallback:', apiError);
+    }
+
+    // Fallback to Google if backend fails
+    if (!resolvedAddress) {
+      try {
+        const placeResult = await reverseGeocodeWithGooglePlaces(coordinate.latitude, coordinate.longitude);
+        resolvedAddress = sanitizeAddress(placeResult?.address || '');
+      } catch (error) {
+        console.log('Google Places reverse lookup failed for map pick:', error);
+      }
     }
 
     if (!resolvedAddress) {
@@ -1447,9 +1517,10 @@ export default function BookingScreen() {
           distanceKm: normalizedDistance,
           durationMinutes: Number.isFinite(estimatedDuration) ? estimatedDuration : 0,
           pickupTime: pendingPickupTime,
-          fare: totalFare,
+          fare: bookingTotalFare,
           pricingConfig,
           weatherImpact: weatherImpact ? { ...weatherImpact } : null,
+          cashback_reward_id: selectedCashback?.id,
         });
       const rideId = response?.ride?.id || null;
 
@@ -1545,7 +1616,22 @@ export default function BookingScreen() {
   const bookingDistanceKm = roundDistanceKm(estimatedDistance);
   const bookingBaseFare = calculateRideFare(bookingDistanceKm, pricingConfig);
   const bookingWeatherSurcharge = Math.round(bookingBaseFare * (weatherImpact?.surchargeRate || 0));
-  const bookingTotalFare = bookingBaseFare + bookingWeatherSurcharge;
+  const originalBookingTotalFare = bookingBaseFare + bookingWeatherSurcharge;
+
+  // Calculate cashback discount
+  let cashbackDiscount = 0;
+  if (selectedCashback) {
+    const discountPercentage = selectedCashback.discount_percentage;
+    const maxDiscountAmount = selectedCashback.cashback_programs?.max_discount_amount || Infinity;
+    cashbackDiscount = (originalBookingTotalFare * discountPercentage) / 100;
+
+    // Cap discount at max amount
+    if (cashbackDiscount > maxDiscountAmount) {
+      cashbackDiscount = maxDiscountAmount;
+    }
+  }
+
+  const bookingTotalFare = Math.max(0, originalBookingTotalFare - cashbackDiscount);
   const bookingPlatformFee = Math.round(bookingTotalFare * pricingConfig.platformFeeRate);
   const bookingEstimatedDriverFare = Math.max(0, bookingTotalFare - bookingPlatformFee);
   const trafficLabel =
@@ -1588,7 +1674,7 @@ export default function BookingScreen() {
     return (
       <BookingStepPanel
         theme={theme}
-        styles={styles}
+        styles={bookingStyles}
         insets={insets}
         currentStep={bookingStep}
         title={isPickupStep ? 'From where?' : isDestinationStep ? 'Where to?' : isTimeStep ? 'When?' : 'Review your ride'}
@@ -1605,7 +1691,7 @@ export default function BookingScreen() {
               placeholder={isPickupStep ? 'Search pickup location' : 'Search destination'}
               icon={isPickupStep ? 'map-marker' : 'map-marker-check'}
               theme={theme}
-              styles={styles}
+              styles={bookingStyles}
               onChangeText={(text) => {
                 if (isPickupStep) setPickupSearch(text);
                 else setDropoffSearch(text);
@@ -1615,22 +1701,30 @@ export default function BookingScreen() {
               onClear={isPickupStep ? clearPickupSearch : clearDropoffSearch}
             />
 
-            <View style={styles.locationActionsRow}>
+            <View style={bookingStyles.locationActionsRow}>
               <TouchableOpacity
-                style={[styles.locationActionButton, { backgroundColor: theme.colors.inputBackground, borderColor: theme.colors.border }]}
+                style={[bookingStyles.locationActionButton, { backgroundColor: theme.colors.inputBackground, borderColor: theme.colors.border }]}
                 onPress={() => selectCurrentLocationOption(locationType)}
                 activeOpacity={0.85}
+                disabled={resolvingCurrentLocation === locationType}
               >
-                <MaterialCommunityIcons name="crosshairs-gps" size={18} color={BRAND.primary} />
-                <Text style={[styles.locationActionText, { color: theme.colors.textPrimary }]}>Use current location</Text>
+                {resolvingCurrentLocation === locationType ? (
+                  <ActivityIndicator size={18} color={BRAND.primary} />
+                ) : (
+                  <MaterialCommunityIcons name="crosshairs-gps" size={18} color={BRAND.primary} />
+                )}
+                <Text style={[bookingStyles.locationActionText, { color: theme.colors.textPrimary }]}>
+                  {resolvingCurrentLocation === locationType ? 'Getting location...' : 'Use current location'}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.locationActionButton, { backgroundColor: theme.colors.inputBackground, borderColor: theme.colors.border }]}
+                style={[bookingStyles.locationActionButton, { backgroundColor: theme.colors.inputBackground, borderColor: theme.colors.border }]}
                 onPress={() => openMapLocationPicker(locationType)}
                 activeOpacity={0.85}
+                disabled={resolvingCurrentLocation === locationType}
               >
                 <MaterialCommunityIcons name="map-marker-outline" size={18} color={BRAND.primary} />
-                <Text style={[styles.locationActionText, { color: theme.colors.textPrimary }]}>Pick on map</Text>
+                <Text style={[bookingStyles.locationActionText, { color: theme.colors.textPrimary }]}>Pick on map</Text>
               </TouchableOpacity>
             </View>
 
@@ -1640,7 +1734,7 @@ export default function BookingScreen() {
                 onSelect={(result) => selectSearchResult(result, locationType)}
                 onClose={() => closeLocationSuggestions(locationType)}
                 theme={theme}
-                styles={styles}
+                styles={bookingStyles}
                 title={locationResultsTitle}
                 subtitle="Tap once or double tap to set the location"
               />
@@ -1649,14 +1743,14 @@ export default function BookingScreen() {
         ) : null}
 
         {isTimeStep ? (
-          <View style={[styles.whenPanel, { backgroundColor: theme.colors.inputBackground, borderColor: theme.colors.border }]}>
+          <View style={[bookingStyles.whenPanel, { backgroundColor: theme.colors.inputBackground, borderColor: theme.colors.border }]}>
             <MaterialCommunityIcons name="calendar-clock" size={28} color={BRAND.primary} />
             <View style={{ flex: 1 }}>
-              <Text style={[styles.whenSelectedLabel, { color: theme.colors.textSecondary }]}>Pickup time</Text>
-              <Text style={[styles.whenSelectedValue, { color: theme.colors.textPrimary }]}>{selectedTimeLabel}</Text>
+              <Text style={[bookingStyles.whenSelectedLabel, { color: theme.colors.textSecondary }]}>Pickup time</Text>
+              <Text style={[bookingStyles.whenSelectedValue, { color: theme.colors.textPrimary }]}>{selectedTimeLabel}</Text>
             </View>
-            <TouchableOpacity style={[styles.whenButton, { backgroundColor: BRAND.primary }]} onPress={() => setShowPickupTimeModal(true)} activeOpacity={0.9}>
-              <Text style={styles.whenButtonText}>Choose</Text>
+            <TouchableOpacity style={[bookingStyles.whenButton, { backgroundColor: BRAND.primary }]} onPress={() => setShowPickupTimeModal(true)} activeOpacity={0.9}>
+              <Text style={bookingStyles.whenButtonText}>Choose</Text>
             </TouchableOpacity>
           </View>
         ) : null}
@@ -1665,7 +1759,7 @@ export default function BookingScreen() {
           <>
               <BookingFareSummary
                 theme={theme}
-                styles={styles}
+                styles={bookingStyles}
                 isLight={isLight}
                 routeLoading={routeLoading}
                 estimatedDistance={roundDistanceKm(estimatedDistance)}
@@ -1678,11 +1772,23 @@ export default function BookingScreen() {
                 trafficLabel={trafficLabel}
                 bookingPlatformFee={bookingPlatformFee}
                 bookingEstimatedDriverFare={bookingEstimatedDriverFare}
+                cashbackRewards={cashbackRewards}
+                selectedCashback={selectedCashback}
+                onSelectCashback={(reward) => {
+                  if (selectedCashback?.id === reward.id) {
+                    setSelectedCashback(null);
+                    setOriginalFare(0);
+                  } else {
+                    setSelectedCashback(reward);
+                    setOriginalFare(originalBookingTotalFare);
+                  }
+                }}
+                originalFare={originalBookingTotalFare}
               />
             <TourTarget id="booking-confirm">
               <BookingReviewCard
                 theme={theme}
-                styles={styles}
+                styles={bookingStyles}
                 pickupAddress={sanitizeAddress(pickupLocation?.address || '')}
                 dropoffAddress={sanitizeAddress(dropoffLocation?.address || '')}
                 bookingTotalFare={bookingTotalFare}
@@ -1694,9 +1800,9 @@ export default function BookingScreen() {
         ) : null}
 
         {activeLocationPicker && (isPickupStep || isDestinationStep) ? (
-          <View style={[styles.guideBox, styles.guideBoxCompact, { backgroundColor: theme.colors.inputBackground }]}>
+          <View style={[bookingStyles.guideBox, bookingStyles.guideBoxCompact, { backgroundColor: theme.colors.inputBackground }]}>
             <MaterialCommunityIcons name="gesture-tap" size={20} color={BRAND.primary} />
-            <Text style={[styles.guideText, { color: theme.colors.textSecondary }]}>
+            <Text style={[bookingStyles.guideText, { color: theme.colors.textSecondary }]}>
               Tap the map to set {activeLocationPicker === 'pickup' ? 'pickup' : 'destination'}.
             </Text>
           </View>
@@ -1706,13 +1812,13 @@ export default function BookingScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+    <View style={[bookingStyles.container, { backgroundColor: theme.colors.background }]}>
       <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
 
       {/* Map */}
       {!isLocationSearchExpanded ? (
       <MapboxMap
-        style={styles.map}
+        style={bookingStyles.map}
         latitude={currentLocation?.latitude || 6.5}
         longitude={currentLocation?.longitude || 3.3}
         zoom={12}
@@ -1744,26 +1850,26 @@ export default function BookingScreen() {
         )}
       </MapboxMap>
       ) : (
-        <View style={[styles.searchExpandedBackground, { backgroundColor: theme.colors.background }]} />
+        <View style={[bookingStyles.searchExpandedBackground, { backgroundColor: theme.colors.background }]} />
       )}
 
       {/* Header */}
       {!isLocationSearchExpanded ? (
-      <View style={[styles.header, { top: insets.top + 10 }]}>
-        {/* <TouchableOpacity onPress={() => router.back()} style={[styles.iconButton, { backgroundColor: theme.colors.surface }]}>
+      <View style={[bookingStyles.header, { top: insets.top + 10 }]}>
+        {/* <TouchableOpacity onPress={() => router.back()} style={[bookingStyles.iconButton, { backgroundColor: theme.colors.surface }]}>
           <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.textPrimary} />
         </TouchableOpacity> */}
-        
+
         {pickupLocation && dropoffLocation && (
-          <View style={[styles.pillBadge, { backgroundColor: BRAND.primary }]}>
-            <Text style={styles.pillText}>₦{bookingTotalFare.toLocaleString()}</Text>
+          <View style={[bookingStyles.pillBadge, { backgroundColor: BRAND.primary }]}>
+            <Text style={bookingStyles.pillText}>₦{bookingTotalFare.toLocaleString()}</Text>
           </View>
         )}
 
         {/* Operational Areas Info Button */}
         <TouchableOpacity
           onPress={() => setShowOperationalAreasModal(true)}
-          style={[styles.iconButton, { backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border }]}
+          style={[bookingStyles.iconButton, { backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border }]}
         >
           <MaterialCommunityIcons name="information" size={20} color={BRAND.primary} />
         </TouchableOpacity>
@@ -1817,11 +1923,11 @@ export default function BookingScreen() {
       />
 
       <Modal visible={Boolean(resolvingCurrentLocation)} transparent animationType="fade" statusBarTranslucent>
-        <View style={styles.locationWaitOverlay}>
-          <View style={[styles.locationWaitCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+        <View style={bookingStyles.locationWaitOverlay}>
+          <View style={[bookingStyles.locationWaitCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
             <ActivityIndicator color={BRAND.primary} />
-            <Text style={[styles.locationWaitTitle, { color: theme.colors.textPrimary }]}>Please wait</Text>
-            <Text style={[styles.locationWaitText, { color: theme.colors.textSecondary }]}>
+            <Text style={[bookingStyles.locationWaitTitle, { color: theme.colors.textPrimary }]}>Please wait</Text>
+            <Text style={[bookingStyles.locationWaitText, { color: theme.colors.textSecondary }]}>
               Getting your current {resolvingCurrentLocation === 'pickup' ? 'pickup' : 'destination'} address...
             </Text>
           </View>
@@ -1853,16 +1959,16 @@ export default function BookingScreen() {
         animationType="fade"
         onRequestClose={() => setLocationWarningVisible(false)}
       >
-        <View style={styles.warningOverlay}>
-          <View style={[styles.warningCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+        <View style={bookingStyles.warningOverlay}>
+          <View style={[bookingStyles.warningCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
             <MaterialCommunityIcons name="information-outline" size={30} color={BRAND.primary} />
-            <Text style={[styles.warningTitle, { color: theme.colors.textPrimary }]}>Location notice</Text>
-            <Text style={[styles.warningText, { color: theme.colors.textSecondary }]}>
+            <Text style={[bookingStyles.warningTitle, { color: theme.colors.textPrimary }]}>Location notice</Text>
+            <Text style={[bookingStyles.warningText, { color: theme.colors.textSecondary }]}>
               If no driver accepts this location within about an hour, it may not be actively served yet.
               You can still try other nearby Lagos locations for faster matching.
             </Text>
-            <TouchableOpacity onPress={() => setLocationWarningVisible(false)} style={[styles.warningButton, { backgroundColor: BRAND.primary }]}>
-              <Text style={styles.warningButtonText}>Okay</Text>
+            <TouchableOpacity onPress={() => setLocationWarningVisible(false)} style={[bookingStyles.warningButton, { backgroundColor: BRAND.primary }]}>
+              <Text style={bookingStyles.warningButtonText}>Okay</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1883,32 +1989,32 @@ export default function BookingScreen() {
         animationType="fade"
         onRequestClose={handleCancelBookingConfirmation}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={[styles.confirmModal, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-            <View style={[styles.confirmIcon, { backgroundColor: `${BRAND.primary}22` }]}>
+        <View style={bookingStyles.modalBackdrop}>
+          <View style={[bookingStyles.confirmModal, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+            <View style={[bookingStyles.confirmIcon, { backgroundColor: `${BRAND.primary}22` }]}>
               <MaterialCommunityIcons name="receipt-text-check-outline" size={30} color={BRAND.primary} />
             </View>
-            <Text style={[styles.confirmTitle, { color: theme.colors.textPrimary }]}>Confirm your ride</Text>
-            <Text style={[styles.confirmCopy, { color: theme.colors.textSecondary }]}>
+            <Text style={[bookingStyles.confirmTitle, { color: theme.colors.textPrimary }]}>Confirm your ride</Text>
+            <Text style={[bookingStyles.confirmCopy, { color: theme.colors.textSecondary }]}>
               Review the fare breakdown before we send this request to nearby drivers.
             </Text>
-            <View style={[styles.confirmRoute, { borderColor: theme.colors.border, backgroundColor: theme.colors.inputBackground }]}>
-              <Text numberOfLines={2} style={[styles.confirmAddress, { color: theme.colors.textPrimary }]}>{sanitizeAddress(pickupLocation?.address || '')}</Text>
+            <View style={[bookingStyles.confirmRoute, { borderColor: theme.colors.border, backgroundColor: theme.colors.inputBackground }]}>
+              <Text numberOfLines={2} style={[bookingStyles.confirmAddress, { color: theme.colors.textPrimary }]}>{sanitizeAddress(pickupLocation?.address || '')}</Text>
               <MaterialCommunityIcons name="arrow-down" size={18} color={BRAND.primary} />
-              <Text numberOfLines={2} style={[styles.confirmAddress, { color: theme.colors.textPrimary }]}>{sanitizeAddress(dropoffLocation?.address || '')}</Text>
+              <Text numberOfLines={2} style={[bookingStyles.confirmAddress, { color: theme.colors.textPrimary }]}>{sanitizeAddress(dropoffLocation?.address || '')}</Text>
             </View>
-            <View style={styles.confirmRows}>
-              <View style={[styles.confirmRow, styles.confirmTotalRow, { borderTopColor: theme.colors.border }]}>
-                <Text style={[styles.confirmTotalLabel, { color: theme.colors.textPrimary }]}>Total payable fare</Text>
-                <Text style={[styles.confirmTotalValue, { color: BRAND.primary }]}>₦{bookingTotalFare.toLocaleString()}</Text>
+            <View style={bookingStyles.confirmRows}>
+              <View style={[bookingStyles.confirmRow, bookingStyles.confirmTotalRow, { borderTopColor: theme.colors.border }]}>
+                <Text style={[bookingStyles.confirmTotalLabel, { color: theme.colors.textPrimary }]}>Total payable fare</Text>
+                <Text style={[bookingStyles.confirmTotalValue, { color: BRAND.primary }]}>₦{bookingTotalFare.toLocaleString()}</Text>
               </View>
             </View>
-            <View style={styles.confirmActions}>
-              <TouchableOpacity onPress={handleCancelBookingConfirmation} style={[styles.confirmButton, { borderColor: theme.colors.border }]}>
-                <Text style={[styles.confirmButtonText, { color: theme.colors.textPrimary }]}>Go Back</Text>
+            <View style={bookingStyles.confirmActions}>
+              <TouchableOpacity onPress={handleCancelBookingConfirmation} style={[bookingStyles.confirmButton, { borderColor: theme.colors.border }]}>
+                <Text style={[bookingStyles.confirmButtonText, { color: theme.colors.textPrimary }]}>Go Back</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={handleConfirmBooking} style={[styles.confirmButton, { backgroundColor: BRAND.primary, borderColor: BRAND.primary }]}>
-                <Text style={[styles.confirmButtonText, { color: '#000' }]}>Confirm Booking</Text>
+              <TouchableOpacity onPress={handleConfirmBooking} style={[bookingStyles.confirmButton, { backgroundColor: BRAND.primary, borderColor: BRAND.primary }]}>
+                <Text style={[bookingStyles.confirmButtonText, { color: '#000' }]}>Confirm Booking</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1916,21 +2022,21 @@ export default function BookingScreen() {
       </Modal>
 
       <Modal visible={!!voiceLocationTarget} transparent animationType="fade" onRequestClose={closeVoiceLocation}>
-        <View style={styles.modalBackdrop}>
-          <View style={[styles.voiceModal, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-            <View style={[styles.voiceIcon, { backgroundColor: isVoiceListening ? `${BRAND.primary}28` : `${BRAND.primary}18` }]}>
+        <View style={bookingStyles.modalBackdrop}>
+          <View style={[bookingStyles.voiceModal, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+            <View style={[bookingStyles.voiceIcon, { backgroundColor: isVoiceListening ? `${BRAND.primary}28` : `${BRAND.primary}18` }]}>
               <MaterialCommunityIcons name={isVoiceListening ? 'microphone' : 'microphone-outline'} size={28} color={BRAND.primary} />
             </View>
-            <Text style={[styles.voiceTitle, { color: theme.colors.textPrimary }]}>
+            <Text style={[bookingStyles.voiceTitle, { color: theme.colors.textPrimary }]}>
               Voice location search
             </Text>
-            <Text style={[styles.voiceCopy, { color: theme.colors.textSecondary }]}>
+            <Text style={[bookingStyles.voiceCopy, { color: theme.colors.textSecondary }]}>
               Tap the mic and say the {voiceLocationTarget === 'pickup' ? 'pickup' : 'destination'} address. We will search Google Places with the transcript.
             </Text>
             <TouchableOpacity
               onPress={isVoiceListening ? stopVoiceLocationListening : startVoiceLocationListening}
               style={[
-                styles.voiceRecordButton,
+                bookingStyles.voiceRecordButton,
                 {
                   backgroundColor: isVoiceListening ? '#FFE8E3' : BRAND.primary,
                   borderColor: isVoiceListening ? '#FFB5A6' : BRAND.primary,
@@ -1942,15 +2048,15 @@ export default function BookingScreen() {
                 size={19}
                 color={isVoiceListening ? '#B3261E' : '#000'}
               />
-              <Text style={[styles.voiceRecordText, { color: isVoiceListening ? '#B3261E' : '#000' }]}>
+              <Text style={[bookingStyles.voiceRecordText, { color: isVoiceListening ? '#B3261E' : '#000' }]}>
                 {isVoiceListening ? 'Stop recording' : 'Start speaking'}
               </Text>
             </TouchableOpacity>
             {!!voiceLocationError && (
-              <Text style={styles.voiceErrorText}>{voiceLocationError}</Text>
+              <Text style={bookingStyles.voiceErrorText}>{voiceLocationError}</Text>
             )}
             <TextInput
-              style={[styles.voiceInput, { color: theme.colors.textPrimary, borderColor: theme.colors.border, backgroundColor: theme.colors.inputBackground }]}
+              style={[bookingStyles.voiceInput, { color: theme.colors.textPrimary, borderColor: theme.colors.border, backgroundColor: theme.colors.inputBackground }]}
               placeholder="Example: University of Lagos, Akoka"
               placeholderTextColor={theme.colors.textTertiary}
               value={voiceLocationText}
@@ -1959,12 +2065,12 @@ export default function BookingScreen() {
               returnKeyType="search"
               onSubmitEditing={applyVoiceLocationText}
             />
-            <View style={styles.voiceActions}>
-              <TouchableOpacity onPress={closeVoiceLocation} style={[styles.voiceButton, { borderColor: theme.colors.border }]}>
-                <Text style={[styles.voiceButtonText, { color: theme.colors.textPrimary }]}>Cancel</Text>
+            <View style={bookingStyles.voiceActions}>
+              <TouchableOpacity onPress={closeVoiceLocation} style={[bookingStyles.voiceButton, { borderColor: theme.colors.border }]}>
+                <Text style={[bookingStyles.voiceButtonText, { color: theme.colors.textPrimary }]}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={applyVoiceLocationText} style={[styles.voiceButton, { backgroundColor: BRAND.primary, borderColor: BRAND.primary }]}>
-                <Text style={[styles.voiceButtonText, { color: '#000' }]}>Find Location</Text>
+              <TouchableOpacity onPress={applyVoiceLocationText} style={[bookingStyles.voiceButton, { backgroundColor: BRAND.primary, borderColor: BRAND.primary }]}>
+                <Text style={[bookingStyles.voiceButtonText, { color: '#000' }]}>Find Location</Text>
               </TouchableOpacity>
             </View>
           </View>

@@ -151,7 +151,19 @@ export function calculateRideFare(
   config: BookingPricingConfig = getCurrentBookingPricingConfig()
 ): number {
   const safeDistance = Math.max(0, Number.isFinite(distanceKm) ? distanceKm : 0);
-  const distanceRate = Number.isFinite(Number(config.ratePerKm)) ? Number(config.ratePerKm) : BOOKING_PRICING.ratePerKm;
+  
+  // Use distance bands from dynamic pricing if available
+  let distanceRate = Number.isFinite(Number(config.ratePerKm)) ? Number(config.ratePerKm) : BOOKING_PRICING.ratePerKm;
+  
+  // Find appropriate distance band
+  if (config.distanceBands && config.distanceBands.length > 0) {
+    const sortedBands = [...config.distanceBands].sort((a, b) => (a.maxKm ?? Number.MAX_SAFE_INTEGER) - (b.maxKm ?? Number.MAX_SAFE_INTEGER));
+    const applicableBand = sortedBands.find(band => band.maxKm === null || safeDistance <= band.maxKm);
+    if (applicableBand && Number.isFinite(applicableBand.rate)) {
+      distanceRate = applicableBand.rate;
+    }
+  }
+  
   const rawFare = config.baseFare + safeDistance * distanceRate;
 
   return Math.max(config.minimumFare, Math.round(rawFare));
@@ -185,6 +197,7 @@ export function buildRideBookingPayload(input: {
     precipitationMm: number;
     icon: string;
   } | null;
+  cashback_reward_id?: string;
 }) {
   const config = input.pricingConfig || getCurrentBookingPricingConfig();
   const distanceKm = roundDistanceKm(Number.isFinite(input.distanceKm) && input.distanceKm > 0 ? input.distanceKm : 1);
@@ -228,5 +241,6 @@ export function buildRideBookingPayload(input: {
       platformFeeRate: config.platformFeeRate,
       weatherImpact: input.weatherImpact || null,
     },
+    ...(input.cashback_reward_id && { cashback_reward_id: input.cashback_reward_id }),
   };
 }

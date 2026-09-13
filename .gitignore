@@ -66,3 +66,18 @@ dist/
 
 # Watchman crawler
 .watchmanconfig
+
+# Documentation
+markdown/
+*.md
+!README.md
+
+# Development files
+.github/
+.code-workspace
+sck.code-workspace
+charterkkeasely.code-workspace
+
+# Polyfills
+assert-polyfill.js
+buffer-polyfill.js

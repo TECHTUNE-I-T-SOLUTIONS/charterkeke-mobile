@@ -241,7 +241,7 @@ class APIService {
   async getReferralCode(): Promise<any> {
     try {
       const res = await this.get('/user/referrals');
-      console.log('🔍 [API] getReferralCode raw response:', JSON.stringify(res));
+      // console.log('🔍 [API] getReferralCode raw response:', JSON.stringify(res));
       return res;
     } catch (error: any) {
       console.warn('⚠️  [API] Failed to fetch referral code:', error?.message);
