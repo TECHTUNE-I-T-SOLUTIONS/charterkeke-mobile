@@ -1,40 +1,68 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Modal } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+  Modal,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/context/ThemeContext';
 import { apiService } from '@/services/api';
-import Animated, { Easing, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, {
+  Easing,
+  useSharedValue,
+  withTiming,
+  useAnimatedStyle,
+} from 'react-native-reanimated';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const TreasureChestModal = ({ visible, onClose, discountPercentage, hasOpened }: {
+const CHEST_OPENED_KEY = '@charter_keke_chest_opened';
+
+const TreasureChestModal = ({
+  visible,
+  onClose,
+  discountPercentage,
+  alreadyRevealed,
+}: {
   visible: boolean;
   onClose: () => void;
   discountPercentage: number | null;
-  hasOpened: boolean;
+  alreadyRevealed: boolean;
 }) => {
-  const scaleValue = useSharedValue(0);
-  const [isOpen, setIsOpen] = useState(false);
-  const [localDiscount, setLocalDiscount] = useState<number | null>(null);
+  const scaleValue = useSharedValue(alreadyRevealed ? 1 : 0);
+  const [isOpen, setIsOpen] = useState(alreadyRevealed);
+
+  // Animated style — never read .value in JSX
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scaleValue.value }],
+  }));
 
   useEffect(() => {
     if (visible) {
-      // Update local discount when modal opens or discount changes
-      if (discountPercentage !== null) {
-        setLocalDiscount(discountPercentage);
-        // Animate chest opening if not already opened
-        if (!hasOpened) {
-          setTimeout(() => {
-            scaleValue.value = withTiming(1, {
-              duration: 800,
-              easing: Easing.elastic(1),
-            });
-            setIsOpen(true);
-          }, 500);
-        }
+      if (alreadyRevealed) {
+        // Chest was opened before — show fully open immediately
+        scaleValue.value = 1;
+        setIsOpen(true);
+      } else if (discountPercentage !== null) {
+        // First time opening — animate
+        scaleValue.value = 0;
+        setIsOpen(false);
+        setTimeout(() => {
+          scaleValue.value = withTiming(1, {
+            duration: 800,
+            easing: Easing.elastic(1),
+          });
+          setIsOpen(true);
+        }, 500);
       }
     }
-  }, [visible, discountPercentage, hasOpened]);
+  }, [visible, alreadyRevealed, discountPercentage]);
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -44,27 +72,38 @@ const TreasureChestModal = ({ visible, onClose, discountPercentage, hasOpened }:
             <MaterialCommunityIcons name="close" size={24} color="#888" />
           </TouchableOpacity>
 
-          <Text style={styles.modalTitle}>🎁 Your Reward Awaits!</Text>
+          <Text style={styles.modalTitle}>
+            {alreadyRevealed ? '🎉 Your Reward' : '🎁 Your Reward Awaits!'}
+          </Text>
           <Text style={styles.modalSubtitle}>
-            Complete your first ride to unlock your treasure!
+            {alreadyRevealed
+              ? 'Your first ride discount is ready to use!'
+              : 'Complete your first ride to unlock your treasure!'}
           </Text>
 
           <View style={styles.chestContainer}>
-            <Animated.View style={{ transform: [{ scale: scaleValue.value }] }}>
-              <MaterialCommunityIcons 
-                name="treasure-chest" 
-                size={150} 
-                color={isOpen ? "#FFD700" : "#8B4513"} 
+            {/* Use animatedStyle — NOT scaleValue.value directly */}
+            <Animated.View style={animatedStyle}>
+              <MaterialCommunityIcons
+                name="treasure-chest"
+                size={150}
+                color={isOpen ? '#FFD700' : '#8B4513'}
               />
             </Animated.View>
           </View>
 
-          {isOpen && localDiscount !== null && (
+          {isOpen && discountPercentage !== null && (
             <View style={styles.revealContainer}>
-              <Text style={styles.revealTitle}>Congratulations!</Text>
-              <Text style={styles.revealText}>You won {localDiscount}% off your next ride!</Text>
+              <Text style={styles.revealTitle}>
+                {alreadyRevealed ? 'Your Reward 🎊' : 'Congratulations!'}
+              </Text>
+              <Text style={styles.revealText}>
+                You {alreadyRevealed ? 'have' : 'won'} {discountPercentage}% off your next ride!
+              </Text>
               <TouchableOpacity style={styles.claimButton} onPress={onClose}>
-                <Text style={styles.claimButtonText}>Claim Reward</Text>
+                <Text style={styles.claimButtonText}>
+                  {alreadyRevealed ? 'Great!' : 'Claim Reward'}
+                </Text>
               </TouchableOpacity>
             </View>
           )}
@@ -80,11 +119,21 @@ export default function RiderCashback() {
   const [loading, setLoading] = useState(true);
   const [cashbackData, setCashbackData] = useState<any>(null);
   const [treasureModalVisible, setTreasureModalVisible] = useState(false);
-  const [hasOpenedChest, setHasOpenedChest] = useState(false);
+  // Whether the user has ever opened the chest (persisted in AsyncStorage)
+  const [chestOpenedBefore, setChestOpenedBefore] = useState(false);
 
   useEffect(() => {
-    loadCashbackData();
+    loadAll();
   }, []);
+
+  const loadAll = async () => {
+    // Check AsyncStorage first for persisted chest-opened state
+    try {
+      const stored = await AsyncStorage.getItem(CHEST_OPENED_KEY);
+      if (stored === 'true') setChestOpenedBefore(true);
+    } catch (_) {}
+    await loadCashbackData();
+  };
 
   const loadCashbackData = async () => {
     try {
@@ -100,19 +149,20 @@ export default function RiderCashback() {
     }
   };
 
+  // The first_ride reward from the API — if it exists, user already unlocked it
+  const firstRideReward = cashbackData?.availableRewards?.find(
+    (r: any) => r.cashback_programs?.program_type === 'first_ride'
+  );
+
+  // Chest is considered opened if:
+  // 1. User has opened it in this session (chestOpenedBefore from AsyncStorage), OR
+  // 2. The API already returned a first_ride reward (means they opened it before and it's still valid)
+  const chestAlreadyOpened = chestOpenedBefore || !!firstRideReward;
+
   const handleOpenChest = async () => {
     try {
-      // Find the first ride bonus reward percentage
-      const firstRideReward = cashbackData?.availableRewards?.find(
-        (r: any) => r.cashback_programs?.program_type === 'first_ride'
-      );
-
-      // If no reward exists yet, create it by calling the API
       if (!firstRideReward && cashbackData?.stats?.first_ride_bonus_earned) {
-        const response: any = await apiService.post('/user/cashback', {
-          action: 'generate_first_ride_reward'
-        });
-        // Reload data to get the new reward
+        await apiService.post('/user/cashback', { action: 'generate_first_ride_reward' });
         await loadCashbackData();
       }
       setTreasureModalVisible(true);
@@ -122,21 +172,48 @@ export default function RiderCashback() {
     }
   };
 
-  const formatMoney = (value: number) => `₦${value.toLocaleString()}`;
+  const handleCloseModal = useCallback(async () => {
+    setTreasureModalVisible(false);
+    // Persist that the chest has been opened
+    try {
+      await AsyncStorage.setItem(CHEST_OPENED_KEY, 'true');
+      setChestOpenedBefore(true);
+    } catch (_) {}
+    await loadCashbackData();
+  }, []);
 
-  // Find the first ride bonus reward percentage
-  const firstRideReward = cashbackData?.availableRewards?.find(
-    (r: any) => r.cashback_programs?.program_type === 'first_ride'
-  );
+  const formatMoney = (value: number) => `₦${value.toLocaleString()}`;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.background }}>
       {/* Header */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: theme.colors.border }}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: 16,
+          paddingVertical: 12,
+          borderBottomWidth: 1,
+          borderBottomColor: theme.colors.border,
+        }}
+      >
+        <TouchableOpacity
+          onPress={() => router.back()}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
           <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={{ color: theme.colors.textPrimary, fontSize: 18, fontWeight: '700', marginLeft: 12, flex: 1 }}>Cashback Rewards</Text>
+        <Text
+          style={{
+            color: theme.colors.textPrimary,
+            fontSize: 18,
+            fontWeight: '700',
+            marginLeft: 12,
+            flex: 1,
+          }}
+        >
+          Cashback Rewards
+        </Text>
       </View>
 
       {loading ? (
@@ -147,67 +224,125 @@ export default function RiderCashback() {
         <ScrollView contentContainerStyle={{ padding: 16 }}>
           {/* Stats Cards */}
           <View style={styles.statsContainer}>
-            <View style={[styles.statCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+            <View
+              style={[
+                styles.statCard,
+                { backgroundColor: theme.colors.card, borderColor: theme.colors.border },
+              ]}
+            >
               <MaterialCommunityIcons name="wallet-giftcard" size={24} color="#FF8A00" />
               <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>
                 {formatMoney(cashbackData?.stats?.available_cashback_balance ?? 0)}
               </Text>
-              <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Available Balance</Text>
+              <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
+                Available Balance
+              </Text>
             </View>
-            <View style={[styles.statCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+            <View
+              style={[
+                styles.statCard,
+                { backgroundColor: theme.colors.card, borderColor: theme.colors.border },
+              ]}
+            >
               <MaterialCommunityIcons name="cash" size={24} color="#10B981" />
               <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>
                 {formatMoney(cashbackData?.stats?.total_cashback_earned ?? 0)}
               </Text>
-              <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Total Earned</Text>
+              <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
+                Total Earned
+              </Text>
             </View>
-            <View style={[styles.statCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+            <View
+              style={[
+                styles.statCard,
+                { backgroundColor: theme.colors.card, borderColor: theme.colors.border },
+              ]}
+            >
               <MaterialCommunityIcons name="history" size={24} color="#3B82F6" />
               <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>
                 {cashbackData?.stats?.total_rides_completed ?? 0}
               </Text>
-              <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Rides Completed</Text>
+              <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
+                Rides Completed
+              </Text>
             </View>
           </View>
 
-          {/* Treasure Chest Gamification */}
-          <View style={[styles.card, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+          {/* Treasure Chest */}
+          <View
+            style={[
+              styles.card,
+              { backgroundColor: theme.colors.card, borderColor: theme.colors.border },
+            ]}
+          >
             <View style={styles.cardHeader}>
               <MaterialCommunityIcons name="treasure-chest" size={24} color="#FF8A00" />
               <View style={styles.cardHeaderContent}>
-                <Text style={[styles.cardTitle, { color: theme.colors.textPrimary }]}>Your Treasure</Text>
-                <Text style={[styles.cardSubtitle, { color: theme.colors.textSecondary }]}>Open to reveal your reward!</Text>
+                <Text style={[styles.cardTitle, { color: theme.colors.textPrimary }]}>
+                  Your Treasure
+                </Text>
+                <Text style={[styles.cardSubtitle, { color: theme.colors.textSecondary }]}>
+                  {chestAlreadyOpened ? 'Your reward has been revealed!' : 'Open to reveal your reward!'}
+                </Text>
               </View>
             </View>
+
             <Text style={[styles.cardDescription, { color: theme.colors.textSecondary }]}>
               {cashbackData?.stats?.first_ride_bonus_earned
-                ? "You have a treasure waiting! Tap the chest below to reveal your discount percentage (1-5% off)!"
-                : "Complete your first ride to unlock your treasure chest with a random discount (1-5% off)!"}
+                ? chestAlreadyOpened
+                  ? `You have a ${firstRideReward?.discount_percentage ?? ''}% discount ready to use on your next booking!`
+                  : 'You have a treasure waiting! Tap the chest below to reveal your discount (1-5% off)!'
+                : 'Complete your first ride to unlock your treasure chest with a random discount (1-5% off)!'}
             </Text>
-            {cashbackData?.stats?.first_ride_bonus_earned && !hasOpenedChest && (
+
+            {/* Show "Open Chest" only if bonus earned but not yet opened */}
+            {cashbackData?.stats?.first_ride_bonus_earned && !chestAlreadyOpened && (
               <TouchableOpacity style={styles.chestButton} onPress={handleOpenChest}>
                 <MaterialCommunityIcons name="treasure-chest" size={32} color="#FF8A00" />
                 <Text style={styles.chestButtonText}>Open Chest</Text>
               </TouchableOpacity>
             )}
-            {hasOpenedChest && firstRideReward && (
-              <View style={styles.chestOpenedBadge}>
-                <MaterialCommunityIcons name="check-circle" size={20} color="#10B981" />
-                <Text style={styles.chestOpenedText}>Reward Revealed: {firstRideReward.discount_percentage}%</Text>
+
+            {/* Show "View Reward" if already opened */}
+            {chestAlreadyOpened && firstRideReward && (
+              <View>
+                <View style={styles.chestOpenedBadge}>
+                  <MaterialCommunityIcons name="check-circle" size={20} color="#10B981" />
+                  <Text style={styles.chestOpenedText}>
+                    Reward Revealed: {firstRideReward.discount_percentage}% off
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.chestButton, { backgroundColor: '#FF8A0020', marginTop: 8 }]}
+                  onPress={() => setTreasureModalVisible(true)}
+                >
+                  <MaterialCommunityIcons name="eye" size={20} color="#FF8A00" />
+                  <Text style={[styles.chestButtonText, { color: '#FF8A00' }]}>View Reward</Text>
+                </TouchableOpacity>
               </View>
             )}
           </View>
 
           {/* Available Rewards */}
-          <View style={[styles.card, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Available Rewards</Text>
+          <View
+            style={[
+              styles.card,
+              { backgroundColor: theme.colors.card, borderColor: theme.colors.border },
+            ]}
+          >
+            <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>
+              Available Rewards
+            </Text>
             {!cashbackData || cashbackData?.availableRewards?.length === 0 ? (
               <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
                 No available rewards. Complete rides to earn cashback!
               </Text>
             ) : (
               cashbackData.availableRewards.map((reward: any) => (
-                <View key={reward.id} style={[styles.rewardItem, { borderColor: theme.colors.border }]}>
+                <View
+                  key={reward.id}
+                  style={[styles.rewardItem, { borderColor: theme.colors.border }]}
+                >
                   <View style={styles.rewardIcon}>
                     <MaterialCommunityIcons name="tag" size={20} color="#FF8A00" />
                   </View>
@@ -217,28 +352,67 @@ export default function RiderCashback() {
                     </Text>
                     <Text style={[styles.rewardDiscount, { color: theme.colors.textSecondary }]}>
                       {reward.discount_percentage}% off
-                      {reward.discount_amount > 0 && ` (max ${formatMoney(reward.discount_amount)})`}
+                      {reward.discount_amount > 0 &&
+                        ` (max ${formatMoney(reward.discount_amount)})`}
                     </Text>
                     <Text style={[styles.rewardExpiry, { color: theme.colors.textSecondary }]}>
-                      Expires: {reward.expires_at ? new Date(reward.expires_at).toLocaleDateString() : 'Never'}
+                      Expires:{' '}
+                      {reward.expires_at
+                        ? new Date(reward.expires_at).toLocaleDateString()
+                        : 'Never'}
                     </Text>
                   </View>
                 </View>
               ))
             )}
           </View>
+
+          {/* Used Rewards history */}
+          {cashbackData?.usedRewards?.length > 0 && (
+            <View
+              style={[
+                styles.card,
+                { backgroundColor: theme.colors.card, borderColor: theme.colors.border },
+              ]}
+            >
+              <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>
+                Used Rewards
+              </Text>
+              {cashbackData.usedRewards.map((reward: any) => (
+                <View
+                  key={reward.id}
+                  style={[
+                    styles.rewardItem,
+                    { borderColor: theme.colors.border, opacity: 0.6 },
+                  ]}
+                >
+                  <View style={[styles.rewardIcon, { backgroundColor: '#F3F4F6' }]}>
+                    <MaterialCommunityIcons name="check" size={20} color="#6B7280" />
+                  </View>
+                  <View style={styles.rewardContent}>
+                    <Text style={[styles.rewardTitle, { color: theme.colors.textPrimary }]}>
+                      {reward.cashback_programs?.name || 'Used Reward'}
+                    </Text>
+                    <Text style={[styles.rewardDiscount, { color: theme.colors.textSecondary }]}>
+                      {reward.discount_percentage}% off · Saved{' '}
+                      {formatMoney(reward.discount_amount || 0)}
+                    </Text>
+                    <Text style={[styles.rewardExpiry, { color: theme.colors.textSecondary }]}>
+                      Used on: {reward.used_at ? new Date(reward.used_at).toLocaleDateString() : 'N/A'}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
         </ScrollView>
       )}
 
       <TreasureChestModal
         visible={treasureModalVisible}
-        onClose={async () => {
-          setTreasureModalVisible(false);
-          setHasOpenedChest(true);
-          await loadCashbackData();
-        }}
-        discountPercentage={cashbackData?.availableRewards?.find((r: any) => r.cashback_programs?.program_type === 'first_ride')?.discount_percentage}
-        hasOpened={hasOpenedChest}
+        onClose={handleCloseModal}
+        discountPercentage={firstRideReward?.discount_percentage ?? null}
+        alreadyRevealed={chestAlreadyOpened}
       />
     </SafeAreaView>
   );
@@ -266,6 +440,7 @@ const styles = StyleSheet.create({
   statLabel: {
     fontSize: 11,
     marginTop: 4,
+    textAlign: 'center',
   },
   card: {
     padding: 16,
@@ -292,7 +467,7 @@ const styles = StyleSheet.create({
   },
   cardDescription: {
     fontSize: 13,
-    lineHeight:  18,
+    lineHeight: 18,
   },
   chestButton: {
     backgroundColor: '#FFD700',
@@ -330,7 +505,6 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 13,
-    color: '#6B7280',
     textAlign: 'center',
     padding: 16,
   },

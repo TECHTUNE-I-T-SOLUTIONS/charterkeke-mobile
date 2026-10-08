@@ -1,6 +1,6 @@
 {
   "name": "charter-keke-mobile",
-  "version": "2.2.1",
+  "version": "2.2.2",
   "description": "Professional mobile app for Charter Keke ride-sharing platform",
   "main": "expo-router/entry",
   "scripts": {

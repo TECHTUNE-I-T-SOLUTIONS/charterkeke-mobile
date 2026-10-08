@@ -1,178 +1,54 @@
-
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
   TextInput,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+  Dimensions,
+  KeyboardAvoidingView,
+  Platform,
   Keyboard,
   ActivityIndicator,
-  StyleSheet,
-  ScrollView,
-  StatusBar,
+  Alert,
   Modal,
-  Platform,
-  Dimensions,
+  StatusBar,
+  Image,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-// import { LinearGradient } from 'expo-linear-gradient';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import Voice from '@react-native-voice/voice';
-import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useLocation } from '@/context/LocationContext';
 import { useTheme } from '@/context/ThemeContext';
-import { apiService } from '@/services/api';
-import { sendLocalNotification } from '@/services/notificationService';
-import {
-  BOOKING_PRICING,
-  BookingPricingConfig,
-  calculateKekeDurationMinutes,
-  calculateRideFare,
-  getBookingPricingConfig,
-  roundDistanceKm,
-} from '@/services/bookingService';
-import { createRideBooking } from '@/services/ridesService';
+import { useAuth } from '@/context/AuthContext';
 import { BRAND, COLORS } from '@/utils/colors';
-import bookingStyles, { mapDarkStyle } from './booking.styles';
-import { ErrorDialog } from '@/components/ErrorDialog';
-import { SuccessDialog } from '@/components/SuccessDialog';
-import { OperationalAreasModal } from '@/components/OperationalAreasModal';
-import { OutOfServiceAreaModal } from '@/components/OutOfServiceAreaModal';
-import { PickupTimeModal } from '@/components/PickupTimeModal';
-import AlertDialog from '@/components/ui/AlertDialog';
-import { TourTarget, useGuidedTour } from '@/components/GuidedTour';
-import { BookingLocationField } from '@/components/booking/BookingLocationField';
-import { BookingStepPanel } from '@/components/booking/BookingStepPanel';
-import { BookingFareSummary } from '@/components/booking/BookingFareSummary';
-import { BookingReviewCard } from '@/components/booking/BookingReviewCard';
-import { BookingSearchResultsList } from '@/components/booking/BookingSearchResultsList';
-import { WidgetStorage, WIDGET_STORAGE_KEYS } from '@/services/widgetStorage';
-import { getWeatherImpact, WeatherImpact } from '@/services/weatherService';
+import { locationService } from '@/services/location';
+import { geocodeMapboxLocations } from '@/utils/mapboxGeocoding';
 import {
-  validateLocationInOperationalArea,
-  getNearbyOperationalAreas,
-  getOperationalAreaByLocation,
-} from '@/utils/geofencing';
-import { fetchMapboxRoute } from '@/utils/mapboxDirections';
-import {
+  searchGoogleAutocomplete,
   getGooglePlaceDetails,
-  LocationSearchResult,
-  markSearchLocationUsed,
-  reverseGeocodeWithGooglePlaces,
-  saveSearchLocationsToCache,
-  searchLagosPlaces,
 } from '@/utils/googlePlacesSearch';
+import { fetchMapboxRoute } from '@/utils/mapboxDirections';
+import { apiService } from '@/services/api';
+import { calculateRideFare, getBookingPricingConfig, roundDistanceKm } from '@/services/bookingService';
+import { createRideBooking } from '@/services/ridesService';
+import { getWeatherImpact } from '@/services/weatherService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
+import bookingStyles, { mapDarkStyle } from './booking.styles';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-// const DRIVER_COMMISSION_PERCENTAGE = 0.85;
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// Storage keys
-const RECENT_SEARCHES_KEY = '@charter_keke_recent_searches';
-const RECENT_LOCATIONS_KEY = '@charter_keke_recent_locations';
-const RECENT_ROUTES_KEY = '@charter_keke_recent_routes';
-const MAX_RECENT_ITEMS = 5;
-const PREWARMED_LOCATION_MAX_AGE_MS = 2 * 60 * 1000;
-type BookingStep = 'pickup' | 'destination' | 'time' | 'review';
-
-// Expanded Lagos locations database with diverse areas
-const MOCK_LOCATIONS = [
-  // Island Areas
-  { address: 'Victoria Island, Lagos', lat: 6.4344, lng: 3.4277 },
-  { address: 'Bar Beach, Victoria Island', lat: 6.4281, lng: 3.4219 },
-  { address: 'Ikoyi, Lagos', lat: 6.4432, lng: 3.4233 },
-  { address: 'Lekki Phase 1, Lagos', lat: 6.4474, lng: 3.4746 },
-  { address: 'Lekki Phase 2, Lagos', lat: 6.4474, lng: 3.5308 },
-  { address: 'Ajah, Lagos', lat: 6.4674, lng: 3.5642 },
-  { address: 'Eko Atlantic City, Lagos', lat: 6.4131, lng: 3.4060 },
-  { address: 'Falomo, Ikoyi', lat: 6.4518, lng: 3.4325 },
-  { address: 'Banana Island, Lagos', lat: 6.4281, lng: 3.4336 },
-  { address: 'Oniru, Lekki', lat: 6.4448, lng: 3.4324 },
-  { address: 'Ikate, Lekki', lat: 6.4422, lng: 3.4832 },
-  { address: 'Elegushi Beach, Lekki', lat: 6.4479, lng: 3.5046 },
-  { address: 'Abraham Adesanya, Ajah', lat: 6.4692, lng: 3.5760 },
-  { address: 'Sangotedo, Ajah', lat: 6.4618, lng: 3.6134 },
-  
-  // Mainland - Central
-  { address: 'Yaba, Lagos', lat: 6.5047, lng: 3.3779 },
-  { address: 'Ebute Metta, Lagos', lat: 6.4889, lng: 3.3715 },
-  { address: 'Surulere, Lagos', lat: 6.4989, lng: 3.3532 },
-  { address: 'Ojuelegba, Surulere', lat: 6.5057, lng: 3.3640 },
-  { address: 'Shitta, Surulere', lat: 6.4943, lng: 3.3522 },
-  { address: 'Debari, Lagos', lat: 6.543230934056443, lng: 3.370394035179976 },
-  { address: 'Debari Junction, Lagos', lat: 6.5441, lng: 3.3698 },
-  { address: 'Debari Street, Lagos', lat: 6.5425, lng: 3.3712 },
-  { address: 'Debari Axis, Lagos', lat: 6.5452, lng: 3.3721 },
-  { address: 'Debari Market, Lagos', lat: 6.5419, lng: 3.3692 },
-  { address: 'Debari Surroundings, Lagos', lat: 6.5438, lng: 3.3679 },
-  { address: 'Mushin, Lagos', lat: 6.5291, lng: 3.3433 },
-  { address: 'Idi Araba, Mushin', lat: 6.5366, lng: 3.3494 },
-  { address: 'Oshodi, Lagos', lat: 6.5485, lng: 3.3293 },
-  { address: 'Isolo, Lagos', lat: 6.5370, lng: 3.3438 },
-  { address: 'Ojota, Lagos', lat: 6.5704, lng: 3.3780 },
-  { address: 'Maryland, Lagos', lat: 6.5679, lng: 3.3672 },
-  { address: 'Anthony Village, Lagos', lat: 6.5522, lng: 3.3628 },
-  { address: 'Gbagada, Lagos', lat: 6.5599, lng: 3.3895 },
-  { address: 'Shomolu, Lagos', lat: 6.5391, lng: 3.3844 },
-  { address: 'Bariga, Lagos', lat: 6.5378, lng: 3.3899 },
-  { address: 'Akoka, Lagos', lat: 6.5241, lng: 3.3913 },
-  
-  // Mainland - West
-  { address: 'Ikeja, Lagos', lat: 6.5964, lng: 3.3421 },
-  { address: 'Allen Avenue, Ikeja', lat: 6.6006, lng: 3.3545 },
-  { address: 'Computer Village, Ikeja', lat: 6.5986, lng: 3.3472 },
-  { address: 'Omole Phase 1, Lagos', lat: 6.6392, lng: 3.3232 },
-  { address: 'Omole Phase 2, Lagos', lat: 6.6472, lng: 3.3121 },
-  { address: 'Ogba, Lagos', lat: 6.6264, lng: 3.3421 },
-  { address: 'Agege, Lagos', lat: 6.6158, lng: 3.3152 },
-  { address: 'Dopemu, Agege', lat: 6.6256, lng: 3.3062 },
-  { address: 'Abule Egba, Lagos', lat: 6.6502, lng: 3.2698 },
-  { address: 'Iyana Ipaja, Lagos', lat: 6.6188, lng: 3.2586 },
-  { address: 'Egbeda, Lagos', lat: 6.5715, lng: 3.2793 },
-  { address: 'Ikotun, Lagos', lat: 6.5488, lng: 3.2681 },
-  { address: 'Ejigbo, Lagos', lat: 6.5559, lng: 3.3069 },
-  { address: 'Idimu, Lagos', lat: 6.6000, lng: 3.2584 },
-  
-  // Mainland - North
-  { address: 'Alimosho, Lagos', lat: 6.6029, lng: 3.2619 },
-  { address: 'Ayobo, Lagos', lat: 6.6115, lng: 3.2186 },
-  { address: 'Ipaja, Lagos', lat: 6.5733, lng: 3.2579 },
-  { address: 'Command, Ipaja', lat: 6.5890, lng: 3.2463 },
-  
-  // Mainland - South
-  { address: 'Kosofe, Lagos', lat: 6.6042, lng: 3.4969 },
-  { address: 'Ketu, Lagos', lat: 6.5958, lng: 3.3878 },
-  { address: 'Mile 12, Lagos', lat: 6.6158, lng: 3.3869 },
-  { address: 'Ikorodu, Lagos', lat: 6.6195, lng: 3.5070 },
-  { address: 'Ikorodu Garage, Lagos', lat: 6.6147, lng: 3.5120 },
-  { address: 'Owutu, Ikorodu', lat: 6.6397, lng: 3.4728 },
-  
-  // Mainland - East
-  { address: 'Festac Town, Lagos', lat: 6.4648, lng: 3.2808 },
-  { address: 'Amuwo Odofin, Lagos', lat: 6.4486, lng: 3.2811 },
-  { address: 'Mile 2, Lagos', lat: 6.4583, lng: 3.3188 },
-  { address: 'Orile, Lagos', lat: 6.4836, lng: 3.3299 },
-  { address: 'Ijesha, Surulere', lat: 6.5096, lng: 3.3414 },
-  { address: 'Apapa, Lagos', lat: 6.4493, lng: 3.3594 },
-  { address: 'Tin Can Island, Lagos', lat: 6.4538, lng: 3.3463 },
-  
-  // Outside Lagos Mainland
-  { address: 'Epe, Lagos', lat: 6.5847, lng: 3.9942 },
-  { address: 'Badagry, Lagos', lat: 6.4219, lng: 2.8992 },
-  
-  // Key Landmarks & Transportation
-  { address: 'Murtala Muhammed Airport, Lagos', lat: 6.5769, lng: 3.3215 },
-  { address: 'Lagos Airport Departure, MMIA', lat: 6.5783, lng: 3.3215 },
-  { address: 'Tafawa Balewa Square, Lagos Island', lat: 6.4474, lng: 3.3963 },
-  { address: 'National Theatre, Iganmu', lat: 6.4824, lng: 3.3575 },
-  { address: 'Eko Bridge, Lagos', lat: 6.4642, lng: 3.3768 },
-  { address: 'Third Mainland Bridge, Lagos', lat: 6.5129, lng: 3.3992 },
-  { address: 'Lagos Lagoon Front', lat: 6.4474, lng: 3.4234 },
-  { address: 'University of Lagos (UNILAG)', lat: 6.5158, lng: 3.3894 },
-  { address: 'Lekki Conservation Centre', lat: 6.4424, lng: 3.5178 },
-  { address: 'Nike Art Gallery, Lekki', lat: 6.4462, lng: 3.5322 },
-];
+interface LocationSuggestion {
+  id: string;
+  name: string;
+  address: string;
+  distance?: string;
+  lat?: number | null;
+  lng?: number | null;
+  placeId?: string;
+}
 
 interface Location {
   lat: number;
@@ -180,1902 +56,2023 @@ interface Location {
   address: string;
 }
 
-interface SearchResult {
-  address: string;
-  lat: number | null;
-  lng: number | null;
-  placeId?: string;
-  name?: string;
-  source?: 'cache' | 'google' | 'local' | 'recent';
-  isRecent?: boolean;
+interface WeatherData {
+  status: string;
+  label: string;
+  detail: string;
+  multiplier: number;
+  surchargeRate: number;
+  precipitationMm: number;
+  icon: string;
 }
 
-interface RecentLocation {
-  address: string;
-  lat: number;
-  lng: number;
-  timestamp: number;
-}
+type BookingStep = 'pickup' | 'destination' | 'time' | 'review';
 
-interface RecentRoute {
-  pickup: Location;
-  dropoff: Location;
-  distanceKm: number;
-  durationMinutes: number;
-  fare: number;
-  timestamp: number;
-  pickupTime?: string | null;
-  source?: 'history' | 'cache';
-}
-
-type RideHistoryRouteSource = {
-  id?: string;
-  pickup_zone?: string;
-  destination_zone?: string;
-  fare_amount?: number | string | null;
-  distance_km?: number | string | null;
-  duration_minutes?: number | string | null;
-  pickup_time?: string | null;
-  created_at?: string | null;
-  pickup_description?: string | null;
-  destination_description?: string | null;
-  pickup_latitude?: number | string | null;
-  pickup_longitude?: number | string | null;
-  destination_latitude?: number | string | null;
-  destination_longitude?: number | string | null;
-  dropoff_latitude?: number | string | null;
-  dropoff_longitude?: number | string | null;
-  pickup_location?: { lat?: number; lng?: number; latitude?: number; longitude?: number } | null;
-  destination_location?: { lat?: number; lng?: number; latitude?: number; longitude?: number } | null;
-  dropoff_location?: { lat?: number; lng?: number; latitude?: number; longitude?: number } | null;
-};
-
-interface PrewarmedCurrentLocation {
-  raw: { latitude: number; longitude: number };
-  resolved: LocationSearchResult;
-  location: Location;
-  timestamp: number;
-}
-
-// Utility function to sanitize addresses
-const sanitizeAddress = (address: string): string => {
-  if (!address) return '';
-  return address.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
-};
-
-const formatPickupTimeLabel = (pickupTime: string): string => {
-  const normalized = pickupTime.includes('T') ? pickupTime : pickupTime.replace(' ', 'T');
-  const date = new Date(normalized);
-
-  if (Number.isNaN(date.getTime())) {
-    return pickupTime;
-  }
-
-  const today = new Date();
-  const tomorrow = new Date();
-  tomorrow.setDate(today.getDate() + 1);
-  const dayLabel = date.toDateString() === today.toDateString()
-    ? 'Today'
-    : date.toDateString() === tomorrow.toDateString()
-      ? 'Tomorrow'
-      : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-
-  return `${dayLabel}, ${date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
-};
-
-// --- HELPER FUNCTIONS ---
-
-function levenshteinDistance(str1: string, str2: string): number {
-  const track = Array(str2.length + 1).fill(null).map(() => Array(str1.length + 1).fill(null));
-  for (let i = 0; i <= str1.length; i += 1) track[0][i] = i;
-  for (let j = 0; j <= str2.length; j += 1) track[j][0] = j;
-  for (let j = 1; j <= str2.length; j += 1) {
-    for (let i = 1; i <= str1.length; i += 1) {
-      const indicator = str1[i - 1] === str2[j - 1] ? 0 : 1;
-      track[j][i] = Math.min(track[j][i - 1] + 1, track[j - 1][i] + 1, track[j - 1][i - 1] + indicator);
-    }
-  }
-  return track[str2.length][str1.length];
-}
-
-function searchLocations(query: string, locations: typeof MOCK_LOCATIONS, recentLocations: RecentLocation[] = []): SearchResult[] {
-  if (!query || query.length < 1) return [];
-  const queryLower = query.toLowerCase().trim().replace(/[^\w\s]/g, '');
-  const queryWords = queryLower.split(/\s+/).filter(w => w.length > 0);
-
-  const scoredResults = locations.map(loc => {
-    const addressLower = loc.address.toLowerCase().replace(/[^\w\s]/g, '');
-    let score = 0;
-    if (addressLower === queryLower) score += 10000;
-    if (addressLower.startsWith(queryLower)) score += 5000;
-    if (addressLower.includes(queryLower)) score += 2500;
-    const levenDistance = levenshteinDistance(addressLower, queryLower);
-    score += Math.max(0, 2000 - levenDistance * 45);
-    for (const word of queryWords) {
-      if (addressLower.includes(word)) score += 500;
-    }
-    if (queryWords.every((word) => addressLower.includes(word))) score += 800;
-    return { ...loc, _score: score };
-  });
-
-  return scoredResults.filter(r => r._score > 50).sort((a, b) => b._score - a._score).slice(0, 12).map(({ _score, ...rest }) => rest);
-}
-
-function dedupeSearchResults(results: SearchResult[]): SearchResult[] {
-  const seen = new Set<string>();
-  return results.filter((item) => {
-    const key = item.placeId || `${item.address.toLowerCase()}-${item.lat?.toFixed(5) || 'pending'}-${item.lng?.toFixed(5) || 'pending'}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function rankPreciseAddressResults(results: SearchResult[]): SearchResult[] {
-  const streetAddressPattern = /\b\d{1,5}\s+[a-z0-9.'-]+/i;
-  const streetKeywordPattern = /\b(street|st\.?|road|rd\.?|avenue|ave\.?|close|crescent|drive|dr\.?|lane|way|estate|junction)\b/i;
-
-  return [...results].sort((a, b) => {
-    const score = (item: SearchResult) => {
-      const address = item.address || '';
-      let total = 0;
-      if (streetAddressPattern.test(address)) total += 8;
-      if (streetKeywordPattern.test(address)) total += 5;
-      if (Number.isFinite(item.lat) && Number.isFinite(item.lng)) total += 2;
-      if (item.source === 'google') total += 2;
-      if (item.source === 'recent') total += 1;
-      return total;
-    };
-
-    return score(b) - score(a);
-  });
-}
-
-async function saveRecentSearch(query: string): Promise<void> {
-  try {
-    if (!query || query.length < 2) return;
-    const existing = await AsyncStorage.getItem(RECENT_SEARCHES_KEY);
-    let searches: string[] = existing ? JSON.parse(existing) : [];
-    searches = searches.filter(s => s.toLowerCase() !== query.toLowerCase());
-    searches.unshift(query);
-    searches = searches.slice(0, MAX_RECENT_ITEMS);
-    await AsyncStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(searches));
-  } catch (error) { console.error('Error saving recent search:', error); }
-}
-
-async function getRecentSearches(): Promise<string[]> {
-  try {
-    const data = await AsyncStorage.getItem(RECENT_SEARCHES_KEY);
-    return data ? JSON.parse(data) : [];
-  } catch (error) { return []; }
-}
-
-async function saveRecentLocation(location: Location): Promise<void> {
-  try {
-    const existing = await AsyncStorage.getItem(RECENT_LOCATIONS_KEY);
-    let locations: RecentLocation[] = existing ? JSON.parse(existing) : [];
-    locations = locations.filter(l => l.address !== location.address);
-    locations.unshift({ ...location, timestamp: Date.now() });
-    locations = locations.slice(0, MAX_RECENT_ITEMS);
-    await AsyncStorage.setItem(RECENT_LOCATIONS_KEY, JSON.stringify(locations));
-  } catch (error) { console.error('Error saving recent location:', error); }
-}
-
-async function getRecentLocations(): Promise<RecentLocation[]> {
-  try {
-    const data = await AsyncStorage.getItem(RECENT_LOCATIONS_KEY);
-    return data ? JSON.parse(data) : [];
-  } catch (error) { return []; }
-}
-
-async function getRecentRoutes(): Promise<RecentRoute[]> {
-  try {
-    const data = await AsyncStorage.getItem(RECENT_ROUTES_KEY);
-    const parsed = data ? JSON.parse(data) : [];
-    return Array.isArray(parsed) ? parsed.slice(0, MAX_RECENT_ITEMS) : [];
-  } catch (error) { return []; }
-}
-
-async function saveRecentRoute(route: RecentRoute): Promise<void> {
-  try {
-    const existing = await getRecentRoutes();
-    const routeKey = `${sanitizeAddress(route.pickup.address).toLowerCase()}->${sanitizeAddress(route.dropoff.address).toLowerCase()}`;
-    const filtered = existing.filter((item) => {
-      const itemKey = `${sanitizeAddress(item.pickup.address).toLowerCase()}->${sanitizeAddress(item.dropoff.address).toLowerCase()}`;
-      return itemKey !== routeKey;
-    });
-    await AsyncStorage.setItem(RECENT_ROUTES_KEY, JSON.stringify([route, ...filtered].slice(0, MAX_RECENT_ITEMS)));
-  } catch (error) { console.error('Error saving recent route:', error); }
-}
-
-function toFiniteNumber(value: unknown, fallback = 0): number {
-  const numeric = typeof value === 'string' ? Number(value) : value;
-  return typeof numeric === 'number' && Number.isFinite(numeric) ? numeric : fallback;
-}
-
-function extractRideCoordinate(
-  ride: RideHistoryRouteSource,
-  latKeys: Array<keyof RideHistoryRouteSource>,
-  lngKeys: Array<keyof RideHistoryRouteSource>,
-  objectKeys: Array<keyof RideHistoryRouteSource>
-) {
-  for (const key of objectKeys) {
-    const value = ride[key] as RideHistoryRouteSource['pickup_location'];
-    const lat = toFiniteNumber(value?.lat ?? value?.latitude, NaN);
-    const lng = toFiniteNumber(value?.lng ?? value?.longitude, NaN);
-    if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
-  }
-
-  for (const latKey of latKeys) {
-    for (const lngKey of lngKeys) {
-      const lat = toFiniteNumber(ride[latKey], NaN);
-      const lng = toFiniteNumber(ride[lngKey], NaN);
-      if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
-    }
-  }
-
-  return null;
-}
-
-function extractCoordinateFromDescription(description?: string | null) {
-  if (!description) return null;
-  const latMatch = description.match(/Lat:\s*(-?\d+(?:\.\d+)?)/i);
-  const lngMatch = description.match(/Lng:\s*(-?\d+(?:\.\d+)?)/i);
-  const pairMatch = description.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
-  const lat = toFiniteNumber(latMatch?.[1] ?? pairMatch?.[1], NaN);
-  const lng = toFiniteNumber(lngMatch?.[1] ?? pairMatch?.[2], NaN);
-  if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
-  return null;
-}
-
-function routeFromRideHistory(ride: RideHistoryRouteSource): RecentRoute | null {
-  const pickupAddress = sanitizeAddress(ride.pickup_zone || '');
-  const dropoffAddress = sanitizeAddress(ride.destination_zone || '');
-  if (!pickupAddress || !dropoffAddress) return null;
-
-  const pickupCoordinate = extractRideCoordinate(
-    ride,
-    ['pickup_latitude'],
-    ['pickup_longitude'],
-    ['pickup_location']
-  ) || extractCoordinateFromDescription(ride.pickup_description);
-  const dropoffCoordinate = extractRideCoordinate(
-    ride,
-    ['destination_latitude', 'dropoff_latitude'],
-    ['destination_longitude', 'dropoff_longitude'],
-    ['destination_location', 'dropoff_location']
-  ) || extractCoordinateFromDescription(ride.destination_description);
-
-  if (!pickupCoordinate || !dropoffCoordinate) return null;
-
-  return {
-    pickup: { ...pickupCoordinate, address: pickupAddress },
-    dropoff: { ...dropoffCoordinate, address: dropoffAddress },
-    distanceKm: toFiniteNumber(ride.distance_km, 0),
-    durationMinutes: toFiniteNumber(ride.duration_minutes, 0),
-    fare: toFiniteNumber(ride.fare_amount, 0),
-    pickupTime: null,
-    source: 'history',
-    timestamp: ride.created_at ? new Date(ride.created_at).getTime() || Date.now() : Date.now(),
-  };
-}
-
-function dedupeRecentRoutes(routes: RecentRoute[]) {
-  const seen = new Set<string>();
-  return routes.filter((route) => {
-    const key = `${sanitizeAddress(route.pickup.address).toLowerCase()}->${sanitizeAddress(route.dropoff.address).toLowerCase()}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-// Find nearest named location within 1km radius
-function findNearestLocation(lat: number, lng: number): Location | null {
-  const R = 6371; // Earth radius in km
-  let nearest: Location | null = null;
-  let minDistance = 1; // 1km threshold
-
-  for (const loc of MOCK_LOCATIONS) {
-    const dLat = ((loc.lat - lat) * Math.PI) / 180;
-    const dLng = ((loc.lng - lng) * Math.PI) / 180;
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos((lat * Math.PI) / 180) *
-      Math.cos((loc.lat * Math.PI) / 180) *
-      Math.sin(dLng / 2) *
-      Math.sin(dLng / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    const distance = R * c;
-
-    if (distance < minDistance) {
-      minDistance = distance;
-      nearest = {
-        lat,
-        lng,
-        address: sanitizeAddress(`${loc.address} (~${Math.round(distance * 1000)}m away)`)
-      };
-    }
-  }
-
-  return nearest;
-}
-
-const resolveCurrentLocationAddress = async (
-  currentLocation: { latitude: number; longitude: number },
-  fallbackReverseGeocode: (location: any) => Promise<string | null>
-): Promise<LocationSearchResult> => {
-  try {
-    // Try backend API first (uses LocationIQ)
-    const apiUrl = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.198.143:3000';
-    const cleanApiUrl = apiUrl.replace(/\/api$/, '');
-    const response = await fetch(
-      `${cleanApiUrl}/api/location/reverse-geocode?lat=${currentLocation.latitude}&lon=${currentLocation.longitude}`
-    );
-    
-    if (response.ok) {
-      const data = await response.json();
-      if (data.address && data.success) {
-        console.log('Using backend reverse geocoding for current location:', data.address);
-        return {
-          lat: currentLocation.latitude,
-          lng: currentLocation.longitude,
-          address: data.address,
-          source: 'local',
-        };
-      }
-    }
-  } catch (apiError) {
-    console.log('Backend reverse geocoding failed for current location, trying Google fallback:', apiError);
-  }
-
-  // Fallback to Google if backend fails
-  try {
-    const googleResult = await reverseGeocodeWithGooglePlaces(
-      currentLocation.latitude,
-      currentLocation.longitude
-    );
-
-    if (googleResult?.address) {
-      return googleResult;
-    }
-  } catch (error) {
-    console.log('Google reverse geocoding failed for current location:', error);
-  }
-
-  const fallbackAddress = await fallbackReverseGeocode(currentLocation).catch(() => null);
-  return {
-    lat: currentLocation.latitude,
-    lng: currentLocation.longitude,
-    address: fallbackAddress || 'Current location',
-    source: 'local',
-  };
-};
+const RECENT_LOCATIONS_KEY = '@charter_keke_recent_locations';
+const MAX_RECENT_ITEMS = 5;
 
 export default function BookingScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ pickup?: string; destination?: string; routeData?: string; mode?: string }>();
+  const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
-  const { startTour } = useGuidedTour();
-  const { currentLocation, getCurrentLocation, reverseGeocodeLocation } = useLocation();
-  // State
-  const [pickupLocation, setPickupLocation] = useState<Location | null>(null);
-  const [dropoffLocation, setDropoffLocation] = useState<Location | null>(null);
-  const [bookingStep, setBookingStep] = useState<BookingStep>('pickup');
-  const [cameraCenter, setCameraCenter] = useState<[number, number] | undefined>(undefined);
-  const [cameraZoom, setCameraZoom] = useState<number>(12);
-  const [pickupSearch, setPickupSearch] = useState('');
-  const [dropoffSearch, setDropoffSearch] = useState('');
-  const [activeLocationPicker, setActiveLocationPicker] = useState<'pickup' | 'dropoff' | null>(null);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const [pickupSearchResults, setPickupSearchResults] = useState<SearchResult[]>([]);
-  const [dropoffSearchResults, setDropoffSearchResults] = useState<SearchResult[]>([]);
-  const [showPickupResults, setShowPickupResults] = useState(false);
-  const [showDropoffResults, setShowDropoffResults] = useState(false);
-  const pickupBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const dropoffBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pickupSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const dropoffSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pickupSearchRequest = useRef(0);
-  const dropoffSearchRequest = useRef(0);
-  const pickupGoogleSessionToken = useRef(`pickup-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-  const dropoffGoogleSessionToken = useRef(`dropoff-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-  const [locationWarningVisible, setLocationWarningVisible] = useState(false);
-    const [recentLocations, setRecentLocations] = useState<RecentLocation[]>([]);
-    const [recentRoutes, setRecentRoutes] = useState<RecentRoute[]>([]);
-    const [pricingConfig, setPricingConfig] = useState<BookingPricingConfig>(BOOKING_PRICING);
-    const [weatherImpact, setWeatherImpact] = useState<WeatherImpact | null>(null);
-    const [estimatedDistance, setEstimatedDistance] = useState(0);
-  const [estimatedDuration, setEstimatedDuration] = useState(0);
-  const [routeCoordinates, setRouteCoordinates] = useState<[number, number][] | undefined>(undefined);
-  const [routeLoading, setRouteLoading] = useState(false);
-  const [isBooking, setIsBooking] = useState(false);
-  const [bookingSuccessVisible, setBookingSuccessVisible] = useState(false);
-  const [lastBookedRideId, setLastBookedRideId] = useState<string | null>(null);
-  const [userName, setUserName] = useState<string>('');
-  const [errorDialogVisible, setErrorDialogVisible] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [showOperationalAreasModal, setShowOperationalAreasModal] = useState(false);
-  const [showOutOfServiceAreaModal, setShowOutOfServiceAreaModal] = useState(false);
-  const [outOfServiceAreaInfo, setOutOfServiceAreaInfo] = useState<{
-    closestArea?: string;
-    distance?: number;
-    locationType?: 'pickup' | 'dropoff';
-  }>({});
-  const [showPickupTimeModal, setShowPickupTimeModal] = useState(false);
-  const [pendingPickupTime, setPendingPickupTime] = useState<string | null>(null);
-  const [bookingConfirmationVisible, setBookingConfirmationVisible] = useState(false);
-  const [currentLocationPrompt, setCurrentLocationPrompt] = useState<'pickup' | 'dropoff' | null>(null);
-  const [resolvingCurrentLocation, setResolvingCurrentLocation] = useState<'pickup' | 'dropoff' | null>(null);
-  const [prewarmingCurrentLocation, setPrewarmingCurrentLocation] = useState(false);
-  const prewarmedCurrentLocationRef = useRef<PrewarmedCurrentLocation | null>(null);
-  const prewarmCurrentLocationPromise = useRef<Promise<PrewarmedCurrentLocation | null> | null>(null);
-  const [currentLocationUnavailableVisible, setCurrentLocationUnavailableVisible] = useState(false);
-  const [voiceLocationTarget, setVoiceLocationTarget] = useState<'pickup' | 'dropoff' | null>(null);
-  const [voiceLocationText, setVoiceLocationText] = useState('');
-  const [voiceLocationError, setVoiceLocationError] = useState('');
-  const [isVoiceListening, setIsVoiceListening] = useState(false);
-  const [isVoiceAvailable, setIsVoiceAvailable] = useState(true);
-  const [cashbackRewards, setCashbackRewards] = useState<any[]>([]);
-  const [selectedCashback, setSelectedCashback] = useState<any | null>(null);
-  const [originalFare, setOriginalFare] = useState(0);
-  const [showCashbackModal, setShowCashbackModal] = useState(false);
+  const { user } = useAuth();
   const isLight = theme.mode === 'light';
 
+  // Location states
+  const [pickupLocation, setPickupLocation] = useState<Location | null>(null);
+  const [destinationLocation, setDestinationLocation] = useState<Location | null>(null);
+  const [pickupSearch, setPickupSearch] = useState('');
+  const [destinationSearch, setDestinationSearch] = useState('');
+  const [pickupSuggestions, setPickupSuggestions] = useState<LocationSuggestion[]>([]);
+  const [destinationSuggestions, setDestinationSuggestions] = useState<LocationSuggestion[]>([]);
+  const [showPickupSuggestions, setShowPickupSuggestions] = useState(false);
+  const [showDestinationSuggestions, setShowDestinationSuggestions] = useState(false);
+  const [activeLocationPicker, setActiveLocationPicker] = useState<'pickup' | 'destination' | null>(null);
+
+  // UI states
+  const [currentStep, setCurrentStep] = useState<BookingStep>('pickup');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [showDateTimePicker, setShowDateTimePicker] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [isPrewarmingLocation, setIsPrewarmingLocation] = useState(false);
+  const [showMapPicker, setShowMapPicker] = useState(false);
+  const [mapPickerType, setMapPickerType] = useState<'pickup' | 'destination' | null>(null);
+  const [showInlineMapPicker, setShowInlineMapPicker] = useState(false);
+  const [cameraCenter, setCameraCenter] = useState<[number, number]>([3.3792, 6.5244]); // Lagos center
+  const [cameraZoom, setCameraZoom] = useState(12);
+  const [showCashback, setShowCashback] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [selectedTime, setSelectedTime] = useState<Date | null>(null);
+  const [tempDate, setTempDate] = useState(new Date());
+  const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
+  const [pickerMode, setPickerMode] = useState<'date' | 'time'>('date');
+  const [discountedFare, setDiscountedFare] = useState<number | null>(null);
+
+  // Feature states
+  const [weather, setWeather] = useState<WeatherData | null>(null);
+  const [cashbackRewards, setCashbackRewards] = useState<any[]>([]);
+  const [selectedCashback, setSelectedCashback] = useState<any | null>(null);
+  const [pricingConfig, setPricingConfig] = useState<any>(null);
+  const [estimatedFare, setEstimatedFare] = useState<number | null>(null);
+  const [estimatedDistance, setEstimatedDistance] = useState<number | null>(null);
+  const [estimatedTime, setEstimatedTime] = useState<number | null>(null);
+  const [pickupTime, setPickupTime] = useState<string | null>(null);
+  const [recentLocations, setRecentLocations] = useState<Location[]>([]);
+  const [routeCoordinates, setRouteCoordinates] = useState<[number, number][] | null>(null);
+
+  // Error states
+  const [errorMessage, setErrorMessage] = useState('');
+  const [showErrorDialog, setShowErrorDialog] = useState(false);
+
+  // Refs
+  const pickupInputRef = useRef<TextInput>(null);
+  const destinationInputRef = useRef<TextInput>(null);
+  const pickupBlurTimer = useRef<number | null>(null);
+  const destinationBlurTimer = useRef<number | null>(null);
+  const locationCardRef = useRef<View>(null);
+  const [suggestionsTop, setSuggestionsTop] = useState(300);
+  // Google Places session token (reset per session to save API costs)
+  const placesSessionToken = useRef<string>(`session-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const resetSessionToken = () => {
+    placesSessionToken.current = `session-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  };
+
+  // Keyboard handling
   useEffect(() => {
-    loadRecentData();
-    loadUserName();
-    getBookingPricingConfig()
-      .then(setPricingConfig)
-      .catch((error) => console.warn('[Booking] Pricing config load failed:', error));
+    const keyboardWillShow = Keyboard.addListener('keyboardWillShow', () => setKeyboardVisible(true));
+    const keyboardWillHide = Keyboard.addListener('keyboardWillHide', () => setKeyboardVisible(false));
+
+    return () => {
+      keyboardWillShow.remove();
+      keyboardWillHide.remove();
+    };
   }, []);
 
-    useEffect(() => {
-      const maybeShowBookingTour = async () => {
-      const seen = await AsyncStorage.getItem('@charter_keke_tour_rider_booking_seen');
-      if (seen) return;
-      startTour([
-        {
-          id: 'booking-pickup',
-          title: 'Choose pickup',
-          body: 'Search, speak, tap the map, or use your current location. CK warms location in the background so this feels faster.',
-        },
-        {
-          id: 'booking-destination',
-          title: 'Choose destination',
-          body: 'Add where you are going. Once both points are set, the app shows the fare and trip distance.',
-        },
-        {
-          id: 'booking-confirm',
-          title: 'Confirm the ride',
-          body: 'Tap Book Ride Now to send the request to nearby drivers. You will get updates when a driver accepts.',
-        },
-      ], () => {
-        AsyncStorage.setItem('@charter_keke_tour_rider_booking_seen', 'true').catch(() => {});
-      });
-      };
-      maybeShowBookingTour().catch(() => {});
-    }, [startTour]);
-
-    useEffect(() => {
-      let cancelled = false;
-
-      const loadWeather = async () => {
-        if (!pickupLocation) {
-          setWeatherImpact(null);
-          return;
-        }
-
-        const impact = await getWeatherImpact(pickupLocation.lat, pickupLocation.lng);
-        if (!cancelled) {
-          setWeatherImpact(impact);
-        }
-      };
-
-      loadWeather().catch(() => setWeatherImpact(null));
-
-      return () => {
-        cancelled = true;
-      };
-    }, [pickupLocation?.lat, pickupLocation?.lng]);
-
+  // Load initial data
   useEffect(() => {
-    const loadCashbackRewards = async () => {
-      try {
-        const response: any = await apiService.get('/user/cashback');
-        if (response?.availableRewards) {
-          setCashbackRewards(response.availableRewards);
-        }
-      } catch (error) {
-        console.error('Failed to load cashback rewards:', error);
+    loadInitialData();
+  }, []);
+
+  // Debounced search
+  const pickupSearchTimer = useRef<number | null>(null);
+  const destinationSearchTimer = useRef<number | null>(null);
+
+  // Helper to get street-level address
+  const getStreetAddress = async (lat: number, lng: number): Promise<string | null> => {
+    try {
+      const response = await apiService.get(`/location/reverse-geocode?lat=${lat}&lon=${lng}`);
+      if (response && (response as any).address) {
+        return (response as any).address;
       }
-    };
+      return null;
+    } catch (error) {
+      console.error('Error getting street address:', error);
+      return null;
+    }
+  };
 
-    loadCashbackRewards();
-  }, [lastBookedRideId]); // Reload cashback after ride completion
+  // Sanitize address to ensure it's street-level
+  const sanitizeAddress = (address: string): string => {
+    if (!address) return 'Unknown location';
 
+    // Remove overly generic addresses
+    const genericPatterns = [
+      /^(Unnamed )?Road/i,
+      /^(Unnamed )?Street/i,
+      /^Road \d+/i,
+      /^Street \d+/i,
+      /^Way \d+/i,
+      /^Avenue \d+/i,
+    ];
+
+    for (const pattern of genericPatterns) {
+      if (pattern.test(address)) {
+        // Try to extract more specific parts
+        const parts = address.split(',').filter(p => p.trim());
+        if (parts.length > 1) {
+          return parts.slice(0, 2).join(', ').trim();
+        }
+      }
+    }
+
+    return address;
+  };
+
+  // Handle URL params
   useEffect(() => {
     const pickup = typeof params.pickup === 'string' ? params.pickup.trim() : '';
     const destination = typeof params.destination === 'string' ? params.destination.trim() : '';
-    const routeData = typeof params.routeData === 'string' ? params.routeData.trim() : '';
 
-    if (!pickup && !destination && !routeData) return;
-
-    try {
-      if (routeData) {
-        const parsed = JSON.parse(routeData);
-        if (parsed?.pickup?.address) {
-          setPickupLocation(parsed.pickup);
-          setPickupSearch(parsed.pickup.address);
-        }
-        if (parsed?.dropoff?.address) {
-          setDropoffLocation(parsed.dropoff);
-          setDropoffSearch(parsed.dropoff.address);
-        }
-        if (parsed?.pickup?.address && parsed?.dropoff?.address) {
-          setBookingStep('review');
-        }
-      } else {
-        if (pickup) setPickupSearch(pickup);
-        if (destination) setDropoffSearch(destination);
-      }
-    } catch (error) {
-      console.log('[Booking] Failed to apply launch prefill:', error);
+    if (pickup) {
+      setPickupLocation({ lat: 0, lng: 0, address: pickup });
+      setPickupSearch(pickup);
     }
-  }, [params.pickup, params.destination, params.routeData]);
+    if (destination) {
+      setDestinationLocation({ lat: 0, lng: 0, address: destination });
+      setDestinationSearch(destination);
+    }
+  }, [params]);
 
+  // Cleanup timers on unmount
   useEffect(() => {
     return () => {
-      [
-        pickupBlurTimer.current,
-        dropoffBlurTimer.current,
-        pickupSearchTimer.current,
-        dropoffSearchTimer.current,
-      ].forEach((timer) => {
-        if (timer) clearTimeout(timer);
-      });
+      if (pickupSearchTimer.current) {
+        clearTimeout(pickupSearchTimer.current);
+      }
+      if (destinationSearchTimer.current) {
+        clearTimeout(destinationSearchTimer.current);
+      }
     };
   }, []);
 
-  useEffect(() => {
-    Voice.onSpeechStart = () => {
-      setVoiceLocationError('');
-      setIsVoiceListening(true);
-    };
-    Voice.onSpeechEnd = () => {
-      setIsVoiceListening(false);
-    };
-    Voice.onSpeechError = (event: any) => {
-      setIsVoiceListening(false);
-      setVoiceLocationError(
-        event?.error?.message || 'We could not hear that clearly. Please try again or type the address.'
-      );
-    };
-    Voice.onSpeechResults = (event: any) => {
-      const spokenAddress = event?.value?.[0]?.trim();
-      if (!spokenAddress) return;
-
-      setVoiceLocationText(spokenAddress);
-      if (voiceLocationTarget === 'pickup') {
-        setPickupLocation(null);
-        setPickupSearch(spokenAddress);
-        scheduleSearch(spokenAddress, 'pickup');
-        openPickupSearch();
-      } else if (voiceLocationTarget === 'dropoff') {
-        setDropoffLocation(null);
-        setDropoffSearch(spokenAddress);
-        scheduleSearch(spokenAddress, 'dropoff');
-        openDropoffSearch();
-      }
-    };
-
-    Voice.isAvailable()
-      .then((available: 0 | 1) => setIsVoiceAvailable(Boolean(available)))
-      .catch(() => setIsVoiceAvailable(false));
-
-    return () => {
-      Voice.destroy()
-        .then(Voice.removeAllListeners)
-        .catch(() => undefined);
-    };
-  }, [voiceLocationTarget]);
-
-  const loadUserName = async () => {
+  const loadInitialData = async () => {
     try {
-      const stored = await AsyncStorage.getItem('userProfile');
+      // Load pricing config
+      const config = await getBookingPricingConfig();
+      setPricingConfig(config);
+
+      // Load recent locations
+      const recent = await getRecentLocations();
+      setRecentLocations(recent);
+
+      // Load cashback rewards
+      const cashbackResponse = await apiService.get('/user/cashback');
+      if (cashbackResponse && (cashbackResponse as any).availableRewards) {
+        setCashbackRewards((cashbackResponse as any).availableRewards);
+      }
+
+      // Don't auto-trigger current location - only when user clicks the button
+    } catch (error) {
+      console.error('Error loading initial data:', error);
+    }
+  };
+
+  const getRecentLocations = async (): Promise<Location[]> => {
+    try {
+      const stored = await AsyncStorage.getItem(RECENT_LOCATIONS_KEY);
       if (stored) {
-        const profile = JSON.parse(stored);
-        setUserName(profile.firstName || profile.name || '');
+        const locations = JSON.parse(stored);
+        return locations.slice(0, MAX_RECENT_ITEMS);
       }
     } catch (error) {
-      console.log('Error loading user profile:', error);
+      console.error('Error loading recent locations:', error);
     }
+    return [];
   };
 
-  const loadRecentData = async () => {
+  const saveRecentLocation = async (location: Location) => {
     try {
-      const [searches, locations, cachedRoutes, historyResponse] = await Promise.all([
-        getRecentSearches(),
-        getRecentLocations(),
-        getRecentRoutes(),
-        apiService.getRiderRides(20).catch((error) => {
-          console.log('Ride history shortcuts unavailable:', error?.message || error);
-          return { rides: [] };
-        }),
-      ]);
-      const historyRoutes = ((historyResponse as any)?.rides || [])
-        .map(routeFromRideHistory)
-        .filter(Boolean) as RecentRoute[];
-      const routes = dedupeRecentRoutes([...historyRoutes, ...cachedRoutes]).slice(0, MAX_RECENT_ITEMS);
-      setRecentLocations(locations);
-      setRecentRoutes(routes);
-      WidgetStorage.setItem(WIDGET_STORAGE_KEYS.rider, {
-        primaryAction: 'Book Ride',
-        screen: '/rider/booking',
-        recentRoutes: routes.slice(0, 4).map((route) => ({
-          pickup: route.pickup.address,
-          dropoff: route.dropoff.address,
-          routeData: route,
-        })),
-      }).catch(() => undefined);
-    } catch (error) { console.error('Error loading recent data:', error); }
-  };
-
-  const openPickupSearch = () => {
-    setActiveLocationPicker('pickup');
-    setShowDropoffResults(false);
-    if (dropoffBlurTimer.current) clearTimeout(dropoffBlurTimer.current);
-    setShowPickupResults(true);
-  };
-
-  const openDropoffSearch = () => {
-    setActiveLocationPicker('dropoff');
-    setShowPickupResults(false);
-    if (pickupBlurTimer.current) clearTimeout(pickupBlurTimer.current);
-    setShowDropoffResults(true);
-  };
-
-  const closeLocationSuggestions = (type?: 'pickup' | 'dropoff') => {
-    if (!type || type === 'pickup') {
-      setShowPickupResults(false);
+      const recent = await getRecentLocations();
+      const updated = [location, ...recent.filter(l => l.address !== location.address)].slice(0, MAX_RECENT_ITEMS);
+      await AsyncStorage.setItem(RECENT_LOCATIONS_KEY, JSON.stringify(updated));
+      setRecentLocations(updated);
+    } catch (error) {
+      console.error('Error saving recent location:', error);
     }
-    if (!type || type === 'dropoff') {
-      setShowDropoffResults(false);
-    }
-    setActiveLocationPicker(null);
-    if (pickupBlurTimer.current) clearTimeout(pickupBlurTimer.current);
-    if (dropoffBlurTimer.current) clearTimeout(dropoffBlurTimer.current);
-    Keyboard.dismiss();
   };
 
-  const openMapLocationPicker = (type: 'pickup' | 'dropoff') => {
-    setActiveLocationPicker(type);
-    setShowPickupResults(false);
-    setShowDropoffResults(false);
-    if (pickupBlurTimer.current) clearTimeout(pickupBlurTimer.current);
-    if (dropoffBlurTimer.current) clearTimeout(dropoffBlurTimer.current);
-    Keyboard.dismiss();
-  };
+  const prewarmCurrentLocation = async () => {
+    try {
+      setIsPrewarmingLocation(true);
+      const location = await locationService.getCurrentLocation();
+      if (location) {
+        // Reverse geocode using backend API
+        const apiUrl = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.198.143:3000';
+        const cleanApiUrl = apiUrl.replace(/\/api$/, '');
+        const response = await fetch(
+          `${cleanApiUrl}/api/location/reverse-geocode?lat=${location.latitude}&lon=${location.longitude}`
+        );
 
-  const buildCurrentLocationEntry = async (
-    locationSource: { latitude: number; longitude: number }
-  ): Promise<PrewarmedCurrentLocation> => {
-    const resolvedLocation = await resolveCurrentLocationAddress(locationSource, reverseGeocodeLocation);
-    const location: Location = {
-      lat: Number(resolvedLocation.lat) || locationSource.latitude,
-      lng: Number(resolvedLocation.lng) || locationSource.longitude,
-      address: sanitizeAddress(resolvedLocation.address),
-    };
-
-    return {
-      raw: locationSource,
-      resolved: resolvedLocation,
-      location,
-      timestamp: Date.now(),
-    };
-  };
-
-  const prewarmCurrentLocation = async (forceFresh = false): Promise<PrewarmedCurrentLocation | null> => {
-    const cached = prewarmedCurrentLocationRef.current;
-    if (
-      !forceFresh &&
-      cached &&
-      Date.now() - cached.timestamp < PREWARMED_LOCATION_MAX_AGE_MS
-    ) {
-      return cached;
-    }
-
-    if (prewarmCurrentLocationPromise.current) {
-      return prewarmCurrentLocationPromise.current;
-    }
-
-    setPrewarmingCurrentLocation(true);
-    prewarmCurrentLocationPromise.current = (async () => {
-      try {
-        const freshLocation = await getCurrentLocation().catch(() => null);
-        const locationSource = freshLocation || currentLocation;
-        if (!locationSource) return null;
-
-        const entry = await buildCurrentLocationEntry(locationSource);
-        prewarmedCurrentLocationRef.current = entry;
-        return entry;
-      } catch (error) {
-        console.log('Current location prewarm failed:', error);
-        return null;
-      } finally {
-        prewarmCurrentLocationPromise.current = null;
-        setPrewarmingCurrentLocation(false);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.address && data.success) {
+            setPickupLocation({
+              lat: location.latitude,
+              lng: location.longitude,
+              address: sanitizeAddress(data.address),
+            });
+            setPickupSearch(sanitizeAddress(data.address));
+          }
+        }
       }
-    })();
-
-    return prewarmCurrentLocationPromise.current;
+    } catch (error) {
+      console.error('Error prewarming location:', error);
+    } finally {
+      setIsPrewarmingLocation(false);
+    }
   };
 
-  const applyCurrentLocation = async (type: 'pickup' | 'dropoff', entry: PrewarmedCurrentLocation) => {
-    const location = entry.location;
-
-    if (type === 'pickup') {
-      setPickupLocation(location);
-      setPickupSearch(location.address);
-      setShowPickupResults(false);
-      setActiveLocationPicker('dropoff');
-    } else {
-      setDropoffLocation(location);
-      setDropoffSearch(location.address);
-      setShowDropoffResults(false);
-    }
-    setCameraCenter([location.lng, location.lat]);
-    setCameraZoom(14);
-    if (entry.resolved.placeId) {
-      saveSearchLocationsToCache([entry.resolved]).catch(() => {});
-      markSearchLocationUsed(entry.resolved).catch(() => {});
-    }
-    await saveRecentLocation(location);
-    setRecentLocations(await getRecentLocations());
-    setBookingStep(type === 'pickup' ? 'destination' : 'time');
-  };
-
-  useEffect(() => {
-    prewarmCurrentLocation().catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (!currentLocation) return;
-
-    const cached = prewarmedCurrentLocationRef.current;
-    const hasMoved =
-      cached &&
-      (Math.abs(cached.raw.latitude - currentLocation.latitude) > 0.0003 ||
-        Math.abs(cached.raw.longitude - currentLocation.longitude) > 0.0003);
-
-    if (!cached || hasMoved || Date.now() - cached.timestamp > PREWARMED_LOCATION_MAX_AGE_MS) {
-      prewarmCurrentLocation().catch(() => {});
-    }
-  }, [currentLocation?.latitude, currentLocation?.longitude]);
-
-  const promptForCurrentLocation = (type: 'pickup' | 'dropoff') => {
-    prewarmCurrentLocation().catch(() => {});
-    setCurrentLocationPrompt(type);
-  };
-
-  const useCurrentLocationForPrompt = async () => {
-    if (!currentLocationPrompt) return;
-
-    const type = currentLocationPrompt;
-    setCurrentLocationPrompt(null);
-    setResolvingCurrentLocation(type);
-
+  const loadWeather = async (location: Location) => {
     try {
-      const cached = prewarmedCurrentLocationRef.current;
-      const entry =
-        cached && Date.now() - cached.timestamp < PREWARMED_LOCATION_MAX_AGE_MS
-          ? cached
-          : await prewarmCurrentLocation(true);
+      const impact = await getWeatherImpact(location.lat, location.lng);
+      if (impact) {
+        setWeather(impact);
+      }
+    } catch (error) {
+      console.error('Error loading weather:', error);
+    }
+  };
 
-      if (!entry) {
-        setCurrentLocationUnavailableVisible(true);
+  // Unified location search: Google Places → Mapbox fallback
+  const searchLocations = async (text: string): Promise<LocationSuggestion[]> => {
+    // 1. Try Google Places Autocomplete (street-level, best quality)
+    try {
+      const googleResults = await searchGoogleAutocomplete(text, placesSessionToken.current, {
+        preferPreciseAddresses: true,
+      });
+      if (googleResults.length > 0) {
+        return googleResults.map((r, i) => ({
+          id: r.placeId || `google-${i}`,
+          name: r.name || r.address.split(',')[0],
+          address: r.address,
+          lat: r.lat ?? undefined,
+          lng: r.lng ?? undefined,
+          placeId: r.placeId,
+        }));
+      }
+    } catch (e) {
+      console.log('[Search] Google Places failed, falling back to Mapbox:', e);
+    }
+
+    // 2. Mapbox Geocoding fallback
+    try {
+      const mapboxResults = await geocodeMapboxLocations(text);
+      return mapboxResults.map((r, i) => ({
+        id: `mapbox-${i}`,
+        name: r.placeName.split(',')[0] || r.placeName,
+        address: r.placeName,
+        lat: r.coordinate[1],
+        lng: r.coordinate[0],
+        placeId: undefined,
+      }));
+    } catch (e) {
+      console.log('[Search] Mapbox fallback also failed:', e);
+    }
+
+    return [];
+  };
+
+  const handlePickupChange = (text: string) => {
+    setPickupSearch(text);
+
+    if (pickupSearchTimer.current) clearTimeout(pickupSearchTimer.current);
+
+    if (text.length > 2) {
+      setIsSearching(true);
+      pickupSearchTimer.current = setTimeout(async () => {
+        try {
+          const suggestions = await searchLocations(text);
+          setPickupSuggestions(suggestions);
+          setShowPickupSuggestions(true);
+        } catch (error) {
+          console.error('Error searching pickup:', error);
+        } finally {
+          setIsSearching(false);
+        }
+      }, 400);
+    } else {
+      setPickupSuggestions([]);
+      setShowPickupSuggestions(false);
+      setIsSearching(false);
+    }
+  };
+
+  const handleDestinationChange = (text: string) => {
+    setDestinationSearch(text);
+
+    if (destinationSearchTimer.current) clearTimeout(destinationSearchTimer.current);
+
+    if (text.length > 2) {
+      setIsSearching(true);
+      destinationSearchTimer.current = setTimeout(async () => {
+        try {
+          const suggestions = await searchLocations(text);
+          setDestinationSuggestions(suggestions);
+          setShowDestinationSuggestions(true);
+        } catch (error) {
+          console.error('Error searching destination:', error);
+        } finally {
+          setIsSearching(false);
+        }
+      }, 400);
+    } else {
+      setDestinationSuggestions([]);
+      setShowDestinationSuggestions(false);
+      setIsSearching(false);
+    }
+  };
+
+  const handlePickupSelect = async (suggestion: LocationSuggestion) => {
+    setIsLoading(true);
+    try {
+      let lat = suggestion.lat;
+      let lng = suggestion.lng;
+      let address = suggestion.address;
+
+      // If we have a placeId but no coords (Google Places autocomplete), resolve them
+      if (suggestion.placeId && (!lat || !lng)) {
+        try {
+          const details = await getGooglePlaceDetails(suggestion.placeId, placesSessionToken.current);
+          if (details) {
+            lat = details.lat ?? lat;
+            lng = details.lng ?? lng;
+            address = details.address || address;
+          }
+          resetSessionToken(); // New session after a place is selected
+        } catch (e) {
+          console.log('[Pickup] Place details failed, using coords from suggestion:', e);
+        }
+      }
+
+      if (!lat || !lng) {
+        setErrorMessage('Could not get coordinates for this location. Please try another.');
+        setShowErrorDialog(true);
         return;
       }
 
-      await applyCurrentLocation(type, entry);
+      const location: Location = {
+        lat,
+        lng,
+        address: sanitizeAddress(address),
+      };
+
+      setPickupLocation(location);
+      setPickupSearch(location.address);
+      setPickupSuggestions([]);
+      setShowPickupSuggestions(false);
+      setActiveLocationPicker(null);
+      setDiscountedFare(null);
+      // Pan background map to pickup
+      setCameraCenter([location.lng, location.lat]);
+      setCameraZoom(15);
+
+      await saveRecentLocation(location);
+      await loadWeather(location);
+
+      Keyboard.dismiss();
+      setCurrentStep('destination');
+      destinationInputRef.current?.focus();
+    } catch (error) {
+      console.error('Error selecting pickup:', error);
+      setErrorMessage('Failed to select pickup location. Please try again.');
+      setShowErrorDialog(true);
     } finally {
-      setResolvingCurrentLocation(null);
+      setIsLoading(false);
     }
   };
 
-  const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number) => {
-    const R = 6371; 
+  const handleDestinationSelect = async (suggestion: LocationSuggestion) => {
+    setIsLoading(true);
+    try {
+      let lat = suggestion.lat;
+      let lng = suggestion.lng;
+      let address = suggestion.address;
+
+      // Resolve placeId → coords if needed (Google Places autocomplete)
+      if (suggestion.placeId && (!lat || !lng)) {
+        try {
+          const details = await getGooglePlaceDetails(suggestion.placeId, placesSessionToken.current);
+          if (details) {
+            lat = details.lat ?? lat;
+            lng = details.lng ?? lng;
+            address = details.address || address;
+          }
+          resetSessionToken();
+        } catch (e) {
+          console.log('[Destination] Place details failed, using coords from suggestion:', e);
+        }
+      }
+
+      if (!lat || !lng) {
+        setErrorMessage('Could not get coordinates for this location. Please try another.');
+        setShowErrorDialog(true);
+        return;
+      }
+
+      // Only reverse-geocode when we DON'T have a good address (e.g. from map tap)
+      // If we came from Google Places, the address is already precise — don't override it
+      const finalAddress = suggestion.placeId
+        ? sanitizeAddress(address)
+        : (await getStreetAddress(lat, lng)) || sanitizeAddress(address);
+
+      const location: Location = {
+        lat,
+        lng,
+        address: finalAddress,
+      };
+
+      setDestinationLocation(location);
+      setDestinationSearch(location.address);
+      setDestinationSuggestions([]);
+      setShowDestinationSuggestions(false);
+      setActiveLocationPicker(null);
+      setDiscountedFare(null);
+      // Pan background map to show both points
+      setCameraCenter([location.lng, location.lat]);
+      setCameraZoom(13);
+
+      await saveRecentLocation(location);
+
+      Keyboard.dismiss();
+      await calculateEstimate();
+      setCurrentStep('time');
+    } catch (error) {
+      console.error('Error selecting destination:', error);
+      setErrorMessage('Failed to select destination. Please try again.');
+      setShowErrorDialog(true);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const calculateEstimate = async () => {
+    if (!pickupLocation || !destinationLocation) return;
+
+    try {
+      console.log('Calculating estimate with config:', pricingConfig);
+
+      const distanceKm = calculateDistance(pickupLocation.lat, pickupLocation.lng, destinationLocation.lat, destinationLocation.lng);
+      const roundedDistance = roundDistanceKm(distanceKm);
+      const fare = calculateRideFare(roundedDistance, pricingConfig || {});
+      const estimatedMinutes = Math.round(roundedDistance * 3);
+
+      setEstimatedDistance(roundedDistance);
+      setEstimatedFare(fare);
+      setEstimatedTime(estimatedMinutes);
+
+      // Fetch actual route for map display
+      try {
+        const route = await fetchMapboxRoute(
+          [pickupLocation.lng, pickupLocation.lat],
+          [destinationLocation.lng, destinationLocation.lat],
+          { profile: 'driving' }
+        );
+        if (route && route.coordinates.length >= 2) {
+          setRouteCoordinates(route.coordinates);
+          // Use actual route distance if available
+          if (route.distanceKm > 0) {
+            const actualRounded = roundDistanceKm(route.distanceKm);
+            setEstimatedDistance(actualRounded);
+            setEstimatedFare(calculateRideFare(actualRounded, pricingConfig || {}));
+            setEstimatedTime(Math.round(route.durationMin));
+          }
+        }
+      } catch (routeErr) {
+        console.log('Route fetch failed, using haversine distance:', routeErr);
+      }
+    } catch (error) {
+      console.error('Error calculating estimate:', error);
+      const distanceKm = calculateDistance(pickupLocation.lat, pickupLocation.lng, destinationLocation.lat, destinationLocation.lng);
+      const roundedDistance = roundDistanceKm(distanceKm);
+      setEstimatedDistance(roundedDistance);
+      setEstimatedFare(roundedDistance * 100);
+      setEstimatedTime(Math.round(roundedDistance * 3));
+    }
+  };
+
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371; // Earth's radius in km
     const dLat = ((lat2 - lat1) * Math.PI) / 180;
-    const dLng = ((lng2 - lng1) * Math.PI) / 180;
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
   };
 
-  useEffect(() => {
-    let isCancelled = false;
-
-    const loadRoute = async () => {
-      if (!pickupLocation || !dropoffLocation) {
-        setEstimatedDistance(0);
-        setEstimatedDuration(0);
-        setRouteCoordinates(undefined);
-        return;
-      }
-
-      setRouteLoading(true);
-
-      try {
-        const route = await fetchMapboxRoute(
-          [pickupLocation.lng, pickupLocation.lat],
-          [dropoffLocation.lng, dropoffLocation.lat],
-          { profile: 'driving-traffic' }
-        );
-
-        if (isCancelled) return;
-
-        if (route) {
-          const routeKm = roundDistanceKm(Math.max(1, route.distanceKm || 0));
-          const kekeDurationMin = calculateKekeDurationMinutes(route.durationMin, routeKm, pricingConfig);
-          const roundedFare = calculateRideFare(routeKm, pricingConfig);
-
-          setRouteCoordinates(route.coordinates);
-          setEstimatedDistance(parseFloat(routeKm.toFixed(2)));
-          setEstimatedDuration(kekeDurationMin);
-          return;
-        }
-      } catch (error) {
-        console.log('Mapbox route fetch failed, falling back to straight-line estimate:', error);
-      }
-
-      const fallbackDistance = calculateDistance(
-        pickupLocation.lat,
-        pickupLocation.lng,
-        dropoffLocation.lat,
-        dropoffLocation.lng
-      );
-      const displayDistance = fallbackDistance < 1 ? 1 : roundDistanceKm(fallbackDistance);
-      const roadAdjustedDistance = roundDistanceKm(displayDistance * 1.28);
-      const fallbackDuration = calculateKekeDurationMinutes((roadAdjustedDistance / 18) * 60, roadAdjustedDistance, pricingConfig);
-      const roundedFare = calculateRideFare(roadAdjustedDistance, pricingConfig);
-
-      if (!isCancelled) {
-        setRouteCoordinates([
-          [pickupLocation.lng, pickupLocation.lat],
-          [dropoffLocation.lng, dropoffLocation.lat],
-        ]);
-        setEstimatedDistance(roadAdjustedDistance);
-        setEstimatedDuration(fallbackDuration);
-      }
-    };
-
-    loadRoute().finally(() => {
-      if (!isCancelled) {
-        setRouteLoading(false);
-      }
-    });
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [pickupLocation, dropoffLocation, pricingConfig]);
-
-  useEffect(() => {
-    if (pickupLocation && dropoffLocation) {
-      const centerLat = (pickupLocation.lat + dropoffLocation.lat) / 2;
-      const centerLng = (pickupLocation.lng + dropoffLocation.lng) / 2;
-      setCameraCenter([centerLng, centerLat]);
-      setCameraZoom(11);
-    } else if (pickupLocation) {
-      setCameraCenter([pickupLocation.lng, pickupLocation.lat]);
-      setCameraZoom(14);
-    } else if (dropoffLocation) {
-      setCameraCenter([dropoffLocation.lng, dropoffLocation.lat]);
-      setCameraZoom(14);
-    } else if (currentLocation) {
-      setCameraCenter([currentLocation.longitude, currentLocation.latitude]);
-      setCameraZoom(12);
-    }
-  }, [pickupLocation, dropoffLocation, currentLocation]);
-
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, (event) => {
-      setKeyboardHeight(Math.max(0, event.endCoordinates.height - insets.bottom));
-    });
-    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
-
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, [insets.bottom]);
-
-  const handleSearch = async (query: string, type: 'pickup' | 'dropoff') => {
-    if (!query || query.length < 1) {
-      if (type === 'pickup') { setPickupSearchResults([]); setShowPickupResults(false); }
-      else { setDropoffSearchResults([]); setShowDropoffResults(false); }
-      return;
-    }
-    const localResults = searchLocations(query, MOCK_LOCATIONS, recentLocations).map((item) => ({
-      ...item,
-      source: 'local' as const,
-    }));
-    const currentRequest =
-      type === 'pickup' ? ++pickupSearchRequest.current : ++dropoffSearchRequest.current;
-    const sessionToken =
-      type === 'pickup' ? pickupGoogleSessionToken.current : dropoffGoogleSessionToken.current;
-
-    let placeResults: SearchResult[] = [];
-
-    if (query.trim().length >= 2) {
-      try {
-        placeResults = await searchLagosPlaces(query, sessionToken, {
-          locationBias: currentLocation
-            ? { latitude: currentLocation.latitude, longitude: currentLocation.longitude }
-            : undefined,
-          preferPreciseAddresses: true,
-        });
-      } catch (error) {
-        console.log('Google Places search failed for booking search:', error);
-      }
-    }
-
-    if (
-      (type === 'pickup' && currentRequest !== pickupSearchRequest.current) ||
-      (type === 'dropoff' && currentRequest !== dropoffSearchRequest.current)
-    ) {
-      return;
-    }
-
-    const results = rankPreciseAddressResults(dedupeSearchResults([...placeResults, ...localResults]));
-    if (type === 'pickup') {
-      setDropoffSearchResults([]);
-      setShowDropoffResults(false);
-      setPickupSearchResults(results);
-      setShowPickupResults(true);
-      setActiveLocationPicker('pickup');
-    } else {
-      setPickupSearchResults([]);
-      setShowPickupResults(false);
-      setDropoffSearchResults(results);
-      setShowDropoffResults(true);
-      setActiveLocationPicker('dropoff');
-    }
-    await saveRecentSearch(query);
-  };
-
-  const scheduleSearch = (query: string, type: 'pickup' | 'dropoff') => {
-    const timerRef = type === 'pickup' ? pickupSearchTimer : dropoffSearchTimer;
-    if (timerRef.current) clearTimeout(timerRef.current);
-
-    const localResults = searchLocations(query, MOCK_LOCATIONS, recentLocations).map((item) => ({
-      ...item,
-      source: 'local' as const,
-    }));
-
-    if (type === 'pickup') {
-      setPickupSearchResults(localResults);
-      setShowPickupResults(query.length > 0);
-      setActiveLocationPicker('pickup');
-    } else {
-      setDropoffSearchResults(localResults);
-      setShowDropoffResults(query.length > 0);
-      setActiveLocationPicker('dropoff');
-    }
-
-    timerRef.current = setTimeout(() => {
-      handleSearch(query, type);
-    }, 350);
-  };
-
-  const openVoiceLocation = (type: 'pickup' | 'dropoff') => {
-    setVoiceLocationError('');
-    setIsVoiceListening(false);
-    setVoiceLocationTarget(type);
-    setVoiceLocationText(type === 'pickup' ? pickupSearch : dropoffSearch);
-  };
-
-  const closeVoiceLocation = async () => {
+  const handleUseCurrentLocation = async () => {
+    setIsLoading(true);
     try {
-      await Voice.stop();
-    } catch {}
-    setIsVoiceListening(false);
-    setVoiceLocationTarget(null);
-    setVoiceLocationError('');
-  };
-
-  const startVoiceLocationListening = async () => {
-    if (!voiceLocationTarget) return;
-    if (!isVoiceAvailable) {
-      setVoiceLocationError('Voice search is not available on this device. Please type the address.');
-      return;
-    }
-
-    try {
-      setVoiceLocationError('');
-      setIsVoiceListening(true);
-      await Voice.start('en-NG');
-    } catch (error: any) {
-      setIsVoiceListening(false);
-      setVoiceLocationError(error?.message || 'Voice search could not start. Please try again or type the address.');
-    }
-  };
-
-  const stopVoiceLocationListening = async () => {
-    try {
-      await Voice.stop();
-    } catch {}
-    setIsVoiceListening(false);
-  };
-
-  const applyVoiceLocationText = () => {
-    const query = voiceLocationText.trim();
-    if (!voiceLocationTarget || !query) return;
-    if (voiceLocationTarget === 'pickup') {
-      setPickupLocation(null);
-      setPickupSearch(query);
-      scheduleSearch(query, 'pickup');
-      openPickupSearch();
-    } else {
-      setDropoffLocation(null);
-      setDropoffSearch(query);
-      scheduleSearch(query, 'dropoff');
-      openDropoffSearch();
-    }
-    setVoiceLocationTarget(null);
-  };
-
-  const clearPickupSearch = () => {
-    setPickupSearch('');
-    setPickupSearchResults([]);
-    setShowPickupResults(false);
-    if (pickupBlurTimer.current) clearTimeout(pickupBlurTimer.current);
-  };
-
-  const clearDropoffSearch = () => {
-    setDropoffSearch('');
-    setDropoffSearchResults([]);
-    setShowDropoffResults(false);
-    if (dropoffBlurTimer.current) clearTimeout(dropoffBlurTimer.current);
-  };
-
-  const scheduleClosePickupResults = () => {
-    if (pickupBlurTimer.current) clearTimeout(pickupBlurTimer.current);
-    pickupBlurTimer.current = setTimeout(() => setShowPickupResults(true), 180);
-  };
-
-  const scheduleCloseDropoffResults = () => {
-    if (dropoffBlurTimer.current) clearTimeout(dropoffBlurTimer.current);
-    dropoffBlurTimer.current = setTimeout(() => setShowDropoffResults(true), 180);
-  };
-
-  const selectSearchResult = async (result: SearchResult, type: 'pickup' | 'dropoff') => {
-    let resolvedResult: LocationSearchResult | SearchResult | null = result;
-    const sessionToken =
-      type === 'pickup' ? pickupGoogleSessionToken.current : dropoffGoogleSessionToken.current;
-
-    if (result.placeId) {
-      try {
-        resolvedResult = await getGooglePlaceDetails(result.placeId, sessionToken) || result;
-      } catch (error) {
-        console.log('Google Place Details lookup failed:', error);
-      }
-    }
-
-    if (!resolvedResult || !Number.isFinite(resolvedResult.lat) || !Number.isFinite(resolvedResult.lng)) {
-      setErrorMessage('We could not get map coordinates for that location. Please choose another nearby result.');
-      setErrorDialogVisible(true);
-      return;
-    }
-
-    const location: Location = {
-      lat: Number(resolvedResult.lat),
-      lng: Number(resolvedResult.lng),
-      address: sanitizeAddress(resolvedResult.address),
-    };
-    
-    if (type === 'pickup') {
-      setPickupLocation(location);
-      setPickupSearch('');
-      setPickupSearchResults([]);
-      setShowPickupResults(false);
-      setActiveLocationPicker(null);
-      setDropoffSearchResults([]);
-      setShowDropoffResults(false);
-    } else {
-      setDropoffLocation(location);
-      setDropoffSearch('');
-      setDropoffSearchResults([]);
-      setShowDropoffResults(false);
-      setActiveLocationPicker(null);
-      setPickupSearchResults([]);
-      setShowPickupResults(false);
-    }
-    setCameraCenter([location.lng, location.lat]);
-    setCameraZoom(14);
-    if (resolvedResult.placeId) {
-      saveSearchLocationsToCache([resolvedResult]).catch(() => {});
-      markSearchLocationUsed(resolvedResult).catch(() => {});
-    }
-    if (type === 'pickup') {
-      pickupGoogleSessionToken.current = `pickup-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    } else {
-      dropoffGoogleSessionToken.current = `dropoff-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    }
-    await saveRecentLocation(location);
-    setRecentLocations(await getRecentLocations());
-    setBookingStep(type === 'pickup' ? 'destination' : 'time');
-  };
-
-  const selectCurrentLocationOption = async (type: 'pickup' | 'dropoff') => {
-    try {
-      setResolvingCurrentLocation(type); // Show loading state
-      
-      const cached = prewarmedCurrentLocationRef.current;
-      let entry =
-        cached && Date.now() - cached.timestamp < PREWARMED_LOCATION_MAX_AGE_MS
-          ? cached
-          : null;
-
-      if (!entry && prewarmCurrentLocationPromise.current) {
-        entry = await prewarmCurrentLocationPromise.current;
-      }
-
-    if (!entry && currentLocation) {
-      entry = {
-        raw: currentLocation,
-        resolved: {
-          lat: currentLocation.latitude,
-          lng: currentLocation.longitude,
-          address: 'Current location',
-          source: 'local',
-        },
-        location: {
-          lat: currentLocation.latitude,
-          lng: currentLocation.longitude,
-          address: 'Current location',
-        },
-        timestamp: Date.now(),
-      };
-      prewarmCurrentLocation().catch(() => {});
-    }
-
-    if (!entry) {
-      entry = await prewarmCurrentLocation(false);
-    }
-
-      if (!entry) {
-        setCurrentLocationUnavailableVisible(true);
-        setResolvingCurrentLocation(null);
-        return;
-      }
-
-      await applyCurrentLocation(type, entry);
+      await prewarmCurrentLocation();
     } catch (error) {
-      console.error('Error selecting current location:', error);
-      setCurrentLocationUnavailableVisible(true);
+      setErrorMessage('Could not get your current location. Please check your GPS settings.');
+      setShowErrorDialog(true);
     } finally {
-      setResolvingCurrentLocation(null);
+      setIsLoading(false);
     }
   };
 
-  const handleMapLocationPick = async (coordinate: { latitude: number; longitude: number }) => {
-    if (!activeLocationPicker) return;
+  const handleSelectRecentLocation = (location: Location, type: 'pickup' | 'destination') => {
+    // Dismiss keyboard
+    Keyboard.dismiss();
 
-    let resolvedAddress = '';
-    try {
-      // Try backend API first (uses LocationIQ)
-      const apiUrl = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.198.143:3000';
-      const cleanApiUrl = apiUrl.replace(/\/api$/, '');
-      const response = await fetch(
-        `${cleanApiUrl}/api/location/reverse-geocode?lat=${coordinate.latitude}&lon=${coordinate.longitude}`
-      );
-      
-      if (response.ok) {
-        const data = await response.json();
-        if (data.address && data.success) {
-          resolvedAddress = sanitizeAddress(data.address);
-          console.log('Using backend reverse geocoding for map pick:', resolvedAddress);
-        }
-      }
-    } catch (apiError) {
-      console.log('Backend reverse geocoding failed for map pick, trying Google fallback:', apiError);
-    }
-
-    // Fallback to Google if backend fails
-    if (!resolvedAddress) {
-      try {
-        const placeResult = await reverseGeocodeWithGooglePlaces(coordinate.latitude, coordinate.longitude);
-        resolvedAddress = sanitizeAddress(placeResult?.address || '');
-      } catch (error) {
-        console.log('Google Places reverse lookup failed for map pick:', error);
-      }
-    }
-
-    if (!resolvedAddress) {
-      try {
-        resolvedAddress = sanitizeAddress((await reverseGeocodeLocation({ ...coordinate, timestamp: Date.now() } as any)) || '');
-      } catch (error) {
-        console.log('Fallback reverse geocode failed for map pick:', error);
-      }
-    }
-
-    const nearest = findNearestLocation(coordinate.latitude, coordinate.longitude);
-    const location: Location = {
-      lat: coordinate.latitude,
-      lng: coordinate.longitude,
-      address: sanitizeAddress(
-        resolvedAddress ||
-        nearest?.address ||
-        `Pinned location (${coordinate.latitude.toFixed(5)}, ${coordinate.longitude.toFixed(5)})`
-      ),
-    };
-
-    if (activeLocationPicker === 'pickup') {
+    if (type === 'pickup') {
       setPickupLocation(location);
-      setPickupSearch('');
-      setPickupSearchResults([]);
-      setShowPickupResults(false);
-      setDropoffSearchResults([]);
-      setShowDropoffResults(false);
+      setPickupSearch(location.address);
+      setShowPickupSuggestions(false);
+      loadWeather(location);
+      setCurrentStep('destination');
+      destinationInputRef.current?.focus();
     } else {
-      setDropoffLocation(location);
-      setDropoffSearch('');
-      setDropoffSearchResults([]);
-      setShowDropoffResults(false);
-      setPickupSearchResults([]);
-      setShowPickupResults(false);
+      setDestinationLocation(location);
+      setDestinationSearch(location.address);
+      setShowDestinationSuggestions(false);
+      calculateEstimate();
+      setCurrentStep('time');
     }
-
-    setActiveLocationPicker(null);
-    setCameraCenter([coordinate.longitude, coordinate.latitude]);
-    setCameraZoom(15);
-    await saveRecentLocation(location);
-    setRecentLocations(await getRecentLocations());
-    setBookingStep(activeLocationPicker === 'pickup' ? 'destination' : 'time');
   };
 
-  const handleAutoSelectNearestArea = async () => {
-    if (!outOfServiceAreaInfo.closestArea) return;
+  const handleCashbackSelect = (reward: any) => {
+    setSelectedCashback(reward);
+    // Calculate discounted fare
+    if (estimatedFare) {
+      const discount = Math.round(estimatedFare * (reward.discount_percentage / 100));
+      setDiscountedFare(Math.max(0, estimatedFare - discount));
+    }
+  };
 
-    // Find the operational area by name
-    const allAreas = getNearbyOperationalAreas(
-      { latitude: 6.5, longitude: 3.35 }, // Use a Lagos center point to get all areas
-      100 // Large radius to get all
-    );
+  const handleCashbackRemove = () => {
+    setSelectedCashback(null);
+    setDiscountedFare(null);
+  };
 
-    const targetArea = allAreas.find(
-      area => area.name === outOfServiceAreaInfo.closestArea
-    );
+  const handleBookRide = () => {
+    if (!pickupLocation || !destinationLocation) {
+      setErrorMessage('Please select both pickup and destination locations.');
+      setShowErrorDialog(true);
+      return;
+    }
 
-    if (targetArea) {
-      const location: Location = {
-        lat: targetArea.center[0],
-        lng: targetArea.center[1],
-        address: `${targetArea.name} Service Area`,
-      };
+    // Open time selection modal
+    setShowTimePicker(true);
+  };
 
-      if (outOfServiceAreaInfo.locationType === 'pickup') {
-        setPickupLocation(location);
+  const handleCustomTimeSelect = () => {
+    setPickerMode('date');
+    setShowCustomDatePicker(true);
+  };
+
+  const handleDateChange = (event: any, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowCustomDatePicker(false);
+    }
+
+    if (selectedDate) {
+      setTempDate(selectedDate);
+      if (Platform.OS === 'ios') {
+        setPickerMode('time');
       } else {
-        setDropoffLocation(location);
+        // Android - show time picker next
+        setTimeout(() => {
+          setPickerMode('time');
+          setShowCustomDatePicker(true);
+        }, 100);
       }
-
-      setCameraCenter([targetArea.center[1], targetArea.center[0]]);
-      setCameraZoom(13);
-      await saveRecentLocation(location);
-      setRecentLocations(await getRecentLocations());
-      setShowOutOfServiceAreaModal(false);
     }
   };
 
-  const handleBookRide = async () => {
-    if (!pickupLocation || !dropoffLocation) {
-      setErrorMessage('Please select both pickup and dropoff locations');
-      setErrorDialogVisible(true);
-      return;
+  const handleTimeChange = (event: any, selectedTime?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowCustomDatePicker(false);
     }
-    if (routeLoading) {
-      setErrorMessage('Please wait while we finish calculating your route.');
-      setErrorDialogVisible(true);
-      return;
+
+    if (selectedTime) {
+      const combinedDate = new Date(tempDate);
+      combinedDate.setHours(selectedTime.getHours());
+      combinedDate.setMinutes(selectedTime.getMinutes());
+      setTempDate(combinedDate);
+
+      if (Platform.OS === 'ios') {
+        // iOS - user can still adjust, confirm manually
+      } else {
+        // Android - automatically confirm after time selection
+        handleCustomTimeConfirm();
+      }
     }
-    // Show pickup time modal instead of directly booking
-    setShowPickupTimeModal(true);
   };
 
-  const handlePickupTimeConfirmed = async (pickupTime: string) => {
-    if (!pickupLocation || !dropoffLocation) return;
+  const handleCustomTimeConfirm = () => {
+    handleTimeSelect(tempDate.toISOString());
+    setShowCustomDatePicker(false);
+    setPickerMode('date');
+  };
 
-    setShowPickupTimeModal(false);
-    setPendingPickupTime(pickupTime);
-    setBookingStep('review');
+  const handleTimeSelect = async (time: string | null) => {
+    setPickupTime(time);
+    setShowTimePicker(false);
+
+    // Ensure fare is calculated before showing review
+    if (pickupLocation && destinationLocation && !estimatedFare) {
+      await calculateEstimate();
+    }
+
+    // After time selection, show review modal
+    setShowReviewModal(true);
   };
 
   const handleConfirmBooking = async () => {
-    if (!pickupLocation || !dropoffLocation || !pendingPickupTime) return;
-    if (routeLoading) {
-      setErrorMessage('Please wait while we finish calculating your route.');
-      setErrorDialogVisible(true);
-      return;
-    }
-
-    setBookingConfirmationVisible(false);
-      setIsBooking(true);
-
-      try {
-        const normalizedDistance = roundDistanceKm(estimatedDistance);
-        const baseFare = calculateRideFare(normalizedDistance, pricingConfig);
-        const weatherSurcharge = Math.round(baseFare * (weatherImpact?.surchargeRate || 0));
-        const totalFare = baseFare + weatherSurcharge;
-        const response = await createRideBooking({
-          pickup: pickupLocation,
-          dropoff: dropoffLocation,
-          distanceKm: normalizedDistance,
-          durationMinutes: Number.isFinite(estimatedDuration) ? estimatedDuration : 0,
-          pickupTime: pendingPickupTime,
-          fare: bookingTotalFare,
-          pricingConfig,
-          weatherImpact: weatherImpact ? { ...weatherImpact } : null,
-          cashback_reward_id: selectedCashback?.id,
-        });
-      const rideId = response?.ride?.id || null;
-
-      const routeToSave: RecentRoute = {
-        pickup: pickupLocation,
-        dropoff: dropoffLocation,
-        distanceKm: normalizedDistance,
-        durationMinutes: Number.isFinite(estimatedDuration) ? estimatedDuration : 0,
-        fare: totalFare,
-        pickupTime: pendingPickupTime,
-        source: 'cache',
-        timestamp: Date.now(),
+    setIsLoading(true);
+    try {
+      const bookingData = {
+        pickup: {
+          lat: pickupLocation!.lat,
+          lng: pickupLocation!.lng,
+          address: pickupLocation!.address,
+        },
+        dropoff: {
+          lat: destinationLocation!.lat,
+          lng: destinationLocation!.lng,
+          address: destinationLocation!.address,
+        },
+        distanceKm: estimatedDistance || 0,
+        durationMinutes: estimatedTime || 0,
+        pickupTime: pickupTime || new Date().toISOString(),
+        // Always send the ORIGINAL fare — server applies cashback discount itself
+        // via cashback_reward_id. Sending pre-discounted fare causes double-discount.
+        fare: estimatedFare || 0,
+        pricingConfig: pricingConfig,
+        weatherImpact: weather || null,
+        cashback_reward_id: selectedCashback?.id,
       };
-      await saveRecentRoute(routeToSave);
-      setRecentRoutes((routes) => dedupeRecentRoutes([routeToSave, ...routes]).slice(0, MAX_RECENT_ITEMS));
-      WidgetStorage.setItem(WIDGET_STORAGE_KEYS.rider, {
-        primaryAction: 'Book Ride',
-        screen: '/rider/booking',
-        recentRoutes: dedupeRecentRoutes([routeToSave, ...recentRoutes]).slice(0, 4).map((route) => ({
-          pickup: route.pickup.address,
-          dropoff: route.dropoff.address,
-          routeData: route,
-        })),
-      }).catch(() => undefined);
 
-      setLastBookedRideId(rideId);
-      setPickupLocation(null);
-      setDropoffLocation(null);
-      setEstimatedDistance(0);
-      setPendingPickupTime(null);
-      setBookingStep('pickup');
-      setBookingSuccessVisible(true);
+      const response = await createRideBooking(bookingData);
 
-      await sendLocalNotification(
-        '✅ Ride booked successfully',
-        `Your ride request${rideId ? ` (#${rideId.slice(0, 8)})` : ''} is now being matched with nearby drivers.`,
-        {
-          type: 'ride_update',
-          rideId: rideId || undefined,
-          action: 'ride_booked_notification',
-        }
-      );
-    } catch (error: any) {
-      const message = error?.message || error?.details || 'Failed to book ride. Please try again.';
-      setErrorMessage(message);
-      setErrorDialogVisible(true);
+      if (response) {
+        setShowReviewModal(false);
+        const rideId = response.ride?.id || response.id;
+        router.push({
+          pathname: '/rider/active-ride',
+          params: { rideId },
+        });
+      }
+    } catch (error) {
+      console.error('Error booking ride:', error);
+      setErrorMessage('Failed to book ride. Please try again.');
+      setShowErrorDialog(true);
     } finally {
-      setIsBooking(false);
+      setIsLoading(false);
     }
   };
 
-  const handleCancelBookingConfirmation = () => {
-    setBookingConfirmationVisible(false);
-    setBookingStep('review');
+  const handlePickupFocus = () => {
+    setActiveLocationPicker('pickup');
+    setShowPickupSuggestions(true);
+    setShowDestinationSuggestions(false);
   };
 
-  const handleViewBookedRide = () => {
-    setBookingSuccessVisible(false);
-    router.push('/rider/rides-history');
+  const handleOpenMapPicker = (type: 'pickup' | 'destination') => {
+    setMapPickerType(type);
+    setShowInlineMapPicker(true);
+    setShowMapPicker(false);
+    Keyboard.dismiss();
   };
 
-  const getGreeting = () => {
-    const hrs = new Date().getHours();
-    const name = userName ? ', ' + userName : '';
-    const greetings = [
-      `Going somewhere${name}?`,
-      `Heading out${name}?`,
-      `Ready to go${name}?`,
-      `Let's move${name}?`,
-      hrs < 12 ? `Morning commute${name}?` : hrs < 18 ? `Afternoon trip${name}?` : `Evening ride${name}?`,
-      `Got a place to be${name}?`,
-      `Where to${name}?`,
-    ];
-    return greetings[Math.floor(Math.random() * greetings.length)];
+  const handleCloseInlineMapPicker = () => {
+    setShowInlineMapPicker(false);
+    setMapPickerType(null);
   };
 
-  const bookingMapFocusCoordinates = useMemo<[number, number][]>(() => {
-    const coordinates: [number, number][] = [];
-
-    if (currentLocation) {
-      coordinates.push([currentLocation.longitude, currentLocation.latitude]);
+  const handleConfirmInlineMapPicker = async () => {
+    if (cameraCenter) {
+      await handleMapLocationSelect({
+        latitude: cameraCenter[1],
+        longitude: cameraCenter[0],
+      });
     }
-    if (pickupLocation) {
-      coordinates.push([pickupLocation.lng, pickupLocation.lat]);
-    }
-    if (dropoffLocation) {
-      coordinates.push([dropoffLocation.lng, dropoffLocation.lat]);
-    }
-
-    return coordinates;
-  }, [currentLocation, pickupLocation, dropoffLocation]);
-
-  const bookingDistanceKm = roundDistanceKm(estimatedDistance);
-  const bookingBaseFare = calculateRideFare(bookingDistanceKm, pricingConfig);
-  const bookingWeatherSurcharge = Math.round(bookingBaseFare * (weatherImpact?.surchargeRate || 0));
-  const originalBookingTotalFare = bookingBaseFare + bookingWeatherSurcharge;
-
-  // Calculate cashback discount
-  let cashbackDiscount = 0;
-  if (selectedCashback) {
-    const discountPercentage = selectedCashback.discount_percentage;
-    const maxDiscountAmount = selectedCashback.cashback_programs?.max_discount_amount || Infinity;
-    cashbackDiscount = (originalBookingTotalFare * discountPercentage) / 100;
-
-    // Cap discount at max amount
-    if (cashbackDiscount > maxDiscountAmount) {
-      cashbackDiscount = maxDiscountAmount;
-    }
-  }
-
-  const bookingTotalFare = Math.max(0, originalBookingTotalFare - cashbackDiscount);
-  const bookingPlatformFee = Math.round(bookingTotalFare * pricingConfig.platformFeeRate);
-  const bookingEstimatedDriverFare = Math.max(0, bookingTotalFare - bookingPlatformFee);
-  const trafficLabel =
-    estimatedDistance > 0 && estimatedDuration > 0
-      ? estimatedDuration / Math.max(1, estimatedDistance) > pricingConfig.etaPerKm.heavyTraffic
-        ? 'Heavy traffic'
-        : estimatedDuration / Math.max(1, estimatedDistance) > pricingConfig.etaPerKm.normalTraffic
-          ? 'Normal traffic'
-          : 'Light traffic'
-      : 'Traffic-aware route';
-  const isLocationSearchExpanded =
-    keyboardHeight > 0 &&
-    (bookingStep === 'pickup' || bookingStep === 'destination') &&
-    (showPickupResults || showDropoffResults || Boolean(pickupSearch || dropoffSearch));
-
-  const renderStepSheet = () => {
-    const isPickupStep = bookingStep === 'pickup';
-    const isDestinationStep = bookingStep === 'destination';
-    const isTimeStep = bookingStep === 'time';
-    const isReviewStep = bookingStep === 'review';
-    const locationType: 'pickup' | 'dropoff' = isPickupStep ? 'pickup' : 'dropoff';
-    const selectedTimeLabel = pendingPickupTime
-      ? formatPickupTimeLabel(pendingPickupTime)
-      : 'Choose pickup time';
-
-    const goBackStep = () => {
-      if (isReviewStep) setBookingStep('time');
-      else if (isTimeStep) setBookingStep('destination');
-      else if (isDestinationStep) setBookingStep('pickup');
-    };
-
-    const locationResults = isPickupStep
-      ? (pickupSearch ? pickupSearchResults : recentLocations)
-      : (dropoffSearch ? dropoffSearchResults : recentLocations);
-    const locationResultsTitle = isPickupStep ? 'Pickup suggestions' : 'Destination suggestions';
-    const shouldShowLocationResults = isPickupStep
-      ? (showPickupResults || Boolean(pickupSearch))
-      : (showDropoffResults || Boolean(dropoffSearch));
-
-    return (
-      <BookingStepPanel
-        theme={theme}
-        styles={bookingStyles}
-        insets={insets}
-        currentStep={bookingStep}
-        title={isPickupStep ? 'From where?' : isDestinationStep ? 'Where to?' : isTimeStep ? 'When?' : 'Review your ride'}
-        stepLabel={`Step ${bookingStep === 'pickup' ? '1' : bookingStep === 'destination' ? '2' : bookingStep === 'time' ? '3' : '4'} of 4`}
-        showBack={bookingStep !== 'pickup'}
-        onBack={goBackStep}
-        keyboardHeight={keyboardHeight}
-      >
-        {isPickupStep || isDestinationStep ? (
-          <>
-            <BookingLocationField
-              label={isPickupStep ? 'Pickup location' : 'Where to?'}
-              value={isPickupStep ? pickupSearch : dropoffSearch}
-              placeholder={isPickupStep ? 'Search pickup location' : 'Search destination'}
-              icon={isPickupStep ? 'map-marker' : 'map-marker-check'}
-              theme={theme}
-              styles={bookingStyles}
-              onChangeText={(text) => {
-                if (isPickupStep) setPickupSearch(text);
-                else setDropoffSearch(text);
-                scheduleSearch(text, locationType);
-              }}
-              onFocus={() => (isPickupStep ? openPickupSearch() : openDropoffSearch())}
-              onClear={isPickupStep ? clearPickupSearch : clearDropoffSearch}
-            />
-
-            <View style={bookingStyles.locationActionsRow}>
-              <TouchableOpacity
-                style={[bookingStyles.locationActionButton, { backgroundColor: theme.colors.inputBackground, borderColor: theme.colors.border }]}
-                onPress={() => selectCurrentLocationOption(locationType)}
-                activeOpacity={0.85}
-                disabled={resolvingCurrentLocation === locationType}
-              >
-                {resolvingCurrentLocation === locationType ? (
-                  <ActivityIndicator size={18} color={BRAND.primary} />
-                ) : (
-                  <MaterialCommunityIcons name="crosshairs-gps" size={18} color={BRAND.primary} />
-                )}
-                <Text style={[bookingStyles.locationActionText, { color: theme.colors.textPrimary }]}>
-                  {resolvingCurrentLocation === locationType ? 'Getting location...' : 'Use current location'}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[bookingStyles.locationActionButton, { backgroundColor: theme.colors.inputBackground, borderColor: theme.colors.border }]}
-                onPress={() => openMapLocationPicker(locationType)}
-                activeOpacity={0.85}
-                disabled={resolvingCurrentLocation === locationType}
-              >
-                <MaterialCommunityIcons name="map-marker-outline" size={18} color={BRAND.primary} />
-                <Text style={[bookingStyles.locationActionText, { color: theme.colors.textPrimary }]}>Pick on map</Text>
-              </TouchableOpacity>
-            </View>
-
-            {shouldShowLocationResults ? (
-              <BookingSearchResultsList
-                results={locationResults}
-                onSelect={(result) => selectSearchResult(result, locationType)}
-                onClose={() => closeLocationSuggestions(locationType)}
-                theme={theme}
-                styles={bookingStyles}
-                title={locationResultsTitle}
-                subtitle="Tap once or double tap to set the location"
-              />
-            ) : null}
-          </>
-        ) : null}
-
-        {isTimeStep ? (
-          <View style={[bookingStyles.whenPanel, { backgroundColor: theme.colors.inputBackground, borderColor: theme.colors.border }]}>
-            <MaterialCommunityIcons name="calendar-clock" size={28} color={BRAND.primary} />
-            <View style={{ flex: 1 }}>
-              <Text style={[bookingStyles.whenSelectedLabel, { color: theme.colors.textSecondary }]}>Pickup time</Text>
-              <Text style={[bookingStyles.whenSelectedValue, { color: theme.colors.textPrimary }]}>{selectedTimeLabel}</Text>
-            </View>
-            <TouchableOpacity style={[bookingStyles.whenButton, { backgroundColor: BRAND.primary }]} onPress={() => setShowPickupTimeModal(true)} activeOpacity={0.9}>
-              <Text style={bookingStyles.whenButtonText}>Choose</Text>
-            </TouchableOpacity>
-          </View>
-        ) : null}
-
-        {isReviewStep ? (
-          <>
-              <BookingFareSummary
-                theme={theme}
-                styles={bookingStyles}
-                isLight={isLight}
-                routeLoading={routeLoading}
-                estimatedDistance={roundDistanceKm(estimatedDistance)}
-                estimatedDuration={estimatedDuration}
-                bookingTotalFare={bookingTotalFare}
-                baseFare={bookingBaseFare}
-                weatherLabel={weatherImpact?.label || 'Weather unavailable'}
-                weatherDetail={weatherImpact?.detail || 'We could not read live weather for this route.'}
-                weatherSurcharge={bookingWeatherSurcharge}
-                trafficLabel={trafficLabel}
-                bookingPlatformFee={bookingPlatformFee}
-                bookingEstimatedDriverFare={bookingEstimatedDriverFare}
-                cashbackRewards={cashbackRewards}
-                selectedCashback={selectedCashback}
-                onSelectCashback={(reward) => {
-                  if (selectedCashback?.id === reward.id) {
-                    setSelectedCashback(null);
-                    setOriginalFare(0);
-                  } else {
-                    setSelectedCashback(reward);
-                    setOriginalFare(originalBookingTotalFare);
-                  }
-                }}
-                originalFare={originalBookingTotalFare}
-              />
-            <TourTarget id="booking-confirm">
-              <BookingReviewCard
-                theme={theme}
-                styles={bookingStyles}
-                pickupAddress={sanitizeAddress(pickupLocation?.address || '')}
-                dropoffAddress={sanitizeAddress(dropoffLocation?.address || '')}
-                bookingTotalFare={bookingTotalFare}
-                isBooking={isBooking}
-                onReview={() => setBookingConfirmationVisible(true)}
-              />
-            </TourTarget>
-          </>
-        ) : null}
-
-        {activeLocationPicker && (isPickupStep || isDestinationStep) ? (
-          <View style={[bookingStyles.guideBox, bookingStyles.guideBoxCompact, { backgroundColor: theme.colors.inputBackground }]}>
-            <MaterialCommunityIcons name="gesture-tap" size={20} color={BRAND.primary} />
-            <Text style={[bookingStyles.guideText, { color: theme.colors.textSecondary }]}>
-              Tap the map to set {activeLocationPicker === 'pickup' ? 'pickup' : 'destination'}.
-            </Text>
-          </View>
-        ) : null}
-      </BookingStepPanel>
-    );
+    setShowInlineMapPicker(false);
   };
+
+  const handleMapLocationSelect = async (coordinates: { latitude: number; longitude: number }) => {
+    try {
+      // Get street-level address for the selected coordinates
+      const address = await getStreetAddress(coordinates.latitude, coordinates.longitude);
+
+      const location: Location = {
+        lat: coordinates.latitude,
+        lng: coordinates.longitude,
+        address: address || `Selected location (${coordinates.latitude.toFixed(4)}, ${coordinates.longitude.toFixed(4)})`,
+      };
+
+      if (mapPickerType === 'pickup') {
+        setPickupLocation(location);
+        setPickupSearch(location.address);
+        loadWeather(location);
+        setDiscountedFare(null); // Reset discounted fare when location changes
+        setCurrentStep('destination');
+        destinationInputRef.current?.focus();
+      } else {
+        setDestinationLocation(location);
+        setDestinationSearch(location.address);
+        setDiscountedFare(null); // Reset discounted fare when location changes
+        calculateEstimate();
+        setCurrentStep('time');
+      }
+
+      setShowMapPicker(false);
+      setMapPickerType(null);
+    } catch (error) {
+      console.error('Error getting street address:', error);
+    }
+  };
+
+  const handleDestinationFocus = () => {
+    setActiveLocationPicker('destination');
+    setShowDestinationSuggestions(true);
+    setShowPickupSuggestions(false);
+  };
+
+  const handlePickupBlur = () => {
+    if (pickupBlurTimer.current) clearTimeout(pickupBlurTimer.current);
+    pickupBlurTimer.current = setTimeout(() => {
+      setShowPickupSuggestions(false);
+    }, 200);
+  };
+
+  const handleDestinationBlur = () => {
+    if (destinationBlurTimer.current) clearTimeout(destinationBlurTimer.current);
+    destinationBlurTimer.current = setTimeout(() => {
+      setShowDestinationSuggestions(false);
+    }, 200);
+  };
+
+  const formatPickupTimeLabel = (time: string): string => {
+    const date = new Date(time);
+    const today = new Date();
+    const tomorrow = new Date();
+    tomorrow.setDate(today.getDate() + 1);
+
+    const dayLabel = date.toDateString() === today.toDateString()
+      ? 'Today'
+      : date.toDateString() === tomorrow.toDateString()
+        ? 'Tomorrow'
+        : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+    return `${dayLabel}, ${date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
+  };
+
+  const renderSuggestionItem = (suggestion: LocationSuggestion, onSelect: () => void) => (
+    <TouchableOpacity
+      key={suggestion.id}
+      style={[styles.suggestionItem, { backgroundColor: cardBg }]}
+      onPress={onSelect}
+      activeOpacity={0.7}
+    >
+      <View style={styles.suggestionIcon}>
+        <MaterialCommunityIcons name="map-marker" size={20} color={BRAND.primary} />
+      </View>
+      <View style={styles.suggestionContent}>
+        <Text style={[styles.suggestionName, { color: textColor }]} numberOfLines={1}>
+          {suggestion.name}
+        </Text>
+        <Text style={[styles.suggestionAddress, { color: isLight ? '#555' : '#aaa' }]} numberOfLines={2}>
+          {suggestion.address}
+        </Text>
+      </View>
+      {suggestion.distance && (
+        <Text style={[styles.suggestionDistance, { color: isLight ? '#555' : '#aaa' }]}>{suggestion.distance}</Text>
+      )}
+    </TouchableOpacity>
+  );
+
+  const bgColor = isLight ? '#FFFFFF' : '#000000';
+  const textColor = isLight ? '#000000' : '#FFFFFF';
+  const cardBg = isLight ? '#F5F5F5' : '#1A1A1A';
+  const borderColor = isLight ? '#E0E0E0' : '#333333';
+  const inputBg = isLight ? '#FFFFFF' : '#1A1A1A';
 
   return (
-    <View style={[bookingStyles.container, { backgroundColor: theme.colors.background }]}>
-      <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
+    <View style={styles.container}>
+      <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} backgroundColor="transparent" translucent />
 
-      {/* Map */}
-      {!isLocationSearchExpanded ? (
+      {/* Full-screen interactive map */}
       <MapboxMap
-        style={bookingStyles.map}
-        latitude={currentLocation?.latitude || 6.5}
-        longitude={currentLocation?.longitude || 3.3}
-        zoom={12}
-        mapStyle="navigation-day"
-        showUserLocation
-        showCompass
-        showScaleBar
-        fitCoordinates={routeCoordinates || bookingMapFocusCoordinates}
-        routeCoordinates={routeCoordinates}
+        style={StyleSheet.absoluteFill}
         cameraCenterCoordinate={cameraCenter}
-        cameraZoom={cameraZoom}
-        onPressCoordinate={handleMapLocationPick}
+        cameraZoom={showInlineMapPicker ? 15 : cameraZoom}
+        cameraAnimationDuration={600}
+        autoCenter={showInlineMapPicker}
+        fitCoordinates={
+          pickupLocation && destinationLocation
+            ? [
+              [pickupLocation.lng, pickupLocation.lat],
+              [destinationLocation.lng, destinationLocation.lat],
+            ]
+            : undefined
+        }
+        routeCoordinates={routeCoordinates || undefined}
+        routeColor={BRAND.primary}
+        routeWidth={4}
+        onRegionChange={(region) => {
+          if (showInlineMapPicker) {
+            setCameraCenter([region.longitude, region.latitude]);
+          }
+        }}
+        mapStyle={isLight ? 'light' : 'dark'}
+        showUserLocation={showInlineMapPicker}
+        showCompass={showInlineMapPicker}
+        showScaleBar={false}
+        showAttribution={false}
+        showLogo={false}
+        onPressCoordinate={showInlineMapPicker ? async (coordinate) => {
+          await handleMapLocationSelect(coordinate);
+          setShowInlineMapPicker(false);
+        } : undefined}
       >
         {pickupLocation && (
           <MapboxMarker
-            id="pickup"
+            id="pickup-marker"
             coordinate={[pickupLocation.lng, pickupLocation.lat]}
             title="Pickup"
             color={BRAND.primary}
           />
         )}
-        {dropoffLocation && (
+        {destinationLocation && (
           <MapboxMarker
-            id="dropoff"
-            coordinate={[dropoffLocation.lng, dropoffLocation.lat]}
-            title="Dropoff"
-            color={isLight ? '#000' : '#FFF'}
+            id="destination-marker"
+            coordinate={[destinationLocation.lng, destinationLocation.lat]}
+            title="Destination"
+            color={'#FF3B30'}
           />
         )}
       </MapboxMap>
-      ) : (
-        <View style={[bookingStyles.searchExpandedBackground, { backgroundColor: theme.colors.background }]} />
+
+      {/* Inline Map Picker Crosshair */}
+      {showInlineMapPicker && (
+        <View style={styles.crosshairContainer} pointerEvents="none">
+          <View style={[styles.crosshairRing, { borderColor: BRAND.primary }]} />
+          <View style={[styles.crosshairDot, { backgroundColor: BRAND.primary }]} />
+          <View style={[styles.crosshairStem, { backgroundColor: BRAND.primary }]} />
+        </View>
       )}
 
-      {/* Header */}
-      {!isLocationSearchExpanded ? (
-      <View style={[bookingStyles.header, { top: insets.top + 10 }]}>
-        {/* <TouchableOpacity onPress={() => router.back()} style={[bookingStyles.iconButton, { backgroundColor: theme.colors.surface }]}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.textPrimary} />
-        </TouchableOpacity> */}
-
-        {pickupLocation && dropoffLocation && (
-          <View style={[bookingStyles.pillBadge, { backgroundColor: BRAND.primary }]}>
-            <Text style={bookingStyles.pillText}>₦{bookingTotalFare.toLocaleString()}</Text>
-          </View>
-        )}
-
-        {/* Operational Areas Info Button */}
-        <TouchableOpacity
-          onPress={() => setShowOperationalAreasModal(true)}
-          style={[bookingStyles.iconButton, { backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border }]}
+      {/* Top booking card – header + form sit at the top, map interactive below */}
+      {!showInlineMapPicker && (
+        <View
+          style={[styles.topCard, { backgroundColor: isLight ? 'rgba(255,255,255,0.97)' : 'rgba(12,12,12,0.97)' }]}
         >
-          <MaterialCommunityIcons name="information" size={20} color={BRAND.primary} />
-        </TouchableOpacity>
-      </View>
-      ) : null}
-
-      {renderStepSheet()}
-      {/* Success Dialog */}
-      <SuccessDialog
-        visible={bookingSuccessVisible}
-        title="Ride Booked!"
-        message={
-          lastBookedRideId
-            ? `Your ride #${lastBookedRideId.slice(0, 8)} is being matched with nearby drivers. We'll notify you once a driver accepts.`
-            : 'Your ride is being matched with nearby drivers. We\'ll notify you once a driver accepts.'
-        }
-        primaryActionText="View Ride Details"
-        onPrimaryAction={handleViewBookedRide}
-        secondaryActionText="Book Another"
-        onSecondaryAction={() => setBookingSuccessVisible(false)}
-        onClose={() => setBookingSuccessVisible(false)}
-      />
-
-      {/* Error Dialog */}
-      <ErrorDialog
-        visible={errorDialogVisible}
-        title="Booking Failed"
-        message={errorMessage}
-        actionText="Try Again"
-        onClose={() => setErrorDialogVisible(false)}
-      />
-
-      <AlertDialog
-        visible={currentLocationUnavailableVisible}
-        type="warning"
-        title="Location unavailable"
-        message="We could not read your current location yet. Please check location permission or search for the address manually."
-        onDismiss={() => setCurrentLocationUnavailableVisible(false)}
-      />
-
-      <AlertDialog
-        visible={Boolean(currentLocationPrompt)}
-        type="confirm"
-        title="Use current location?"
-        message={`Use your current location as ${currentLocationPrompt === 'pickup' ? 'pickup' : 'destination'}?`}
-        buttons={[
-          { text: 'Not now', style: 'cancel' },
-          { text: 'Use location', style: 'default', onPress: useCurrentLocationForPrompt },
-        ]}
-        onDismiss={() => setCurrentLocationPrompt(null)}
-      />
-
-      <Modal visible={Boolean(resolvingCurrentLocation)} transparent animationType="fade" statusBarTranslucent>
-        <View style={bookingStyles.locationWaitOverlay}>
-          <View style={[bookingStyles.locationWaitCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-            <ActivityIndicator color={BRAND.primary} />
-            <Text style={[bookingStyles.locationWaitTitle, { color: theme.colors.textPrimary }]}>Please wait</Text>
-            <Text style={[bookingStyles.locationWaitText, { color: theme.colors.textSecondary }]}>
-              Getting your current {resolvingCurrentLocation === 'pickup' ? 'pickup' : 'destination'} address...
-            </Text>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Operational Areas Modal */}
-      <OperationalAreasModal
-        visible={showOperationalAreasModal}
-        onClose={() => setShowOperationalAreasModal(false)}
-      />
-
-      {/* Out of Service Area Modal */}
-      <OutOfServiceAreaModal
-        visible={showOutOfServiceAreaModal}
-        onClose={() => setShowOutOfServiceAreaModal(false)}
-        closestArea={outOfServiceAreaInfo.closestArea}
-        distance={outOfServiceAreaInfo.distance}
-        onNavigateToArea={() => {
-          setShowOutOfServiceAreaModal(false);
-          setShowOperationalAreasModal(true);
-        }}
-        onAutoSelectNearestArea={handleAutoSelectNearestArea}
-      />
-
-      <Modal
-        visible={locationWarningVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setLocationWarningVisible(false)}
-      >
-        <View style={bookingStyles.warningOverlay}>
-          <View style={[bookingStyles.warningCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-            <MaterialCommunityIcons name="information-outline" size={30} color={BRAND.primary} />
-            <Text style={[bookingStyles.warningTitle, { color: theme.colors.textPrimary }]}>Location notice</Text>
-            <Text style={[bookingStyles.warningText, { color: theme.colors.textSecondary }]}>
-              If no driver accepts this location within about an hour, it may not be actively served yet.
-              You can still try other nearby Lagos locations for faster matching.
-            </Text>
-            <TouchableOpacity onPress={() => setLocationWarningVisible(false)} style={[bookingStyles.warningButton, { backgroundColor: BRAND.primary }]}>
-              <Text style={bookingStyles.warningButtonText}>Okay</Text>
+          {/* Header baked into the card */}
+          <View style={[styles.header, { paddingTop: insets.top, backgroundColor: 'transparent' }]}>
+            <Text style={[styles.headerTitle, { color: textColor }]}>Book a Ride</Text>
+            <TouchableOpacity style={styles.avatarButton} onPress={() => router.push('/rider/profile')}>
+              {user?.avatar ? (
+                <Image source={{ uri: user.avatar }} style={styles.avatarImage} />
+              ) : (
+                <View style={[styles.avatarPlaceholder, { backgroundColor: BRAND.primary }]}>
+                  <Text style={styles.avatarPlaceholderText}>
+                    {user?.firstName?.[0] || user?.email?.[0] || 'U'}
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
           </View>
+
+          <ScrollView
+            style={styles.topScroll}
+            contentContainerStyle={styles.topScrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Weather Display */}
+            {weather && (
+              <View style={[styles.weatherCard, { backgroundColor: cardBg, borderColor }]}>
+                <MaterialCommunityIcons
+                  name={weather.icon.includes('sunny') ? 'weather-sunny' : 'weather-cloudy'}
+                  size={24}
+                  color={BRAND.primary}
+                />
+                <View style={styles.weatherInfo}>
+                  <Text style={[styles.weatherCondition, { color: textColor }]}>
+                    {weather.label}
+                  </Text>
+                </View>
+                {weather.multiplier > 1 && (
+                  <Text style={[styles.weatherImpact, { color: textColor }]}>
+                    {weather.detail}
+                  </Text>
+                )}
+              </View>
+            )}
+
+            {/* Location Inputs */}
+            <View style={styles.locationSection}>
+              <View
+                ref={locationCardRef}
+                style={[styles.locationInputCard, { backgroundColor: cardBg, borderColor }]}
+                onLayout={() => {
+                  // Measure absolute screen position to float suggestions below this card
+                  locationCardRef.current?.measure((_x, _y, _w, h, _px, py) => {
+                    setSuggestionsTop(py + h + 6);
+                  });
+                }}
+              >
+                {/* Pickup Input */}
+                <View style={styles.locationRow}>
+                  <View style={[styles.locationDot, { backgroundColor: BRAND.primary }]} />
+                  <View style={styles.inputContainer}>
+                    <Text style={[styles.inputLabel, { color: textColor }]}>Pickup</Text>
+                    <TextInput
+                      ref={pickupInputRef}
+                      style={[styles.input, { color: textColor, backgroundColor: inputBg }]}
+                      placeholder="Enter pickup location"
+                      placeholderTextColor={isLight ? '#999' : '#666'}
+                      value={pickupSearch}
+                      onChangeText={handlePickupChange}
+                      onFocus={handlePickupFocus}
+                      onBlur={handlePickupBlur}
+                      autoCapitalize="words"
+                      autoCorrect={false}
+                      returnKeyType="next"
+                      onSubmitEditing={() => destinationInputRef.current?.focus()}
+                    />
+                  </View>
+                  <View style={styles.locationActions}>
+                    <TouchableOpacity
+                      style={styles.locationActionButton}
+                      onPress={handleUseCurrentLocation}
+                    >
+                      {isPrewarmingLocation ? (
+                        <ActivityIndicator size="small" color={BRAND.primary} />
+                      ) : (
+                        <MaterialCommunityIcons name="crosshairs-gps" size={20} color={BRAND.primary} />
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.locationActionButton}
+                      onPress={() => handleOpenMapPicker('pickup')}
+                    >
+                      <MaterialCommunityIcons name="map-marker" size={20} color={BRAND.primary} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* Destination Input */}
+                <View style={styles.locationRow}>
+                  <View style={[styles.locationDot, { backgroundColor: BRAND.accent }]} />
+                  <View style={styles.inputContainer}>
+                    <Text style={[styles.inputLabel, { color: textColor }]}>Destination</Text>
+                    <TextInput
+                      ref={destinationInputRef}
+                      style={[styles.input, { color: textColor, backgroundColor: inputBg }]}
+                      placeholder="Enter destination"
+                      placeholderTextColor={isLight ? '#999' : '#666'}
+                      value={destinationSearch}
+                      onChangeText={handleDestinationChange}
+                      onFocus={handleDestinationFocus}
+                      onBlur={handleDestinationBlur}
+                      autoCapitalize="words"
+                      autoCorrect={false}
+                      returnKeyType="done"
+                      blurOnSubmit={true}
+                    />
+                  </View>
+                  <View style={styles.locationActions}>
+                    {destinationSearch ? (
+                      <TouchableOpacity
+                        style={styles.locationActionButton}
+                        onPress={() => {
+                          setDestinationSearch('');
+                          setDestinationLocation(null);
+                        }}
+                      >
+                        <MaterialCommunityIcons name="close-circle" size={20} color={isLight ? '#999' : '#666'} />
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.locationActionButton}
+                        onPress={() => handleOpenMapPicker('destination')}
+                      >
+                        <MaterialCommunityIcons name="map-marker" size={20} color={BRAND.primary} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              </View>
+
+              {/* Suggestions are rendered as a floating dropdown outside topCard – see below */}
+
+              {/* Recent Locations */}
+              {recentLocations.length > 0 && activeLocationPicker && (
+                <View style={styles.recentSection}>
+                  <Text style={[styles.recentTitle, { color: textColor }]}>Recent Locations</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.recentList}>
+                    {recentLocations.map((location, index) => (
+                      <TouchableOpacity
+                        key={index}
+                        style={[styles.recentChip, { backgroundColor: cardBg, borderColor }]}
+                        onPress={() => handleSelectRecentLocation(location, activeLocationPicker)}
+                      >
+                        <MaterialCommunityIcons name="history" size={16} color={BRAND.primary} />
+                        <Text style={[styles.recentText, { color: textColor }]} numberOfLines={1}>
+                          {location.address}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+
+              {/* Loading Indicator */}
+              {isSearching && (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="small" color={BRAND.primary} />
+                  <Text style={[styles.loadingText, { color: textColor }]}>Searching...</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Book Button */}
+            <TouchableOpacity
+              style={[styles.bookButton, { backgroundColor: BRAND.primary, opacity: (!pickupLocation || !destinationLocation) ? 0.5 : 1 }]}
+              onPress={handleBookRide}
+              disabled={!pickupLocation || !destinationLocation || isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator size="small" color="#000" />
+              ) : (
+                <Text style={styles.bookButtonText}>
+                  {estimatedFare ? `Book Ride - ₦${estimatedFare.toLocaleString()}` : 'Book Ride'}
+                </Text>
+              )}
+            </TouchableOpacity>
+          </ScrollView>
+          {/* Drag handle at the bottom of the top card */}
+          <View style={styles.topCardHandle} />
+        </View>
+      )}
+
+      {/* Floating suggestions dropdown – absolute, outside topCard, has its own ScrollView */}
+      {!showInlineMapPicker && showPickupSuggestions && pickupSuggestions.length > 0 && (
+        <View style={[
+          styles.suggestionsFloat,
+          { top: suggestionsTop, backgroundColor: isLight ? '#fff' : '#1e1e1e', borderColor }
+        ]}>
+          <ScrollView
+            keyboardShouldPersistTaps="always"
+            showsVerticalScrollIndicator={false}
+            style={{ maxHeight: 260 }}
+          >
+            {pickupSuggestions.map((s) => renderSuggestionItem(s, () => handlePickupSelect(s)))}
+          </ScrollView>
+        </View>
+      )}
+
+      {!showInlineMapPicker && showDestinationSuggestions && destinationSuggestions.length > 0 && (
+        <View style={[
+          styles.suggestionsFloat,
+          { top: suggestionsTop, backgroundColor: isLight ? '#fff' : '#1e1e1e', borderColor }
+        ]}>
+          <ScrollView
+            keyboardShouldPersistTaps="always"
+            showsVerticalScrollIndicator={false}
+            style={{ maxHeight: 260 }}
+          >
+            {destinationSuggestions.map((s) => renderSuggestionItem(s, () => handleDestinationSelect(s)))}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* Inline map picker header */}
+      {showInlineMapPicker && (
+        <View style={[styles.mapPickerInlineHeader, { paddingTop: insets.top, backgroundColor: isLight ? 'rgba(255,255,255,0.96)' : 'rgba(0,0,0,0.92)', borderBottomColor: borderColor }]}>
+          <TouchableOpacity style={styles.mapPickerInlineBack} onPress={handleCloseInlineMapPicker}>
+            <MaterialCommunityIcons name="arrow-left" size={24} color={textColor} />
+          </TouchableOpacity>
+          <Text style={[styles.mapPickerInlineTitle, { color: textColor }]}>
+            Select {mapPickerType === 'pickup' ? 'Pickup' : 'Destination'}
+          </Text>
+          <TouchableOpacity
+            style={[styles.mapPickerInlineConfirm, { backgroundColor: BRAND.primary }]}
+            onPress={handleConfirmInlineMapPicker}
+          >
+            <MaterialCommunityIcons name="check" size={20} color="#000" />
+            <Text style={styles.mapPickerInlineConfirmText}>Confirm</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Inline map picker tip at bottom */}
+      {showInlineMapPicker && (
+        <View style={[styles.mapPickerInlineTip, { backgroundColor: isLight ? 'rgba(255,255,255,0.92)' : 'rgba(0,0,0,0.88)' }]}>
+          <MaterialCommunityIcons name="gesture-tap" size={18} color={BRAND.primary} />
+          <Text style={[styles.mapPickerInlineTipText, { color: textColor }]}>
+            Tap on map to pin a location, then tap Confirm
+          </Text>
+        </View>
+      )}
+
+      {/* Time Picker Modal */}
+      <Modal
+        visible={showTimePicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowTimePicker(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: bgColor }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: textColor }]}>Schedule Ride</Text>
+              <TouchableOpacity onPress={() => setShowTimePicker(false)}>
+                <MaterialCommunityIcons name="close" size={24} color={textColor} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.modalBody}>
+              {/* Quick Actions */}
+              <Text style={[styles.modalSectionTitle, { color: isLight ? '#666' : '#999', marginTop: 0 }]}>Quick Actions</Text>
+              <TouchableOpacity
+                style={[styles.scheduleOption, { backgroundColor: cardBg, borderColor }]}
+                onPress={() => handleTimeSelect(null)}
+              >
+                <MaterialCommunityIcons name="flash" size={20} color={BRAND.primary} />
+                <Text style={[styles.scheduleOptionText, { color: textColor }]}>Book Now</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.scheduleOption, { backgroundColor: cardBg, borderColor }]}
+                onPress={() => {
+                  const scheduledTime = new Date(Date.now() + 30 * 60 * 1000);
+                  handleTimeSelect(scheduledTime.toISOString());
+                }}
+              >
+                <MaterialCommunityIcons name="clock-fast" size={20} color={BRAND.primary} />
+                <Text style={[styles.scheduleOptionText, { color: textColor }]}>In 30 minutes</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.scheduleOption, { backgroundColor: cardBg, borderColor }]}
+                onPress={() => {
+                  const scheduledTime = new Date(Date.now() + 60 * 60 * 1000);
+                  handleTimeSelect(scheduledTime.toISOString());
+                }}
+              >
+                <MaterialCommunityIcons name="clock" size={20} color={BRAND.primary} />
+                <Text style={[styles.scheduleOptionText, { color: textColor }]}>In 1 hour</Text>
+              </TouchableOpacity>
+
+              {/* Custom Date/Time Selection */}
+              <Text style={[styles.modalSectionTitle, { color: isLight ? '#666' : '#999' }]}>Custom Schedule</Text>
+              <TouchableOpacity
+                style={[styles.scheduleOption, { backgroundColor: cardBg, borderColor }]}
+                onPress={handleCustomTimeSelect}
+              >
+                <MaterialCommunityIcons name="calendar-clock" size={20} color={BRAND.primary} />
+                <Text style={[styles.scheduleOptionText, { color: textColor }]}>Choose Custom Time</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.scheduleOption, { backgroundColor: cardBg, borderColor }]}
+                onPress={() => {
+                  const tomorrow = new Date();
+                  tomorrow.setDate(tomorrow.getDate() + 1);
+                  tomorrow.setHours(9, 0, 0, 0);
+                  handleTimeSelect(tomorrow.toISOString());
+                }}
+              >
+                <MaterialCommunityIcons name="calendar-today" size={20} color={BRAND.primary} />
+                <Text style={[styles.scheduleOptionText, { color: textColor }]}>Tomorrow Morning</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.scheduleOption, { backgroundColor: cardBg, borderColor }]}
+                onPress={() => {
+                  const evening = new Date();
+                  evening.setHours(18, 0, 0, 0);
+                  handleTimeSelect(evening.toISOString());
+                }}
+              >
+                <MaterialCommunityIcons name="weather-night" size={20} color={BRAND.primary} />
+                <Text style={[styles.scheduleOptionText, { color: textColor }]}>This Evening</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
       </Modal>
 
-      {/* Pickup Time Selection Modal */}
-      <PickupTimeModal
-        visible={showPickupTimeModal}
-        theme={theme}
-        isLoading={isBooking}
-        onConfirm={handlePickupTimeConfirmed}
-        onCancel={() => setShowPickupTimeModal(false)}
-      />
-
+      {/* Review Modal */}
       <Modal
-        visible={bookingConfirmationVisible}
+        visible={showReviewModal}
         transparent
-        animationType="fade"
-        onRequestClose={handleCancelBookingConfirmation}
+        animationType="slide"
+        onRequestClose={() => setShowReviewModal(false)}
       >
-        <View style={bookingStyles.modalBackdrop}>
-          <View style={[bookingStyles.confirmModal, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-            <View style={[bookingStyles.confirmIcon, { backgroundColor: `${BRAND.primary}22` }]}>
-              <MaterialCommunityIcons name="receipt-text-check-outline" size={30} color={BRAND.primary} />
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: bgColor }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: textColor }]}>Review Booking</Text>
+              <TouchableOpacity onPress={() => setShowReviewModal(false)}>
+                <MaterialCommunityIcons name="close" size={24} color={textColor} />
+              </TouchableOpacity>
             </View>
-            <Text style={[bookingStyles.confirmTitle, { color: theme.colors.textPrimary }]}>Confirm your ride</Text>
-            <Text style={[bookingStyles.confirmCopy, { color: theme.colors.textSecondary }]}>
-              Review the fare breakdown before we send this request to nearby drivers.
-            </Text>
-            <View style={[bookingStyles.confirmRoute, { borderColor: theme.colors.border, backgroundColor: theme.colors.inputBackground }]}>
-              <Text numberOfLines={2} style={[bookingStyles.confirmAddress, { color: theme.colors.textPrimary }]}>{sanitizeAddress(pickupLocation?.address || '')}</Text>
-              <MaterialCommunityIcons name="arrow-down" size={18} color={BRAND.primary} />
-              <Text numberOfLines={2} style={[bookingStyles.confirmAddress, { color: theme.colors.textPrimary }]}>{sanitizeAddress(dropoffLocation?.address || '')}</Text>
+            <View style={styles.modalBody}>
+              <View style={[styles.reviewSection, { backgroundColor: cardBg, borderColor }]}>
+                <Text style={[styles.reviewLabel, { color: textColor }]}>Pickup</Text>
+                <Text style={[styles.reviewValue, { color: textColor }]} numberOfLines={2}>{pickupLocation?.address}</Text>
+              </View>
+              <View style={[styles.reviewSection, { backgroundColor: cardBg, borderColor }]}>
+                <Text style={[styles.reviewLabel, { color: textColor }]}>Destination</Text>
+                <Text style={[styles.reviewValue, { color: textColor }]} numberOfLines={2}>{destinationLocation?.address}</Text>
+              </View>
+              <View style={[styles.reviewSection, { backgroundColor: cardBg, borderColor }]}>
+                <Text style={[styles.reviewLabel, { color: textColor }]}>Distance</Text>
+                <Text style={[styles.reviewValue, { color: textColor }]}>{estimatedDistance} km</Text>
+              </View>
+              <View style={[styles.reviewSection, { backgroundColor: cardBg, borderColor }]}>
+                <Text style={[styles.reviewLabel, { color: textColor }]}>Duration</Text>
+                <Text style={[styles.reviewValue, { color: textColor }]}>{estimatedTime} min</Text>
+              </View>
+              <View style={[styles.reviewSection, { backgroundColor: cardBg, borderColor }]}>
+                <Text style={[styles.reviewLabel, { color: textColor }]}>Fare</Text>
+                <Text style={[styles.reviewValue, { color: BRAND.primary }]}>
+                  {discountedFare !== null ? `₦${discountedFare.toLocaleString()}` : estimatedFare ? `₦${estimatedFare.toLocaleString()}` : 'Calculating...'}
+                </Text>
+              </View>
+              {selectedCashback && estimatedFare && (
+                <View style={[styles.reviewSection, { backgroundColor: cardBg, borderColor }]}>
+                  <Text style={[styles.reviewLabel, { color: textColor }]}>Cashback Discount</Text>
+                  <Text style={[styles.reviewValue, { color: '#22c55e' }]}>
+                    -₦{Math.round(estimatedFare * (selectedCashback.discount_percentage / 100)).toLocaleString()}
+                  </Text>
+                </View>
+              )}
+              {pickupTime && (
+                <View style={[styles.reviewSection, { backgroundColor: cardBg, borderColor }]}>
+                  <Text style={[styles.reviewLabel, { color: textColor }]}>Pickup Time</Text>
+                  <Text style={[styles.reviewValue, { color: textColor }]}>{formatPickupTimeLabel(pickupTime)}</Text>
+                </View>
+              )}
+
+              {/* Cashback Selection in Review */}
+              {cashbackRewards.length > 0 && selectedCashback === null && (
+                <View style={styles.cashbackSection}>
+                  <Text style={[styles.sectionTitle, { color: textColor }]}>Apply Cashback</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.cashbackList}>
+                    {cashbackRewards.map((reward) => (
+                      <TouchableOpacity
+                        key={reward.id}
+                        style={[
+                          styles.cashbackChip,
+                          {
+                            backgroundColor: selectedCashback?.id === reward.id ? `${BRAND.primary}20` : cardBg,
+                            borderColor: selectedCashback?.id === reward.id ? BRAND.primary : borderColor,
+                          }
+                        ]}
+                        onPress={() => handleCashbackSelect(reward)}
+                      >
+                        <MaterialCommunityIcons name="gift" size={16} color={BRAND.primary} />
+                        <Text style={[styles.cashbackText, { color: textColor }]}>
+                          {reward.discount_percentage}% off
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+
+              {selectedCashback && (
+                <View style={[styles.selectedCashback, { backgroundColor: cardBg, borderColor }]}>
+                  <MaterialCommunityIcons name="check-circle" size={20} color={BRAND.primary} />
+                  <Text style={[styles.selectedCashbackText, { color: textColor }]}>
+                    {selectedCashback.discount_percentage}% cashback applied
+                  </Text>
+                  <TouchableOpacity onPress={handleCashbackRemove}>
+                    <MaterialCommunityIcons name="close" size={20} color={textColor} />
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={[styles.confirmButton, { backgroundColor: BRAND.primary }]}
+                onPress={handleConfirmBooking}
+                disabled={isLoading || !estimatedFare}
+              >
+                {isLoading ? (
+                  <ActivityIndicator size="small" color="#000" />
+                ) : (
+                  <Text style={styles.confirmButtonText}>
+                    Confirm Booking - ₦{discountedFare !== null ? discountedFare.toLocaleString() : estimatedFare?.toLocaleString() || 'Calculating...'}
+                  </Text>
+                )}
+              </TouchableOpacity>
             </View>
-            <View style={bookingStyles.confirmRows}>
-              <View style={[bookingStyles.confirmRow, bookingStyles.confirmTotalRow, { borderTopColor: theme.colors.border }]}>
-                <Text style={[bookingStyles.confirmTotalLabel, { color: theme.colors.textPrimary }]}>Total payable fare</Text>
-                <Text style={[bookingStyles.confirmTotalValue, { color: BRAND.primary }]}>₦{bookingTotalFare.toLocaleString()}</Text>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Custom Date/Time Picker */}
+      {showCustomDatePicker && (
+        <DateTimePicker
+          value={tempDate}
+          mode={pickerMode}
+          onChange={pickerMode === 'date' ? handleDateChange : handleTimeChange}
+          minimumDate={new Date()}
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+        />
+      )}
+
+      {/* iOS DateTime Confirm Button */}
+      {Platform.OS === 'ios' && showCustomDatePicker && pickerMode === 'time' && (
+        <Modal
+          visible={showCustomDatePicker}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowCustomDatePicker(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: bgColor }]}>
+              <View style={styles.modalHeader}>
+                <Text style={[styles.modalTitle, { color: textColor }]}>Select Time</Text>
+                <TouchableOpacity onPress={() => setShowCustomDatePicker(false)}>
+                  <MaterialCommunityIcons name="close" size={24} color={textColor} />
+                </TouchableOpacity>
+              </View>
+              <View style={styles.modalBody}>
+                <DateTimePicker
+                  value={tempDate}
+                  mode="time"
+                  onChange={handleTimeChange}
+                  display="spinner"
+                />
+                <TouchableOpacity
+                  style={[styles.confirmButton, { backgroundColor: BRAND.primary }]}
+                  onPress={handleCustomTimeConfirm}
+                >
+                  <Text style={styles.confirmButtonText}>Confirm</Text>
+                </TouchableOpacity>
               </View>
             </View>
-            <View style={bookingStyles.confirmActions}>
-              <TouchableOpacity onPress={handleCancelBookingConfirmation} style={[bookingStyles.confirmButton, { borderColor: theme.colors.border }]}>
-                <Text style={[bookingStyles.confirmButtonText, { color: theme.colors.textPrimary }]}>Go Back</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleConfirmBooking} style={[bookingStyles.confirmButton, { backgroundColor: BRAND.primary, borderColor: BRAND.primary }]}>
-                <Text style={[bookingStyles.confirmButtonText, { color: '#000' }]}>Confirm Booking</Text>
-              </TouchableOpacity>
-            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Error Dialog */}
+      <Modal
+        visible={showErrorDialog}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowErrorDialog(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.errorDialog, { backgroundColor: bgColor, borderColor }]}>
+            <MaterialCommunityIcons name="alert-circle" size={48} color="#FF5252" />
+            <Text style={[styles.errorTitle, { color: textColor }]}>Error</Text>
+            <Text style={[styles.errorMessage, { color: textColor }]}>{errorMessage}</Text>
+            <TouchableOpacity
+              style={[styles.errorButton, { backgroundColor: BRAND.primary }]}
+              onPress={() => setShowErrorDialog(false)}
+            >
+              <Text style={styles.errorButtonText}>OK</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      <Modal visible={!!voiceLocationTarget} transparent animationType="fade" onRequestClose={closeVoiceLocation}>
-        <View style={bookingStyles.modalBackdrop}>
-          <View style={[bookingStyles.voiceModal, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-            <View style={[bookingStyles.voiceIcon, { backgroundColor: isVoiceListening ? `${BRAND.primary}28` : `${BRAND.primary}18` }]}>
-              <MaterialCommunityIcons name={isVoiceListening ? 'microphone' : 'microphone-outline'} size={28} color={BRAND.primary} />
-            </View>
-            <Text style={[bookingStyles.voiceTitle, { color: theme.colors.textPrimary }]}>
-              Voice location search
-            </Text>
-            <Text style={[bookingStyles.voiceCopy, { color: theme.colors.textSecondary }]}>
-              Tap the mic and say the {voiceLocationTarget === 'pickup' ? 'pickup' : 'destination'} address. We will search Google Places with the transcript.
-            </Text>
-            <TouchableOpacity
-              onPress={isVoiceListening ? stopVoiceLocationListening : startVoiceLocationListening}
-              style={[
-                bookingStyles.voiceRecordButton,
-                {
-                  backgroundColor: isVoiceListening ? '#FFE8E3' : BRAND.primary,
-                  borderColor: isVoiceListening ? '#FFB5A6' : BRAND.primary,
-                },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name={isVoiceListening ? 'stop-circle-outline' : 'microphone-outline'}
-                size={19}
-                color={isVoiceListening ? '#B3261E' : '#000'}
-              />
-              <Text style={[bookingStyles.voiceRecordText, { color: isVoiceListening ? '#B3261E' : '#000' }]}>
-                {isVoiceListening ? 'Stop recording' : 'Start speaking'}
-              </Text>
-            </TouchableOpacity>
-            {!!voiceLocationError && (
-              <Text style={bookingStyles.voiceErrorText}>{voiceLocationError}</Text>
-            )}
-            <TextInput
-              style={[bookingStyles.voiceInput, { color: theme.colors.textPrimary, borderColor: theme.colors.border, backgroundColor: theme.colors.inputBackground }]}
-              placeholder="Example: University of Lagos, Akoka"
-              placeholderTextColor={theme.colors.textTertiary}
-              value={voiceLocationText}
-              onChangeText={setVoiceLocationText}
-              autoFocus
-              returnKeyType="search"
-              onSubmitEditing={applyVoiceLocationText}
-            />
-            <View style={bookingStyles.voiceActions}>
-              <TouchableOpacity onPress={closeVoiceLocation} style={[bookingStyles.voiceButton, { borderColor: theme.colors.border }]}>
-                <Text style={[bookingStyles.voiceButtonText, { color: theme.colors.textPrimary }]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={applyVoiceLocationText} style={[bookingStyles.voiceButton, { backgroundColor: BRAND.primary, borderColor: BRAND.primary }]}>
-                <Text style={[bookingStyles.voiceButtonText, { color: '#000' }]}>Find Location</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      {/* Map Picker Modal removed – using inline map picker instead */}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  // Top card (booking form)
+  topCard: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    maxHeight: SCREEN_HEIGHT * 0.56,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    elevation: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    zIndex: 10,
+  },
+  topCardHandle: {
+    width: 44,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(128,128,128,0.35)',
+    alignSelf: 'center',
+    marginVertical: 10,
+  },
+  topScroll: {
+    flex: 1,
+  },
+  topScrollContent: {
+    paddingBottom: 4,
+  },
+  mapContainer: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  map: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  avatarButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarPlaceholder: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarPlaceholderText: {
+    color: '#000',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 32,
+  },
+  weatherCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  weatherInfo: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  weatherCondition: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  weatherImpact: {
+    fontSize: 12,
+    marginTop: 4,
+    opacity: 0.7,
+  },
+  locationSection: {
+    marginBottom: 16,
+    borderRadius: 16,
+    padding: 16,
+  },
+  locationInputCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    gap: 16,
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  locationDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  inputContainer: {
+    flex: 1,
+  },
+  inputLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  input: {
+    fontSize: 16,
+    fontWeight: '500',
+    padding: 10,
+    borderRadius: 8,
+  },
+  currentLocationButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 149, 0, 0.1)',
+  },
+  locationActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  locationActionButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 149, 0, 0.1)',
+  },
+  clearButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Floating suggestions dropdown (outside topCard to avoid nested ScrollView)
+  suggestionsFloat: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    zIndex: 200,
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: 'hidden',
+    elevation: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+  },
+  suggestionsCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 8,
+    paddingVertical: 4,
+  },
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    gap: 12,
+  },
+  suggestionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 149, 0, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  suggestionContent: {
+    flex: 1,
+  },
+  suggestionName: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  suggestionAddress: {
+    fontSize: 12,
+    color: '#666',
+  },
+  suggestionDistance: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666',
+  },
+  recentSection: {
+    marginTop: 16,
+  },
+  recentTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  recentList: {
+    flexDirection: 'row',
+  },
+  recentChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginRight: 8,
+  },
+  recentText: {
+    fontSize: 12,
+    fontWeight: '600',
+    maxWidth: 150,
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    gap: 8,
+  },
+  loadingText: {
+    fontSize: 14,
+  },
+  scheduleCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  scheduleContent: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  scheduleLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  scheduleValue: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  cashbackSection: {
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  cashbackList: {
+    flexDirection: 'row',
+  },
+  cashbackChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginRight: 8,
+  },
+  cashbackText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  fareCard: {
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  fareRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  fareLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  fareValue: {
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  fareDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
+  },
+  fareDetailItem: {
+    alignItems: 'center',
+  },
+  fareDetailLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  fareDetailValue: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  cashbackDiscount: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
+  },
+  cashbackDiscountText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: BRAND.primary,
+  },
+  bookButton: {
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    marginLeft: 20,
+    marginRight: 20,
+  },
+  bookButtonText: {
+    color: '#000',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: 32,
+    width: '100%',
+    maxHeight: '90%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  modalBody: {
+    gap: 12,
+  },
+  scheduleOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 12,
+  },
+  scheduleOptionText: {
+    fontSize: 16,
+    fontWeight: '600',
+    flex: 1,
+  },
+  modalSectionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 0,
+    marginBottom: 12,
+  },
+  errorDialog: {
+    width: '80%',
+    maxWidth: 320,
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  errorTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginTop: 12,
+  },
+  errorMessage: {
+    fontSize: 14,
+    marginTop: 8,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  errorButton: {
+    marginTop: 16,
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+  },
+  errorButtonText: {
+    color: '#000',
+    fontWeight: '700',
+  },
+  mapPickerModal: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  mapPickerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+  },
+  mapPickerTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  mapPickerContent: {
+    flex: 1,
+  },
+  mapPickerMap: {
+    flex: 1,
+  },
+  mapPickerInstructions: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 16,
+    borderTopWidth: 1,
+  },
+  mapPickerInstructionsText: {
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  // Inline map picker styles
+  scrollViewHidden: {
+    opacity: 0,
+    height: 0,
+    overflow: 'hidden',
+  },
+  crosshairContainer: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  crosshairRing: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    backgroundColor: 'transparent',
+    position: 'absolute',
+  },
+  crosshairDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    position: 'absolute',
+  },
+  crosshairStem: {
+    width: 2,
+    height: 20,
+    position: 'absolute',
+    marginTop: 40, // below crosshair center (half of ring height)
+  },
+  mapPickerInlineHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    zIndex: 10,
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+  },
+  mapPickerInlineBack: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mapPickerInlineTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    flex: 1,
+    textAlign: 'center',
+  },
+  mapPickerInlineConfirm: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 4,
+  },
+  mapPickerInlineConfirmText: {
+    color: '#000',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  mapPickerInlineTip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    position: 'absolute',
+    bottom: 32,
+    left: 16,
+    right: 16,
+    borderRadius: 24,
+    zIndex: 10,
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  mapPickerInlineTipText: {
+    fontSize: 13,
+    fontWeight: '500',
+    textAlign: 'center',
+    flex: 1,
+  },
+  reviewSection: {
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  reviewLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  reviewValue: {
+    fontSize: 14,
+    fontWeight: '400',
+  },
+  confirmButton: {
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  confirmButtonText: {
+    color: '#000',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  selectedCashback: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  selectedCashbackText: {
+    fontSize: 14,
+    fontWeight: '600',
+    flex: 1,
+    marginLeft: 8,
+  },
+});

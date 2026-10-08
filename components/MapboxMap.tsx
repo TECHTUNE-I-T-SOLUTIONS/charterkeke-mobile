@@ -21,7 +21,7 @@ try {
     Mapbox = require('@rnmapbox/maps');
   }
 } catch {
-  console.warn('⚠️ [MapboxMap] Native @rnmapbox/maps not available, falling back to placeholder map.');
+  console.warn('⚠️ [MapboxMap] Native @rnmapbox/maps not available, falling back to react-native-maps.');
   Mapbox = null;
 }
 
@@ -269,18 +269,24 @@ export const MapboxMap = React.forwardRef<any, MapboxMapProps>(
     if (!canUseNativeMapbox && canUseFallbackMap) {
       const FallbackMapView = ReactNativeMaps.default;
       const FallbackPolyline = ReactNativeMaps.Polyline;
+      const FallbackUrlTile = ReactNativeMaps.UrlTile;
 
       return (
         <View style={[styles.container, style]}>
           <FallbackMapView
             ref={ref}
             style={styles.map}
-            initialRegion={fallbackRegion}
+            provider={undefined} // PROVIDER_DEFAULT — uses native maps but we overlay OSM tiles
+            {...(autoCenter
+              ? { region: fallbackRegion }          // controlled: pans to selected location
+              : { initialRegion: fallbackRegion }   // uncontrolled: user pans freely
+            )}
             showsUserLocation={showUserLocation}
             showsCompass={showCompass}
             showsScale={showScaleBar}
-            showsPointsOfInterest={true}
-            showsBuildings={true}
+            showsPointsOfInterest={false}
+            showsBuildings={false}
+            mapType="none" // Hide the base layer so our OSM tiles are the only visible map
             onRegionChangeComplete={(region: any) => onRegionChange?.(region)}
             onPress={(event: any) => {
               const coordinate = event?.nativeEvent?.coordinate;
@@ -293,6 +299,20 @@ export const MapboxMap = React.forwardRef<any, MapboxMapProps>(
             onTouchStart={onTouchStart}
             onTouchEnd={onTouchEnd}
           >
+            {/* Mapbox raster tile layer – uses existing token, OSM-powered, theme-aware */}
+            {FallbackUrlTile ? (() => {
+              const mbToken = process.env.EXPO_PUBLIC_MAPBOX_PUBLIC_TOKEN || '';
+              const styleId = isLight ? 'mapbox/streets-v12' : 'mapbox/dark-v11';
+              const tileUrl = `https://api.mapbox.com/styles/v1/${styleId}/tiles/256/{z}/{x}/{y}@2x?access_token=${mbToken}`;
+              return (
+                <FallbackUrlTile
+                  urlTemplate={tileUrl}
+                  maximumZ={19}
+                  flipY={false}
+                  zIndex={-1}
+                />
+              );
+            })() : null}
             {fallbackRouteCoordinates.length >= 2 && FallbackPolyline ? (
               <FallbackPolyline
                 coordinates={fallbackRouteCoordinates}
@@ -308,10 +328,10 @@ export const MapboxMap = React.forwardRef<any, MapboxMapProps>(
 
     if (!canUseNativeMapbox) {
       return (
-        <View style={[styles.container, style, { justifyContent: 'center', alignItems: 'center' }]}> 
+        <View style={[styles.container, style, { justifyContent: 'center', alignItems: 'center' }]}>
           <View style={{ padding: 12 }}>
             <Text style={{ color: isLight ? '#111' : '#fff' }}>
-              {isExpoGo ? 'Map unavailable. Install react-native-maps for Expo Go fallback.' : 'Map unavailable in this build.'}
+              {isExpoGo ? 'Map unavailable in Expo Go. Please use a development build.' : 'Map unavailable in this build.'}
             </Text>
           </View>
           {children}

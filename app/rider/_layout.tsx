@@ -1,5 +1,5 @@
 import React from 'react';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useRouter, usePathname } from 'expo-router';
 import { View } from 'react-native';
 import { useTheme } from '@/context/ThemeContext';
 import RiderBottomNavigation from '@/components/RiderBottomNavigation';
@@ -7,9 +7,17 @@ import { COLORS } from '@utils/colors';
 
 export default function RiderLayout() {
   const router = useRouter();
+  const pathname = usePathname();
   const { mode } = useTheme();
   const isDark = mode === 'dark';
   const colors = isDark ? COLORS.dark : COLORS.light;
+
+  // Hide bottom nav on screens where it would cover content
+  const hideBottomNav = [
+    '/rider/help-and-support',
+    '/rider/active-ride',
+    '/rider/chat',
+  ].some((route) => pathname.startsWith(route));
 
   return (
     <>
@@ -39,9 +47,9 @@ export default function RiderLayout() {
           {/* Replaced referrals with cashback */}
           <Stack.Screen name="cashback" />
         </Stack>
-        
-        {/* Bottom Navigation - Outside Stack to prevent re-renders */}
-        <RiderBottomNavigation />
+
+        {/* Bottom Navigation — hidden on screens where it covers keyboard/input */}
+        {!hideBottomNav && <RiderBottomNavigation />}
       </View>
     </>
   );

@@ -153,39 +153,43 @@ export async function geocodeMapboxLocations(query: string): Promise<MapboxGeoco
 }
 
 export async function searchBestLocations(query: string): Promise<MapboxGeocodeResult[]> {
-  const [googleResults, mapboxResults] = await Promise.allSettled([
-    searchGooglePlaces(query),
-    geocodeMapboxLocations(query),
-  ]);
+  // Use only Mapbox geocoding (no Google Places)
+  const merged: MapboxGeocodeResult[] = [];
 
-  const merged = [
-    ...(googleResults.status === 'fulfilled' ? googleResults.value : []),
-    ...(mapboxResults.status === 'fulfilled' ? mapboxResults.value : []),
-  ];
+  // Primary: Mapbox Geocoding API
+  try {
+    const mapboxResults = await geocodeMapboxLocations(query);
+    merged.push(...mapboxResults);
+  } catch {
+    // Continue to fallbacks
+  }
 
+  // Fallback 1: Mapbox Search Box Suggest
   if (merged.length === 0) {
     try {
       const searchBoxResults = await searchMapboxSearchBoxSuggest(query);
       merged.push(...searchBoxResults);
     } catch {
-      // ignore supplemental search errors
+      // Continue to next fallback
     }
+  }
 
-    if (merged.length === 0) {
-      try {
-        const searchBoxResults = await searchMapboxSearchBoxForward(query);
-        merged.push(...searchBoxResults);
-      } catch {
-        // ignore supplemental search errors
-      }
-    }
-  } else {
+  // Fallback 2: Mapbox Search Box Forward
+  if (merged.length === 0) {
     try {
-      const searchBoxResults = await searchMapboxSearchBoxSuggest(query);
+      const searchBoxResults = await searchMapboxSearchBoxForward(query);
       merged.push(...searchBoxResults);
     } catch {
-      // ignore supplemental search errors
+      // No results available
     }
+  }
+
+  // Also try Search Box Suggest as supplemental for better results
+  try {
+    const searchBoxResults = await searchMapboxSearchBoxSuggest(query);
+    merged.push(...searchBoxResults);
+  } catch {
+    // Ignore supplemental errors
   }
 
   const seen = new Set<string>();

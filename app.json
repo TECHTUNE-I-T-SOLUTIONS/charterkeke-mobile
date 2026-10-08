@@ -2,7 +2,7 @@
   "expo": {
     "name": "Charter Keke",
     "slug": "charter-keke-mobile",
-    "version": "2.2.1",
+    "version": "2.2.2",
     "runtimeVersion": "2",
     "orientation": "portrait",
     "icon": "./assets/charter keke.png",
@@ -66,7 +66,7 @@
     "ios": {
       "icon": "./assets/ios-app-icon-1024.png",
       "bundleIdentifier": "com.charterkeke.mobile",
-      "buildNumber": "229",
+      "buildNumber": "230",
       "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "usesNonExemptEncryption": false
