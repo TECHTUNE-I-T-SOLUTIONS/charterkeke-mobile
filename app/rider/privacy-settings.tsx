@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet, ActivityIndicator, Share } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet, ActivityIndicator, Share, Linking } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -165,12 +165,29 @@ export default function PrivacySettingsScreen() {
 
         <View style={styles.actions}>
           <Text style={[styles.sectionEyebrow, { color: colors.primary }]}>ACCOUNT CONTROLS</Text>
-          <TouchableOpacity style={[styles.actionBtn, { borderColor: colors.primary, backgroundColor: colors.card }]} onPress={downloadMyData} disabled={busy}>
+          <TouchableOpacity
+            style={[styles.actionBtn, { borderColor: colors.primary, backgroundColor: colors.card }]}
+            onPress={downloadMyData}
+            disabled={busy}
+          >
             {busy ? <ActivityIndicator color={colors.primary} /> : <MaterialCommunityIcons name="download" size={20} color={colors.primary} />}
             <Text style={[styles.actionText, { color: colors.primary }]}>Download My Data</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.actionBtn, { borderColor: colors.error || '#ef4444', backgroundColor: colors.card }]} onPress={() => setShowDeleteConfirm(true)} disabled={busy}>
+          {/* Web deletion link — required by Google Play */}
+          <TouchableOpacity
+            style={[styles.actionBtn, { borderColor: '#f97316', backgroundColor: colors.card }]}
+            onPress={() => Linking.openURL('https://www.charterkeke.com/delete-account')}
+          >
+            <MaterialCommunityIcons name="web" size={20} color="#f97316" />
+            <Text style={[styles.actionText, { color: '#f97316' }]}>Delete Account via Web</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionBtn, { borderColor: colors.error || '#ef4444', backgroundColor: colors.card }]}
+            onPress={() => setShowDeleteConfirm(true)}
+            disabled={busy}
+          >
             <MaterialCommunityIcons name="delete" size={20} color={colors.error || '#ef4444'} />
             <Text style={[styles.actionText, { color: colors.error || '#ef4444' }]}>Delete Account</Text>
           </TouchableOpacity>
