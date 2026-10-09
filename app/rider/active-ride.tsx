@@ -9,8 +9,8 @@ import {
   RefreshControl,
   Alert,
   StyleSheet,
-  Vibration,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
@@ -206,13 +206,13 @@ export default function ActiveRideScreen() {
         // Alert rider on key status transitions
         if (changed) {
           if (newStatus === 'accepted') {
-            Vibration.vibrate(400);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             Alert.alert('Driver Found! 🎉', 'A driver has accepted your ride and is on the way.');
           } else if (newStatus === 'in_progress') {
-            Vibration.vibrate(200);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             Alert.alert('Ride Started 🚗', 'Your ride has started. Enjoy your trip!');
           } else if (newStatus === 'completed') {
-            Vibration.vibrate([0, 200, 100, 200]);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             Alert.alert('Ride Completed ✅', 'Your ride is complete. Rate your driver!', [
               { text: 'Rate Now', onPress: () => router.replace(`/rider/rating?rideId=${resolvedRideId}`) },
               { text: 'Later', style: 'cancel' },
