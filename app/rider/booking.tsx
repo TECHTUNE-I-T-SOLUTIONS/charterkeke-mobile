@@ -951,17 +951,31 @@ export default function BookingScreen() {
           {/* Header baked into the card */}
           <View style={[styles.header, { paddingTop: insets.top, backgroundColor: 'transparent' }]}>
             <Text style={[styles.headerTitle, { color: textColor }]}>Book a Ride</Text>
-            <TouchableOpacity style={styles.avatarButton} onPress={() => router.push('/rider/profile')}>
-              {user?.avatar ? (
-                <Image source={{ uri: user.avatar }} style={styles.avatarImage} />
-              ) : (
-                <View style={[styles.avatarPlaceholder, { backgroundColor: BRAND.primary }]}>
-                  <Text style={styles.avatarPlaceholderText}>
-                    {user?.firstName?.[0] || user?.email?.[0] || 'U'}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              {/* Support headset icon */}
+              <TouchableOpacity
+                onPress={() => router.push('/rider/help-and-support')}
+                style={[
+                  bookingStyles.iconButton,
+                  { backgroundColor: isLight ? 'rgba(245,130,11,0.12)' : 'rgba(245,130,11,0.18)' },
+                ]}
+                accessibilityLabel="Contact Support"
+              >
+                <MaterialCommunityIcons name="headset" size={20} color={BRAND.primary} />
+              </TouchableOpacity>
+              {/* Avatar / profile */}
+              <TouchableOpacity style={styles.avatarButton} onPress={() => router.push('/rider/profile')}>
+                {user?.avatar ? (
+                  <Image source={{ uri: user.avatar }} style={styles.avatarImage} />
+                ) : (
+                  <View style={[styles.avatarPlaceholder, { backgroundColor: BRAND.primary }]}>
+                    <Text style={styles.avatarPlaceholderText}>
+                      {user?.firstName?.[0] || user?.email?.[0] || 'U'}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
 
           <ScrollView
@@ -1475,7 +1489,7 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    maxHeight: SCREEN_HEIGHT * 0.56,
+    maxHeight: SCREEN_HEIGHT * 0.46,
     borderBottomLeftRadius: 28,
     borderBottomRightRadius: 28,
     elevation: 20,

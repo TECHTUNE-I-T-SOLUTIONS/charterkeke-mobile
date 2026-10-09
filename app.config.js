@@ -9,7 +9,7 @@ const IS_PROD = process.env.EXPO_PUBLIC_ENVIRONMENT === 'production';
 module.exports = {
   name: 'Charter Keke',
   slug: 'charter-keke-mobile',
-  version: '2.2.2',
+  version: '2.2.1',
   runtimeVersion: '2',
   orientation: 'portrait',
   icon: './assets/charter keke.png',

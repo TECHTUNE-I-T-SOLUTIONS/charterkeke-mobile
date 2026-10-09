@@ -164,6 +164,33 @@ class SupabaseService {
     return this.supabase.removeChannel(entry.channel);
   }
 
+  // ─── Ride status realtime (Postgres Changes on rides table) ─────────────────
+  async subscribeToRideUpdates(rideId: string, callback: (ride: any) => void) {
+    const channelName = `ride-status-${rideId}`;
+    const channel = this.supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'rides',
+          filter: `id=eq.${rideId}`,
+        },
+        (payload) => {
+          callback(payload.new);
+        }
+      )
+      .subscribe();
+    return channel;
+  }
+
+  async unsubscribeRideUpdates(rideId: string) {
+    const channelName = `ride-status-${rideId}`;
+    const channel = this.supabase.channel(channelName);
+    return this.supabase.removeChannel(channel);
+  }
+
   // Subscribe to message updates (for read status changes)
   async subscribeToMessageUpdates(chatId: string, callback: (message: Message) => void) {
     return this.supabase

@@ -11,6 +11,7 @@ import {
   StatusBar,
   Dimensions,
   Pressable,
+  Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -262,6 +263,43 @@ export default function RideDetailsScreen() {
       cancelled = true;
     };
   }, [rideDetails, pickupCoords, destCoords]);
+
+  // Postgres Realtime: live ride status updates
+  useEffect(() => {
+    const rideId = rideDetails?.id || rideIdParam;
+    if (!rideId) return;
+    const terminal = ['completed', 'cancelled'];
+    if (terminal.includes(String(rideDetails?.status || '').toLowerCase())) return;
+
+    let active = true;
+    supabaseService.subscribeToRideUpdates(rideId, (updatedRide: any) => {
+      if (!active) return;
+      const newStatus = String(updatedRide?.status || '').toLowerCase();
+      setRideDetails((prev: any) => {
+        if (!prev) return prev;
+        const statusChanged = prev.status !== updatedRide.status;
+        const next = { ...prev, ...updatedRide };
+        if (statusChanged) {
+          if (newStatus === 'accepted') Alert.alert('Driver Found! 🎉', 'A driver has accepted your ride and is on the way.');
+          else if (newStatus === 'in_progress') Alert.alert('Ride Started 🚗', 'Your ride has started. Enjoy your trip!');
+          else if (newStatus === 'completed') Alert.alert('Ride Completed ✅', 'Your ride is complete!', [
+            { text: 'Rate Now', onPress: () => router.replace(`/rider/rating?rideId=${rideId}`) },
+            { text: 'Later', style: 'cancel' },
+          ]);
+          else if (newStatus === 'cancelled') Alert.alert('Ride Cancelled', 'This ride was cancelled.', [
+            { text: 'Book Again', onPress: () => router.replace('/rider/booking') },
+          ]);
+        }
+        return next;
+      });
+    });
+
+    return () => {
+      active = false;
+      supabaseService.unsubscribeRideUpdates(rideId).catch(() => {});
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rideDetails?.id, rideIdParam]);
 
   useEffect(() => {
     const rideId = rideDetails?.id || rideIdParam;
