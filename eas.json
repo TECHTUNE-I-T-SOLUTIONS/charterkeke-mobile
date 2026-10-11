@@ -1,7 +1,7 @@
 {
   "cli": {
     "version": ">= 16.32.0",
-    "appVersionSource": "local"
+    "appVersionSource": "remote"
   },
   "build": {
     "development": {
@@ -32,7 +32,13 @@
         "buildType": "apk"
       },
       "env": {
-        "MAPBOX_DOWNLOADS_TOKEN": "$MAPBOX_SECRET_TOKEN"
+        "MAPBOX_DOWNLOADS_TOKEN": "$MAPBOX_SECRET_TOKEN",
+        "EXPO_PUBLIC_SUPABASE_URL": "$EXPO_PUBLIC_SUPABASE_URL",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "$EXPO_PUBLIC_SUPABASE_ANON_KEY",
+        "EXPO_PUBLIC_MAPBOX_PUBLIC_TOKEN": "$EXPO_PUBLIC_MAPBOX_PUBLIC_TOKEN",
+        "EXPO_PUBLIC_API_URL": "$EXPO_PUBLIC_API_URL",
+        "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "$EXPO_PUBLIC_GOOGLE_MAPS_API_KEY",
+        "EXPO_PUBLIC_ENVIRONMENT": "production"
       }
     }
   },

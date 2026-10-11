@@ -24,7 +24,7 @@ module.exports = ({ config }) => {
       [
         '@rnmapbox/maps',
         {
-          RNMapboxMapsVersion: '10.3.1',
+          RNMapboxMapsVersion: '11.8.0',
           RNMapboxMapsDownloadsToken: process.env.MAPBOX_SECRET_TOKEN || '',
         },
       ],
