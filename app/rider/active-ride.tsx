@@ -93,6 +93,17 @@ export default function ActiveRideScreen() {
   const [verifyingCompletion, setVerifyingCompletion] = useState(false);
   const [trackingProgress, setTrackingProgress] = useState<'just-started' | 'started' | 'half-way' | 'very-close' | 'very-close-to-finish' | 'almost-finished' | 'ride-completed' | null>(null);
 
+  // Hosted tracking banner URLs
+  const trackingBannerUrls = {
+    'just-started': 'https://ibb.co/TM76MTSP',
+    'started': 'https://ibb.co/hkSWcW0',
+    'half-way': 'https://ibb.co/nqGsN4Kg',
+    'very-close': 'https://ibb.co/3mGk8Sj8',
+    'very-close-to-finish': 'https://ibb.co/FbcTtdhm',
+    'almost-finished': 'https://ibb.co/FbYQ9VvL',
+    'ride-completed': 'https://ibb.co/67H9g755',
+  };
+
   // Keep a live clock ticking for cancellation window countdown
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 15000);
@@ -873,21 +884,7 @@ export default function ActiveRideScreen() {
               }}
             >
               <Image
-                source={
-                  trackingProgress === 'just-started'
-                    ? require('../../assets/tracking-just-started.png')
-                    : trackingProgress === 'started'
-                    ? require('../../assets/tracking-started.png')
-                    : trackingProgress === 'half-way'
-                    ? require('../../assets/tracking-half-way.png')
-                    : trackingProgress === 'very-close'
-                    ? require('../../assets/tracking-very-close.png')
-                    : trackingProgress === 'very-close-to-finish'
-                    ? require('../../assets/tracking-very-close-to-finish.png')
-                    : trackingProgress === 'almost-finished'
-                    ? require('../../assets/tracking-almost-finished.png')
-                    : require('../../assets/tracking-ride-completed.png')
-                }
+                source={{ uri: trackingBannerUrls[trackingProgress] }}
                 style={{ width: 50, height: 50, borderRadius: 8 }}
                 resizeMode="contain"
               />
@@ -901,6 +898,8 @@ export default function ActiveRideScreen() {
                     ? 'Halfway There'
                     : trackingProgress === 'very-close'
                     ? 'Very Close'
+                    : trackingProgress === 'very-close-to-finish'
+                    ? 'Very Close to Finish'
                     : trackingProgress === 'almost-finished'
                     ? 'Almost There'
                     : 'Arrived!'}
