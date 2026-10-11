@@ -33,7 +33,7 @@ export default function App() {
   return (
     <>
       <Slot />
-      <StatusBar animated translucent={false} />
+      <StatusBar animated />
     </>
   );
 }

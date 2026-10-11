@@ -49,7 +49,14 @@ class LocationService {
     try {
       const hasPermission = await this.hasLocationPermission();
       if (!hasPermission) {
-        throw new Error('Location permission not granted');
+        // Request permission instead of throwing error
+        console.log('Location permission not granted, requesting...');
+        const granted = await this.requestPermissions();
+        if (!granted) {
+          console.log('Location permission denied by user');
+          throw new Error('Location permission not granted');
+        }
+        console.log('Location permission granted');
       }
 
       let location: Location.LocationObject | null = null;

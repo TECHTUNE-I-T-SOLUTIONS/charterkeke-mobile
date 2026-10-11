@@ -494,13 +494,13 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   backgroundImage: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     width: '100%',
     height: '100%',
     opacity: 0.4,
   },
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 1,
   },
   decorativeCircle: {

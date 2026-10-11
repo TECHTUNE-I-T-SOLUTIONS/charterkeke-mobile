@@ -12,6 +12,12 @@ export default function DriverLayout() {
   const isDark = mode === 'dark';
   const colors = isDark ? COLORS.dark : COLORS.light;
 
+  // Hide bottom nav on screens where it would cover content
+  const hideBottomNav = [
+    'awaiting-verification',
+    'help-and-support',
+  ].some((route) => segments[segments.length - 1] === route);
+
   return (
     <>
       <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -37,10 +43,11 @@ export default function DriverLayout() {
           <Stack.Screen name="vehicle" />
           <Stack.Screen name="privacy-settings" />
           <Stack.Screen name="help-and-support" />
+          <Stack.Screen name="faq" />
         </Stack>
 
         {/* Bottom Navigation - Outside Stack to prevent re-renders */}
-        {segments[segments.length - 1] !== 'awaiting-verification' && <RiderBottomNavigation />}
+        {!hideBottomNav && <RiderBottomNavigation />}
       </View>
     </>
   );

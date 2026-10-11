@@ -2,8 +2,21 @@ import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiService } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
+
+// Check if running in Expo Go before importing notification modules
+const IS_EXPO_GO = Constants.appOwnership === 'expo';
+
+// Conditional import to avoid Expo Go crash
+let Notifications: any = null;
+if (!IS_EXPO_GO) {
+  try {
+    Notifications = require('expo-notifications');
+  } catch (error) {
+    console.warn('⚠️ [usePushNotificationToggle] Failed to import notification modules:', error);
+  }
+}
 
 interface PushSubscriptionStatus {
   isSubscribed: boolean;
@@ -98,6 +111,13 @@ export const usePushNotificationToggle = () => {
   }, []);
 
   const toggleSubscription = useCallback(async () => {
+    // Skip in Expo Go
+    if (IS_EXPO_GO || !Notifications) {
+      setError('Push notifications not available in Expo Go. Use a development build instead.');
+      setIsLoading(false);
+      return;
+    }
+
     try {
       setError(null);
       setIsLoading(true);
@@ -117,10 +137,12 @@ export const usePushNotificationToggle = () => {
         // Get new token from Expo
         const notificationToken = await Notifications.getExpoPushTokenAsync();
         currentToken = notificationToken.data;
-        
+
         // Store locally
-        await AsyncStorage.setItem('expo_push_token', currentToken);
-        setToken(currentToken);
+        if (currentToken) {
+          await AsyncStorage.setItem('expo_push_token', currentToken);
+          setToken(currentToken);
+        }
       }
 
       if (isSubscribed) {

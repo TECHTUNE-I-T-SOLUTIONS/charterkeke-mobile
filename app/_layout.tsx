@@ -10,6 +10,10 @@ import { NotificationProvider } from '@context/NotificationContext';
 import { configureNotifications, registerBackgroundNotificationTask } from '@services/notificationService';
 import { AppErrorBoundary } from '@components/AppErrorBoundary';
 import { GuidedTourProvider } from '@components/GuidedTour';
+import Constants from 'expo-constants';
+
+// Check if running in Expo Go
+const IS_EXPO_GO = Constants.appOwnership === 'expo';
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -24,8 +28,13 @@ const queryClient = new QueryClient({
 // Inner component that renders the navigation
 function RootLayoutContent() {
   useEffect(() => {
-    // Initialize push notifications on app startup
+    // Initialize push notifications on app startup (skip in Expo Go)
     const initializeNotifications = async () => {
+      if (IS_EXPO_GO) {
+        console.log('⚠️ [App] Skipping notification initialization in Expo Go');
+        return;
+      }
+
       try {
         await configureNotifications();
         await registerBackgroundNotificationTask();

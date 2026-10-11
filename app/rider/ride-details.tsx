@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   Dimensions,
   Pressable,
   Alert,
+  Modal,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -32,6 +33,13 @@ import { RideReceiptExportModal } from '@/components/RideReceiptExportModal';
 import { RideReceiptTemplate } from '@/components/RideReceiptTemplate';
 import { captureRef } from 'react-native-view-shot';
 
+// ─── Cancellation policy ──────────────────────────────────────────────────────
+// Free-cancel window: Always free if no driver accepted, OR 5 min after driver accepts
+const FREE_CANCEL_AFTER_ACCEPTED_MS  =  5 * 60 * 1000; // 5 min
+const CANCELLATION_PENALTY_PERCENT   = 0.30;            // 30% of fare
+
+type CancelStatus = 'free' | 'penalty' | 'not_allowed';
+
 interface RideData {
   id: string;
   pickup_zone: string;
@@ -41,6 +49,7 @@ interface RideData {
   fare_amount: number | null;
   status: string;
   created_at: string;
+  accepted_at?: string;
   completed_at?: string;
   rating?: number;
   distance_km?: number;
@@ -132,6 +141,119 @@ export default function RideDetailsScreen() {
   const [receiptModalMode, setReceiptModalMode] = useState<'share' | 'download' | null>(null);
   const receiptRef = useRef<View>(null);
   const etaRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const driverArrivalCheckTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [showDriverNoShowModal, setShowDriverNoShowModal] = useState(false);
+  const [driverAcceptedAt, setDriverAcceptedAt] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [now, setNow] = useState(Date.now());
+
+  // Update current time every second for countdown
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Cancellation status logic
+  const cancelStatus = useMemo<CancelStatus>(() => {
+    if (!rideDetails) return 'not_allowed';
+    const currentStatus = String(rideDetails.status || '').toLowerCase();
+    if (currentStatus === 'completed' || currentStatus === 'cancelled' || currentStatus === 'in_progress') return 'not_allowed';
+
+    // Use driverAcceptedAt state or fall back to rideDetails.accepted_at
+    const acceptedAt = driverAcceptedAt ? new Date(driverAcceptedAt).getTime() : null;
+
+    // If no driver has accepted yet (pending or dispatched), always free to cancel
+    if (currentStatus === 'pending' || currentStatus === 'dispatched') {
+      return 'free';
+    }
+
+    // If driver has accepted, check the 5-minute window
+    if (acceptedAt) {
+      // Within 5 minutes of acceptance -> free
+      if ((now - acceptedAt) < FREE_CANCEL_AFTER_ACCEPTED_MS) {
+        return 'free';
+      }
+      // After 5 minutes of acceptance -> penalty
+      return 'penalty';
+    }
+
+    // Default to free if no driver accepted
+    return 'free';
+  }, [rideDetails, driverAcceptedAt, now]);
+
+  // Calculate cancellation window countdown
+  const cancellationCountdown = useMemo(() => {
+    if (!rideDetails) return null;
+    const currentStatus = String(rideDetails.status || '').toLowerCase();
+    if (currentStatus === 'completed' || currentStatus === 'cancelled' || currentStatus === 'in_progress') return null;
+
+    // Use driverAcceptedAt state or fall back to rideDetails.accepted_at
+    const acceptedAt = driverAcceptedAt ? new Date(driverAcceptedAt).getTime() : null;
+
+    // Only show countdown if driver has accepted
+    if (acceptedAt) {
+      const elapsed = now - acceptedAt;
+      const remaining = FREE_CANCEL_AFTER_ACCEPTED_MS - elapsed;
+      if (remaining > 0) return Math.ceil(remaining / 1000); // Return seconds
+    }
+
+    // No countdown if no driver accepted (always free)
+    return null;
+  }, [rideDetails, driverAcceptedAt, now]);
+
+  // Calculate cancellation penalty percentage
+  const cancellationPenaltyPercent = useMemo(() => {
+    if (cancelStatus === 'penalty') {
+      return Math.round(CANCELLATION_PENALTY_PERCENT * 100);
+    }
+    return 0;
+  }, [cancelStatus]);
+
+  const handleCancelRide = () => {
+    if (!rideDetails) return;
+
+    const isFree = cancelStatus === 'free';
+    const penaltyPercent = cancellationPenaltyPercent;
+    const penaltyAmount = (rideDetails.fare_amount || 0) * CANCELLATION_PENALTY_PERCENT;
+    const penaltyText = `A ${penaltyPercent}% cancellation fee (₦${penaltyAmount.toLocaleString()}) will be charged.`;
+
+    Alert.alert(
+      isFree ? 'Cancel Ride' : 'Cancel Ride — Penalty Applies',
+      isFree
+        ? 'Are you sure you want to cancel this ride? You are still within the free cancellation window.'
+        : `The free cancellation window has closed.\n\n${penaltyText}\n\nDo you still want to cancel?`,
+      [
+        { text: 'Keep Ride', style: 'cancel' },
+        {
+          text: isFree ? 'Cancel Ride' : 'Cancel & Accept Penalty',
+          style: 'destructive',
+          onPress: () => confirmCancel(isFree),
+        },
+      ]
+    );
+  };
+
+  const confirmCancel = async (isFree: boolean) => {
+    if (!rideDetails) return;
+    setCancelling(true);
+    try {
+      const penaltyAmount = isFree ? 0 : (rideDetails.fare_amount || 0) * CANCELLATION_PENALTY_PERCENT;
+      const currentStatus = String(rideDetails.status || '').toLowerCase();
+      const waiveFee = currentStatus === 'pending' || currentStatus === 'dispatched' || isFree;
+      await apiService.post(`/rides/${rideDetails.id}/cancel`, {
+        reason: 'User cancelled',
+        penalty_amount: penaltyAmount,
+        waiver: waiveFee,
+      });
+      showSuccess('Ride Cancelled', 'Your ride has been cancelled.');
+      router.replace('/rider/rides-history');
+    } catch (err: any) {
+      showError('Cancellation Failed', err?.message || 'Please try again.');
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   const parseMapCoordinate = (value: any): [number, number] | null => {
     if (Array.isArray(value) && value.length === 2 && Number.isFinite(Number(value[0])) && Number.isFinite(Number(value[1]))) {
       return [Number(value[0]), Number(value[1])];
@@ -140,6 +262,71 @@ export default function RideDetailsScreen() {
       return [Number(value.longitude), Number(value.latitude)];
     }
     return null;
+  };
+
+  const startDriverArrivalCheck = (rideId: string) => {
+    // Clear any existing timer
+    if (driverArrivalCheckTimer.current) {
+      clearInterval(driverArrivalCheckTimer.current);
+    }
+
+    let elapsedMinutes = 0;
+    const CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+    driverArrivalCheckTimer.current = setInterval(() => {
+      elapsedMinutes += 5;
+
+      // Check if ride status has changed to "arrived" or "in_progress"
+      const currentStatus = String(rideDetails?.status || '').toLowerCase();
+      if (currentStatus === 'arrived' || currentStatus === 'in_progress' || currentStatus === 'completed' || currentStatus === 'cancelled') {
+        if (driverArrivalCheckTimer.current) {
+          clearInterval(driverArrivalCheckTimer.current);
+          driverArrivalCheckTimer.current = null;
+        }
+        return;
+      }
+
+      // At 15 minutes, show the modal
+      if (elapsedMinutes >= 15) {
+        if (driverArrivalCheckTimer.current) {
+          clearInterval(driverArrivalCheckTimer.current);
+          driverArrivalCheckTimer.current = null;
+        }
+        setShowDriverNoShowModal(true);
+      }
+    }, CHECK_INTERVAL_MS);
+  };
+
+  const handleDriverNoShowResponse = async (driverCommunicated: boolean) => {
+    const rideId = rideDetails?.id || rideIdParam;
+    if (!rideId) return;
+
+    setShowDriverNoShowModal(false);
+
+    if (!driverCommunicated) {
+      // Driver didn't communicate - revert ride to dispatched and penalize driver
+      try {
+        await apiService.post(`/rides/${rideId}/revert-to-dispatched`, {
+          reason: 'Driver failed to arrive within 15 minutes without communication',
+        });
+        showSuccess('Ride Re-dispatched', 'Your ride has been sent to other drivers. The previous driver has been penalized.');
+        router.replace('/rider/rides-history');
+      } catch (error) {
+        showError('Error', 'Failed to re-dispatch ride. Please contact support.');
+      }
+    } else {
+      // Driver communicated - rider cancels without penalty
+      try {
+        await apiService.post(`/rides/${rideId}/cancel`, {
+          reason: 'Driver communicated but rider cancelled',
+          waiver: true, // Waive cancellation fee
+        });
+        showSuccess('Ride Cancelled', 'Your ride has been cancelled without any fee.');
+        router.replace('/rider/rides-history');
+      } catch (error) {
+        showError('Error', 'Failed to cancel ride. Please contact support.');
+      }
+    }
   };
 
   useEffect(() => {
@@ -169,6 +356,11 @@ export default function RideDetailsScreen() {
         setRideDetails(ride);
         setPickupCoords(parseCoordinates(ride.pickup_description || ''));
         setDestCoords(parseCoordinates(ride.destination_description || ''));
+
+        // Set driver accepted time for cancellation tracking
+        if (ride.accepted_at) {
+          setDriverAcceptedAt(ride.accepted_at);
+        }
 
         const joinedDriverDetails = mapDriverDetails(ride.drivers);
         if (joinedDriverDetails) {
@@ -280,15 +472,34 @@ export default function RideDetailsScreen() {
         const statusChanged = prev.status !== updatedRide.status;
         const next = { ...prev, ...updatedRide };
         if (statusChanged) {
-          if (newStatus === 'accepted') Alert.alert('Driver Found! 🎉', 'A driver has accepted your ride and is on the way.');
-          else if (newStatus === 'in_progress') Alert.alert('Ride Started 🚗', 'Your ride has started. Enjoy your trip!');
+          if (newStatus === 'accepted') {
+            Alert.alert('Driver Found! 🎉', 'A driver has accepted your ride and is on the way.');
+            // Start 15-minute arrival check timer
+            setDriverAcceptedAt(new Date().toISOString());
+            startDriverArrivalCheck(rideId);
+          }
+          else if (newStatus === 'in_progress') {
+            Alert.alert('Ride Started 🚗', 'Your ride has started. Enjoy your trip!');
+            // Clear arrival check timer since ride started
+            if (driverArrivalCheckTimer.current) {
+              clearInterval(driverArrivalCheckTimer.current);
+              driverArrivalCheckTimer.current = null;
+            }
+          }
           else if (newStatus === 'completed') Alert.alert('Ride Completed ✅', 'Your ride is complete!', [
             { text: 'Rate Now', onPress: () => router.replace(`/rider/rating?rideId=${rideId}`) },
             { text: 'Later', style: 'cancel' },
           ]);
-          else if (newStatus === 'cancelled') Alert.alert('Ride Cancelled', 'This ride was cancelled.', [
-            { text: 'Book Again', onPress: () => router.replace('/rider/booking') },
-          ]);
+          else if (newStatus === 'cancelled') {
+            // Clear arrival check timer
+            if (driverArrivalCheckTimer.current) {
+              clearInterval(driverArrivalCheckTimer.current);
+              driverArrivalCheckTimer.current = null;
+            }
+            Alert.alert('Ride Cancelled', 'This ride was cancelled.', [
+              { text: 'Book Again', onPress: () => router.replace('/rider/booking') },
+            ]);
+          }
         }
         return next;
       });
@@ -719,6 +930,81 @@ export default function RideDetailsScreen() {
           </View>
         </View>
 
+        {/* Cancellation Button - Only show if ride is cancellable */}
+        {cancelStatus !== 'not_allowed' && (
+          <TouchableOpacity
+            onPress={handleCancelRide}
+            disabled={cancelling}
+            style={{
+              paddingVertical: 14,
+              borderRadius: 12,
+              backgroundColor: theme.colors.surface,
+              alignItems: 'center',
+              borderWidth: 1.5,
+              borderColor: cancelStatus === 'free' ? theme.colors.border : '#ef4444',
+              flexDirection: 'row',
+              justifyContent: 'center',
+              gap: 8,
+              marginTop: 12,
+            }}
+          >
+            {cancelling ? (
+              <ActivityIndicator size="small" color="#ef4444" />
+            ) : (
+              <MaterialCommunityIcons
+                name="close-circle-outline"
+                size={18}
+                color={cancelStatus === 'free' ? theme.colors.textPrimary : '#ef4444'}
+              />
+            )}
+            <Text
+              style={{
+                fontSize: 15,
+                fontWeight: '700',
+                color: cancelStatus === 'free' ? theme.colors.textPrimary : '#ef4444',
+              }}
+            >
+              {cancelling
+                ? 'Cancelling…'
+                : cancelStatus === 'free'
+                ? 'Cancel Ride (Free)'
+                : `Cancel Ride — ${cancellationPenaltyPercent}% fee`}
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Cancellation Notice */}
+        {cancelStatus !== 'not_allowed' && (
+          <View
+            style={{
+              marginTop: 10,
+              borderRadius: 12,
+              backgroundColor: cancelStatus === 'free' ? '#f0fdf4' : '#fef2f2',
+              borderWidth: 1,
+              borderColor: cancelStatus === 'free' ? '#bbf7d0' : '#fecaca',
+              padding: 12,
+              flexDirection: 'row',
+              gap: 10,
+              alignItems: 'flex-start',
+            }}
+          >
+            <MaterialCommunityIcons
+              name={cancelStatus === 'free' ? 'clock-outline' : 'alert-circle'}
+              size={18}
+              color={cancelStatus === 'free' ? '#16a34a' : '#ef4444'}
+            />
+            <Text style={{ color: cancelStatus === 'free' ? '#15803d' : '#b91c1c', fontSize: 12, flex: 1, lineHeight: 17 }}>
+              {String(rideDetails.status || '').toLowerCase() === 'pending' || String(rideDetails.status || '').toLowerCase() === 'dispatched'
+                ? 'Free cancellation available while waiting for driver'
+                : cancelStatus === 'free' && cancellationCountdown !== null
+                  ? `Free cancellation window: ${Math.floor(cancellationCountdown / 60)}:${(cancellationCountdown % 60).toString().padStart(2, '0')} remaining`
+                  : cancelStatus === 'penalty'
+                    ? `Free cancellation window closed. Cancelling now incurs a ${cancellationPenaltyPercent}% fee`
+                    : 'Free cancellation window active'}
+            </Text>
+          </View>
+        )}
+
         {/* Rating */}
         {rideDetails.status === 'completed' && (
           <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
@@ -756,6 +1042,38 @@ export default function RideDetailsScreen() {
         )}
 
       </ScrollView>
+      {/* Driver No-Show Modal */}
+      <Modal
+        visible={showDriverNoShowModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowDriverNoShowModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+            <MaterialCommunityIcons name="clock-alert" size={48} color={BRAND.primary} />
+            <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>Driver Not Arrived</Text>
+            <Text style={[styles.modalText, { color: theme.colors.textSecondary }]}>
+              It has been 15 minutes since your driver accepted the ride. Did the driver communicate with you about any delays?
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonSecondary, { backgroundColor: theme.colors.background, borderColor: theme.colors.border }]}
+                onPress={() => handleDriverNoShowResponse(true)}
+              >
+                <Text style={[styles.modalButtonText, { color: theme.colors.textPrimary }]}>Yes, Driver Communicated</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonPrimary, { backgroundColor: BRAND.primary }]}
+                onPress={() => handleDriverNoShowResponse(false)}
+              >
+                <Text style={styles.modalButtonText}>No, No Communication</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <RideMapFullscreenModal
         visible={showFullMap}
         title="Ride Map"
@@ -793,7 +1111,7 @@ export default function RideDetailsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   mapContainer: { height: 480, width: '100%', position: 'relative' },
-  map: { ...StyleSheet.absoluteFillObject },
+  map: { ...StyleSheet.absoluteFill },
   headerOverlay: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20, position: 'absolute', top: 0, left: 0, right: 0 },
   backBtn: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, elevation: 4, position: 'absolute', top: scale(16), left: scale(16), zIndex: 10 },
   statusTag: { paddingHorizontal: scale(14), paddingVertical: verticalScale(8), borderRadius: scale(30), flexDirection: 'row', alignItems: 'center', gap: scale(8), shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, elevation: 4, position: 'absolute', zIndex: 10 },
@@ -801,7 +1119,7 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 12, fontWeight: '700' },
   fullMapBtn: { position: 'absolute', right: 16, bottom: 16, zIndex: 20, backgroundColor: '#FFF', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 6, elevation: 4 },
   fullMapBtnText: { fontSize: 12, fontWeight: '800', color: '#000' },
-  content: { flex: 1, padding: 20, marginTop: -40, borderTopLeftRadius: 30, borderTopRightRadius: 30 },
+  content: { flex: 1, padding: 20, marginTop: -40, borderTopLeftRadius: 30, borderTopRightRadius: 30, marginBottom: 66 },
   card: { padding: 20, borderRadius: 20, borderWidth: 1, marginBottom: 16, shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.03, elevation: 2 },
   driverRow: { flexDirection: 'row', alignItems: 'center' },
   driverImageContainer: { position: 'relative' },
@@ -823,6 +1141,15 @@ const styles = StyleSheet.create({
   addressBlock: { justifyContent: 'center' },
   addressLabel: { fontSize: 11, marginBottom: 2 },
   addressText: { fontSize: 15, fontWeight: '600' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalContent: { width: '100%', maxWidth: 400, borderRadius: 20, padding: 24, borderWidth: 1, alignItems: 'center' },
+  modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 12, textAlign: 'center' },
+  modalText: { fontSize: 14, lineHeight: 20, marginBottom: 24, textAlign: 'center' },
+  modalButtons: { flexDirection: 'row', gap: 12, width: '100%' },
+  modalButton: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+  modalButtonPrimary: {},
+  modalButtonSecondary: { borderWidth: 1 },
+  modalButtonText: { fontSize: 14, fontWeight: '700', color: '#fff' },
   timeText: { fontSize: 11, marginTop: 2 },
   statsRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
   statItem: { flex: 1, padding: 16, borderRadius: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },

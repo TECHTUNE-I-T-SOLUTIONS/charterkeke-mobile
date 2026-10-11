@@ -147,6 +147,10 @@ export default function DriverHomeScreen() {
   const [driverStats, setDriverStats] = useState({ completedTrips: 0, averageRating: 0 });
   const [locationPermissionVisible, setLocationPermissionVisible] = useState(false);
   const [checkingLocationPermission, setCheckingLocationPermission] = useState(false);
+  const [loadingAvailableRides, setLoadingAvailableRides] = useState(false);
+  const [loadingRecentRides, setLoadingRecentRides] = useState(false);
+  const [loadingSettlement, setLoadingSettlement] = useState(false);
+  const [loadingEarnings, setLoadingEarnings] = useState(false);
   const { startTour } = useGuidedTour();
   const hasCheckedDriverTourRef = useRef(false);
 
@@ -302,12 +306,14 @@ export default function DriverHomeScreen() {
 
   const fetchDashboardData = async (showLoader: boolean = true) => {
     if (!isMountedRef.current) return;
-    
+
     try {
       if (showLoader) setLoading(true);
-      
-      console.log('📊 [DRIVER-HOME] Fetching dashboard data...');
-      const [details, status, rides, available, history, settlement, dailyEarnings, earningsStats] = await Promise.all([
+
+      console.log('📊 [DRIVER-HOME] Fetching critical dashboard data (details, status, active rides)...');
+
+      // Phase 1: Critical data - load these first and show the screen
+      const [details, status, rides] = await Promise.all([
         apiService.getDriverDetails().catch((err) => {
           console.warn('⚠️  [DRIVER-HOME] getDriverDetails failed:', err?.message || err);
           return {};
@@ -320,26 +326,6 @@ export default function DriverHomeScreen() {
           console.warn('⚠️  [DRIVER-HOME] getActiveRides failed:', err?.message || err);
           return { rides: [] };
         }),
-        apiService.getAvailableRides(currentLocation?.latitude, currentLocation?.longitude, 10).catch((err) => {
-          console.warn('⚠️  [DRIVER-HOME] getAvailableRides failed:', err?.message || err);
-          return { rides: [] };
-        }),
-        apiService.get('/user/ride-history?limit=5').catch((err) => {
-          console.warn('⚠️  [DRIVER-HOME] getRideHistory failed:', err?.message || err);
-          return { rides: [] };
-        }),
-        apiService.getDriverSettlementStatus().catch((err) => {
-          console.warn('⚠️  [DRIVER-HOME] getDriverSettlementStatus failed:', err?.message || err);
-          return { blocked: false, totalOutstanding: 0 };
-        }),
-        apiService.getDriverDailySettlement().catch((err) => {
-          console.warn('⚠️  [DRIVER-HOME] getDriverDailySettlement failed:', err?.message || err);
-          return { total_ride_earnings: 0 };
-        }),
-        apiService.getDriverEarningsStats().catch((err) => {
-          console.warn('⚠️  [DRIVER-HOME] getDriverEarningsStats failed:', err?.message || err);
-          return { stats: { totalRides: 0, averageRating: 0 } };
-        }),
       ]);
 
       if (!isMountedRef.current) return;
@@ -348,68 +334,129 @@ export default function DriverHomeScreen() {
       const nextIsOnline = status.status === 'online' || status.is_online === true;
       const nextActiveRides = rides.rides || [];
       const nextActiveRidesCount = nextActiveRides.length;
-      const nextAvailableRides = available.rides?.slice(0, 3) || [];
-      const nextRecentRides = ((history as any)?.rides || (history as any)?.data || []).slice(0, 5);
-      const nextTodayEarnings = Number(dailyEarnings?.settlement?.totalDriverEarnings || dailyEarnings?.totals?.netDriverEarnings || 0);
-      const nextOverdueTotal = getRemittanceOverdueTotal(settlement);
-      const nextTodayRemittanceDue = Number(
-        settlement?.todayRemittance?.totalDue ||
-        settlement?.totalTodayDue ||
-        settlement?.remittanceSummary?.todayTotal ||
-        dailyEarnings?.totals?.unremittedPlatformFee ||
-        dailyEarnings?.settlement?.outstandingPlatformFees ||
-        0
-      );
-      const nextGrandTotal = getRemittanceGrandTotal(settlement, nextOverdueTotal + nextTodayRemittanceDue);
-      const nextRemittanceDueAt = (
-        settlement?.todayRemittance?.dueAt ||
-        dailyEarnings?.due?.dueAt ||
-        null
-      );
-      const nextStats = {
-        completedTrips: Number(earningsStats?.stats?.totalRides || nextDriverData?.total_rides_completed || 0),
-        averageRating: Number(earningsStats?.stats?.averageRating || nextDriverData?.average_rating || 0),
-      };
 
-      console.log('✅ [DRIVER-HOME] Dashboard data loaded:', {
+      console.log('✅ [DRIVER-HOME] Critical data loaded:', {
         hasDriverData: !!nextDriverData,
         isOnline: nextIsOnline,
         activeRides: nextActiveRidesCount,
-        todayEarnings: nextTodayEarnings,
       });
 
       setDriverData(nextDriverData);
-      setTodayEarnings(nextTodayEarnings);
       setIsOnline(nextIsOnline);
       setActiveRidesCount(nextActiveRidesCount);
       setActiveRides(nextActiveRides);
-      setAvailableRides(nextAvailableRides);
-      setRecentRides(nextRecentRides);
-      setSettlementBlocked(!!settlement?.blocked);
-      setSettlementOutstanding(nextGrandTotal);
-      setTodayRemittanceDue(nextTodayRemittanceDue);
-      setRemittanceDueAt(nextRemittanceDueAt);
-      setDriverStats(nextStats);
 
-      await cacheService.set('driver_home_dashboard', {
-        driverData: nextDriverData,
-        todayEarnings: nextTodayEarnings,
-        isOnline: nextIsOnline,
-        activeRidesCount: nextActiveRidesCount,
-        activeRides: nextActiveRides,
-        availableRides: nextAvailableRides,
-        recentRides: nextRecentRides,
-        settlementBlocked: !!settlement?.blocked,
-        settlementOutstanding: nextGrandTotal,
-        todayRemittanceDue: nextTodayRemittanceDue,
-        remittanceDueAt: nextRemittanceDueAt,
-        driverStats: nextStats,
-      });
+      // Show the screen now with critical data
+      if (showLoader && isMountedRef.current) {
+        setLoading(false);
+      }
+
+      // Phase 2: Load remaining data in background
+      console.log('📊 [DRIVER-HOME] Loading background data (available rides, history, settlement, earnings)...');
+
+      // Load available rides
+      setLoadingAvailableRides(true);
+      apiService.getAvailableRides(currentLocation?.latitude, currentLocation?.longitude, 10)
+        .then((available) => {
+          if (isMountedRef.current) {
+            const nextAvailableRides = available.rides?.slice(0, 3) || [];
+            setAvailableRides(nextAvailableRides);
+            console.log('✅ [DRIVER-HOME] Available rides loaded');
+          }
+        })
+        .catch((err) => {
+          console.warn('⚠️  [DRIVER-HOME] getAvailableRides failed:', err?.message || err);
+        })
+        .finally(() => {
+          if (isMountedRef.current) setLoadingAvailableRides(false);
+        });
+
+      // Load recent ride history
+      setLoadingRecentRides(true);
+      apiService.get('/user/ride-history?limit=5')
+        .then((history) => {
+          if (isMountedRef.current) {
+            const nextRecentRides = ((history as any)?.rides || (history as any)?.data || []).slice(0, 5);
+            setRecentRides(nextRecentRides);
+            console.log('✅ [DRIVER-HOME] Recent rides loaded');
+          }
+        })
+        .catch((err) => {
+          console.warn('⚠️  [DRIVER-HOME] getRideHistory failed:', err?.message || err);
+        })
+        .finally(() => {
+          if (isMountedRef.current) setLoadingRecentRides(false);
+        });
+
+      // Load settlement data
+      setLoadingSettlement(true);
+      Promise.all([
+        apiService.getDriverSettlementStatus().catch((err) => {
+          console.warn('⚠️  [DRIVER-HOME] getDriverSettlementStatus failed:', err?.message || err);
+          return { blocked: false, totalOutstanding: 0 };
+        }),
+        apiService.getDriverDailySettlement().catch((err) => {
+          console.warn('⚠️  [DRIVER-HOME] getDriverDailySettlement failed:', err?.message || err);
+          return { total_ride_earnings: 0 };
+        }),
+      ])
+        .then(([settlement, dailyEarnings]) => {
+          if (isMountedRef.current) {
+            const nextTodayEarnings = Number(dailyEarnings?.settlement?.totalDriverEarnings || dailyEarnings?.totals?.netDriverEarnings || 0);
+            const nextOverdueTotal = getRemittanceOverdueTotal(settlement);
+            const nextTodayRemittanceDue = Number(
+              settlement?.todayRemittance?.totalDue ||
+              settlement?.totalTodayDue ||
+              settlement?.remittanceSummary?.todayTotal ||
+              dailyEarnings?.totals?.unremittedPlatformFee ||
+              dailyEarnings?.settlement?.outstandingPlatformFees ||
+              0
+            );
+            const nextGrandTotal = getRemittanceGrandTotal(settlement, nextOverdueTotal + nextTodayRemittanceDue);
+            const nextRemittanceDueAt = (
+              settlement?.todayRemittance?.dueAt ||
+              dailyEarnings?.due?.dueAt ||
+              null
+            );
+
+            setTodayEarnings(nextTodayEarnings);
+            setSettlementBlocked(!!settlement?.blocked);
+            setSettlementOutstanding(nextGrandTotal);
+            setTodayRemittanceDue(nextTodayRemittanceDue);
+            setRemittanceDueAt(nextRemittanceDueAt);
+            console.log('✅ [DRIVER-HOME] Settlement data loaded');
+          }
+        })
+        .catch((err) => {
+          console.warn('⚠️  [DRIVER-HOME] Settlement data failed:', err?.message || err);
+        })
+        .finally(() => {
+          if (isMountedRef.current) setLoadingSettlement(false);
+        });
+
+      // Load earnings stats
+      setLoadingEarnings(true);
+      apiService.getDriverEarningsStats()
+        .then((earningsStats) => {
+          if (isMountedRef.current) {
+            const nextStats = {
+              completedTrips: Number(earningsStats?.stats?.totalRides || nextDriverData?.total_rides_completed || 0),
+              averageRating: Number(earningsStats?.stats?.averageRating || nextDriverData?.average_rating || 0),
+            };
+            setDriverStats(nextStats);
+            console.log('✅ [DRIVER-HOME] Earnings stats loaded');
+          }
+        })
+        .catch((err) => {
+          console.warn('⚠️  [DRIVER-HOME] getDriverEarningsStats failed:', err?.message || err);
+        })
+        .finally(() => {
+          if (isMountedRef.current) setLoadingEarnings(false);
+        });
+
     } catch (error) {
-      console.error('❌ [DRIVER-HOME] Dashboard fetch error:', error);
-      // Don't crash the app - show cached data or empty state
-    } finally {
-      if (isMountedRef.current && showLoader) {
+      console.error('❌ [DRIVER-HOME] fetchDashboardData error:', error);
+      if (isMountedRef.current) {
         setLoading(false);
       }
     }
@@ -523,7 +570,79 @@ export default function DriverHomeScreen() {
   return (
     <View style={[styles.container, { backgroundColor: isLight ? COLORS.light.background : COLORS.dark.background }]}>
       <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
-      
+
+      {/* Fixed Header */}
+      <LinearGradient
+        colors={isLight ? ['#FFFFFF', '#FFF8F0'] : ['#000000', '#1A1100']}
+        style={[styles.fixedHeader, { paddingTop: insets.top + 10 }]}
+      >
+        <View style={styles.header}>
+          <View>
+            <Text style={[styles.greeting, { color: theme.colors.textSecondary }]}>Ready to earn?</Text>
+            <Text style={[styles.name, { color: theme.colors.textPrimary }]}>
+              {user?.firstName || (user as any)?.first_name || (driverData as any)?.first_name || 'Driver'} 👋
+            </Text>
+          </View>
+          <View style={styles.headerButtons}>
+            <TourTarget id="driver-notifications">
+              <TouchableOpacity
+                onPress={() => {
+                  resetUnreadCount();
+                  router.push('/driver/notifications');
+                }}
+                style={[styles.iconBtn, { backgroundColor: theme.colors.inputBackground }]}
+              >
+                <MaterialCommunityIcons name="bell-outline" size={20} color={theme.colors.textPrimary} />
+                {unreadCount > 0 && (
+                  <View style={[styles.badge, { backgroundColor: BRAND.primary }]}>
+                    <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </TourTarget>
+            <TouchableOpacity onPress={toggleTheme} style={[styles.iconBtn, { backgroundColor: theme.colors.inputBackground }]}>
+              <MaterialCommunityIcons name={isLight ? "weather-sunny" : "weather-night"} size={20} color={theme.colors.textPrimary} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/driver/profile')} style={styles.profileBtn}>
+              <Image source={{ uri: (user as any)?.avatar || (driverData as any)?.profile_picture_url || 'https://via.placeholder.com/40' }} style={styles.profileImage} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Status Toggle Card */}
+        <TourTarget id="driver-online-toggle">
+          <View style={[styles.statusCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+             <View style={styles.statusInfo}>
+                <Text style={[styles.statusLabel, { color: theme.colors.textSecondary }]}>Current Status</Text>
+                <Animated.Text style={[styles.statusValue, { color: statusColor }]}>
+                  {isOnline ? 'Online - Receiving Requests' : 'Offline'}
+                </Animated.Text>
+                {loadingSettlement ? (
+                  <ActivityIndicator size="small" color={BRAND.primary} />
+                ) : settlementBlocked ? (
+                  <Text style={[styles.statusNote, { color: '#EF4444' }]}>
+                    Overdue remittance lock: {formatCurrency(settlementOutstanding || 0)}
+                  </Text>
+                ) : todayRemittanceDue > 0 ? (
+                  <Text style={[styles.statusNote, { color: BRAND.primary }]}>
+                    Remittance due in {formatRemittanceCountdown(remittanceCountdownMs)} - {formatCurrency(todayRemittanceDue)}
+                  </Text>
+                ) : (
+                  <Text style={[styles.statusNote, { color: theme.colors.textSecondary }]}>
+                    No remittance due right now
+                  </Text>
+                )}
+             </View>
+             <Switch
+                value={isOnline}
+                onValueChange={handleOnlineToggle}
+                    trackColor={{ false: theme.colors.border, true: '#10B981' }}
+                    thumbColor="#FFF"
+                 />
+              </View>
+            </TourTarget>
+      </LinearGradient>
+
       {loading && !driverData ? (
         <HomeSkeleton />
       ) : (
@@ -534,76 +653,6 @@ export default function DriverHomeScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={BRAND.primary} />}
           showsVerticalScrollIndicator={false}
         >
-          {/* Header */}
-          <LinearGradient
-            colors={isLight ? ['#FFFFFF', '#FFF8F0'] : ['#000000', '#1A1100']}
-            style={[styles.headerGradient, { paddingTop: insets.top + 10 }]}
-          >
-            <View style={styles.header}>
-              <View>
-                <Text style={[styles.greeting, { color: theme.colors.textSecondary }]}>Ready to earn?</Text>
-                <Text style={[styles.name, { color: theme.colors.textPrimary }]}>
-                  {user?.firstName || (user as any)?.first_name || (driverData as any)?.first_name || 'Driver'} 👋
-                </Text>
-              </View>
-              <View style={styles.headerButtons}>
-                <TourTarget id="driver-notifications">
-                  <TouchableOpacity 
-                    onPress={() => {
-                      resetUnreadCount();
-                      router.push('/driver/notifications');
-                    }} 
-                    style={[styles.iconBtn, { backgroundColor: theme.colors.inputBackground }]}
-                  >
-                    <MaterialCommunityIcons name="bell-outline" size={20} color={theme.colors.textPrimary} />
-                    {unreadCount > 0 && (
-                      <View style={[styles.badge, { backgroundColor: BRAND.primary }]}>
-                        <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                </TourTarget>
-                <TouchableOpacity onPress={toggleTheme} style={[styles.iconBtn, { backgroundColor: theme.colors.inputBackground }]}>
-                  <MaterialCommunityIcons name={isLight ? "weather-sunny" : "weather-night"} size={20} color={theme.colors.textPrimary} />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push('/driver/profile')} style={styles.profileBtn}>
-                  <Image source={{ uri: (user as any)?.avatar || (driverData as any)?.profile_picture_url || 'https://via.placeholder.com/40' }} style={styles.profileImage} />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Status Toggle Card */}
-            <TourTarget id="driver-online-toggle">
-              <View style={[styles.statusCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-                 <View style={styles.statusInfo}>
-                    <Text style={[styles.statusLabel, { color: theme.colors.textSecondary }]}>Current Status</Text>
-                    <Animated.Text style={[styles.statusValue, { color: statusColor }]}>
-                      {isOnline ? 'Online - Receiving Requests' : 'Offline'}
-                    </Animated.Text>
-                    {settlementBlocked ? (
-                      <Text style={[styles.statusNote, { color: '#EF4444' }]}>
-                        Overdue remittance lock: {formatCurrency(settlementOutstanding || 0)}
-                      </Text>
-                    ) : todayRemittanceDue > 0 ? (
-                      <Text style={[styles.statusNote, { color: BRAND.primary }]}>
-                        Remittance due in {formatRemittanceCountdown(remittanceCountdownMs)} - {formatCurrency(todayRemittanceDue)}
-                      </Text>
-                    ) : (
-                      <Text style={[styles.statusNote, { color: theme.colors.textSecondary }]}>
-                        No remittance due right now
-                      </Text>
-                    )}
-                 </View>
-                 <Switch
-                    value={isOnline}
-                    onValueChange={handleOnlineToggle}
-                    trackColor={{ false: theme.colors.border, true: '#10B981' }}
-                    thumbColor="#FFF"
-                 />
-              </View>
-            </TourTarget>
-          </LinearGradient>
-
           <HomePromoCarousel slides={promoSlides} />
 
           {/* Stats Grid */}
@@ -619,10 +668,10 @@ export default function DriverHomeScreen() {
                  onPress={() => router.push('/driver/earnings')}
                />
              </TourTarget>
-             <StatCard 
-               label="Completed Trips" 
-               value={driverStats.completedTrips.toString()} 
-               icon="check-circle-outline" 
+             <StatCard
+               label="Completed Trips"
+               value={loadingEarnings ? '...' : driverStats.completedTrips.toString()}
+               icon="check-circle-outline"
                color="#10B981"
                theme={theme}
                isLight={isLight}
@@ -640,9 +689,9 @@ export default function DriverHomeScreen() {
                isLight={isLight}
                onPress={() => router.push('/driver/rides')}
              />
-             <StatCard 
-               label="Rating" 
-               value={(driverStats.averageRating || 0).toFixed(1)} 
+             <StatCard
+               label="Rating"
+               value={loadingEarnings ? '...' : (driverStats.averageRating || 0).toFixed(1)} 
                icon="star" 
                color="#F59E0B"
                theme={theme}
@@ -654,16 +703,16 @@ export default function DriverHomeScreen() {
           {/* Map Preview */}
           <View style={[styles.mapSection, { borderColor: theme.colors.border }]}>
              <MapboxMap
-                style={styles.map}
+                style={StyleSheet.absoluteFill}
                 latitude={currentLocation?.latitude || 6.5244}
                 longitude={currentLocation?.longitude || 3.3792}
                 zoom={13}
-               mapStyle="standard"
-               showUserLocation
-               showCompass
-               showScaleBar
-               autoCenter={false}
-               fitCoordinates={mapFocusCoordinates}
+                mapStyle={isLight ? 'light' : 'dark'}
+                showUserLocation
+                showCompass
+                showScaleBar
+                autoCenter={false}
+                fitCoordinates={mapFocusCoordinates}
                 onTouchStart={() => setScrollEnabled(false)}
                 onTouchEnd={() => setScrollEnabled(true)}
               >
@@ -710,13 +759,17 @@ export default function DriverHomeScreen() {
                 })}
               </MapboxMap>
               {/* CTA Carousel moved below mapSection */}
-              {mapRides.length > 0 && (
-                <View style={[styles.mapInfo, { backgroundColor: theme.colors.surface }]}> 
-                  <Text numberOfLines={1} style={[styles.mapInfoText, { color: theme.colors.textPrimary }]}>
-                    {activeRides.length > 0
-                      ? `Showing ${activeRides.length} active ride${activeRides.length > 1 ? 's' : ''}`
-                      : `Showing ${mapRides.length} recent ride${mapRides.length > 1 ? 's' : ''}`}
-                  </Text>
+              {(mapRides.length > 0 || loadingRecentRides) && (
+                <View style={[styles.mapInfo, { backgroundColor: theme.colors.surface }]}>
+                  {loadingRecentRides ? (
+                    <ActivityIndicator size="small" color={BRAND.primary} />
+                  ) : (
+                    <Text numberOfLines={1} style={[styles.mapInfoText, { color: theme.colors.textPrimary }]}>
+                      {activeRides.length > 0
+                        ? `Showing ${activeRides.length} active ride${activeRides.length > 1 ? 's' : ''}`
+                        : `Showing ${mapRides.length} recent ride${mapRides.length > 1 ? 's' : ''}`}
+                    </Text>
+                  )}
                 </View>
               )}
               <View style={[styles.mapOverlay, { backgroundColor: theme.colors.surface }]}>
@@ -760,8 +813,8 @@ export default function DriverHomeScreen() {
           {isOnline && availableRides.length > 0 ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.ridesScroll}>
               {availableRides.map((ride) => (
-                <TouchableOpacity 
-                  key={ride.id} 
+                <TouchableOpacity
+                  key={ride.id}
                   style={[styles.rideCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
                   onPress={() => router.push('/driver/rides')}
                 >
@@ -777,7 +830,17 @@ export default function DriverHomeScreen() {
                    </View>
                 </TouchableOpacity>
               ))}
+              {loadingAvailableRides && (
+                <View style={[styles.rideCard, { justifyContent: 'center', alignItems: 'center' }]}>
+                  <ActivityIndicator size="small" color={BRAND.primary} />
+                </View>
+              )}
             </ScrollView>
+          ) : loadingAvailableRides ? (
+            <View style={[styles.emptyState, { borderColor: theme.colors.border, borderStyle: 'dashed' }]}>
+              <ActivityIndicator size="small" color={BRAND.primary} />
+              <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>Loading rides...</Text>
+            </View>
           ) : (
              <View style={[styles.emptyState, { borderColor: theme.colors.border, borderStyle: 'dashed' }]}>
                <MaterialCommunityIcons name={isOnline ? "rickshaw" : "power-sleep"} size={32} color={theme.colors.textTertiary} />
@@ -890,6 +953,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   scrollView: { flex: 1 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  fixedHeader: { paddingHorizontal: 20, paddingBottom: 24, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, elevation: 4, shadowColor: '#000', shadowOpacity: 0.1, shadowOffset: { width: 0, height: 2 }, zIndex: 10 },
   headerGradient: { paddingHorizontal: 20, paddingBottom: 24, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   greeting: { fontSize: 13, fontWeight: '500' },
@@ -911,7 +975,6 @@ const styles = StyleSheet.create({
   statValue: { fontSize: 18, fontWeight: '700' },
   statLabel: { fontSize: 11 },
   mapSection: { margin: 20, height: 440, borderRadius: 20, overflow: 'hidden', borderWidth: 1, position: 'relative' },
-  map: { flex: 1 },
   mapInfo: {
     position: 'absolute',
     top: 12,

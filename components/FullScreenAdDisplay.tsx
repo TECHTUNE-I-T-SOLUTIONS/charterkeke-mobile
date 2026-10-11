@@ -129,7 +129,7 @@ export function FullScreenAdDisplay({
 
 const styles = StyleSheet.create({
   container: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: '#000',
     zIndex: 1000,
     justifyContent: 'flex-start',

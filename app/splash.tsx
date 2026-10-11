@@ -24,10 +24,10 @@ export default function SplashScreenComponent() {
       }),
     ]).start();
     
-    // Hide splash screen after 2 seconds
+    // Hide splash screen quickly after animation
     const timer = setTimeout(() => {
       SplashScreen.hideAsync();
-    }, 2000);
+    }, 600);
 
     return () => clearTimeout(timer);
   }, []);

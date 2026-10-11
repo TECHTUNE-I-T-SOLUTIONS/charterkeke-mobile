@@ -1,5 +1,5 @@
 import React, { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Dimensions, InteractionManager, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Dimensions, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Svg, { Defs, Mask, Rect } from 'react-native-svg';
 import { BRAND } from '@/utils/colors';
 
@@ -76,7 +76,9 @@ export function GuidedTourProvider({ children }: { children: ReactNode }) {
         });
       });
     });
-    InteractionManager.runAfterInteractions(runMeasure);
+
+    // Use setTimeout instead of deprecated InteractionManager
+    setTimeout(runMeasure, 0);
   }, []);
 
   const registerTarget = useCallback((id: string, ref: View | null) => {

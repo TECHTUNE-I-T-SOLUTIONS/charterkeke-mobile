@@ -445,7 +445,7 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
 
 const styles = StyleSheet.create({
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   container: {
     flex: 1,

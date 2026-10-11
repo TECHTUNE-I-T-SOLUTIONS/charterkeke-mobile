@@ -1,5 +1,3 @@
-// 'use client';
-
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
@@ -2545,7 +2543,7 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   changePhotoOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',

@@ -351,7 +351,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   patternOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(255, 255, 255, 0.02)',
     zIndex: 0,
   },

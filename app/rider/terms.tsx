@@ -10,7 +10,7 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '@/context/ThemeContext';
-import { COLORS } from '@/utils/colors';
+import { BRAND, COLORS } from '@/utils/colors';
 
 export default function TermsScreen() {
   const router = useRouter();
@@ -19,111 +19,121 @@ export default function TermsScreen() {
   const colors = isDark ? COLORS.dark : COLORS.light;
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       {/* Header */}
       <View
         style={[
           styles.header,
-          { borderBottomColor: colors.border },
+          { borderBottomColor: theme.colors.border },
         ]}
       >
-        <TouchableOpacity onPress={() => router.back()}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color={colors.primary} />
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Terms & Conditions</Text>
-        <View style={{ width: 24 }} />
+        <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>Terms & Conditions</Text>
+        <View style={{ width: 40 }} />
       </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 20 }}
+        contentContainerStyle={{ paddingBottom: 40 }}
       >
         <View style={styles.content}>
-          {/* Version */}
-          <Text style={[styles.versionText, { color: colors.textSecondary }]}>
-            Last Updated: February 2026 | Version 1.0.0
+          <Text style={[styles.versionText, { color: theme.colors.textSecondary }]}>
+            Last Updated: February 2026 | Version 2.2.1
           </Text>
 
           {/* Section 1 */}
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>1. Acceptance of Terms</Text>
-            <Text style={[styles.sectionText, { color: colors.textSecondary }]}>
-              By accessing and using the Charter Keke application, you accept and agree to be bound by the terms and provision of this agreement. If you do not agree to abide by the above, please do not use this service.
+            <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>1. Acceptance of Terms</Text>
+            <Text style={[styles.sectionText, { color: theme.colors.textSecondary }]}>
+              By downloading, accessing, or using the Charter Keke mobile application ("Platform"), you agree to be bound by these Terms of Use and Legal Policy. If you do not agree to these terms, please refrain from using our service.
             </Text>
           </View>
 
           {/* Section 2 */}
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>2. Use License</Text>
-            <Text style={[styles.sectionText, { color: colors.textSecondary }]}>
-              Permission is granted to temporarily download one copy of the materials (information or software) on Charter Keke's application for personal, non-commercial transitory viewing only. This is the grant of a license, not a transfer of title, and under this license you may not:
+            <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>2. Cancellation & Delay Fee Policy</Text>
+            <Text style={[styles.sectionText, { color: theme.colors.textSecondary }]}>
+              To maintain reliability and fairness across the network for both riders and drivers, the following fee structure applies:
             </Text>
-            <Text style={[styles.bulletPoint, { color: colors.textSecondary }]}>
-              • Modifying or copying the materials
+            <Text style={[styles.bulletPoint, { color: theme.colors.textSecondary }]}>
+              • <Text style={styles.boldText}>Free Cancellation Window:</Text> Riders may cancel bookings at no cost as long as no driver has accepted the ride. Once a driver accepts the ride, you have a 5-minute free cancellation window from the time of acceptance.
             </Text>
-            <Text style={[styles.bulletPoint, { color: colors.textSecondary }]}>
-              • Using the materials for any commercial purpose or for any public display
+            <Text style={[styles.bulletPoint, { color: theme.colors.textSecondary }]}>
+              • <Text style={styles.boldText}>Rider Cancellation Fee:</Text> A 30% flat cancellation fee of the ride fare applies if a rider cancels a booking after the 5-minute window following driver acceptance.
             </Text>
-            <Text style={[styles.bulletPoint, { color: colors.textSecondary }]}>
-              • Attempting to decompile or reverse engineer any software contained on the application
+            <Text style={[styles.bulletPoint, { color: theme.colors.textSecondary }]}>
+              • <Text style={styles.boldText}>Driver Arrival Window:</Text> Drivers must arrive at the pickup location within 15 minutes of accepting the ride. If a driver fails to arrive within this window without valid communication, you may cancel without any fee and receive a 10% credit back of the ride fare.
+            </Text>
+            <Text style={[styles.bulletPoint, { color: theme.colors.textSecondary }]}>
+              • <Text style={styles.boldText}>Driver Penalty for Lateness:</Text> Drivers who fail to arrive within the 15-minute window after accepting a ride will be penalized by adding 10% to their next remittance (usual 15% + 10% penalty = 25% total remittance).
+            </Text>
+            <Text style={[styles.bulletPoint, { color: theme.colors.textSecondary }]}>
+              • <Text style={styles.boldText}>Driver Location Requirement:</Text> Drivers must keep their location service and data connection compulsorily enabled for the app to track their status and location properly. Failure to do so may result in penalties or account suspension.
             </Text>
           </View>
 
           {/* Section 3 */}
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>3. Disclaimer</Text>
-            <Text style={[styles.sectionText, { color: colors.textSecondary }]}>
-              The materials on Charter Keke's application are provided on an 'as is' basis. Charter Keke makes no warranties, expressed or implied, and hereby disclaims and negates all other warranties including, without limitation, implied warranties or conditions of merchantability, fitness for a particular purpose, or non-infringement of intellectual property or other violation of rights.
+            <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>3. Limitation of Liability & Disclaimers</Text>
+            <Text style={[styles.sectionText, { color: theme.colors.textSecondary }]}>
+              Charter Keke operates as a technology platform connecting riders with independent licensed tricycle ("Keke") drivers. Please note our liabilities:
+            </Text>
+            <Text style={[styles.bulletPoint, { color: theme.colors.textSecondary }]}>
+              • <Text style={styles.boldText}>Independent Contractors:</Text> Drivers are independent operators and not employees of Charter Keke. Charter Keke is not liable for personal misconduct, route decisions, or traffic delays caused by drivers or road conditions.
+            </Text>
+            <Text style={[styles.bulletPoint, { color: theme.colors.textSecondary }]}>
+              • <Text style={styles.boldText}>Lost or Left-Behind Items:</Text> Charter Keke is not responsible or liable for personal belongings left inside vehicles. Passengers are solely responsible for inspecting the vehicle prior to alighting. While our support team assists in contacting drivers to return lost items, a ₦1,000 driver delivery compensation fee applies to returned items.
+            </Text>
+            <Text style={[styles.bulletPoint, { color: theme.colors.textSecondary }]}>
+              • <Text style={styles.boldText}>Third-Party & Indirect Damage:</Text> Charter Keke disclaims all liability for indirect, incidental, consequential, or special damages arising out of or related to trip disruptions, adverse weather conditions, or unexpected vehicle breakdowns.
             </Text>
           </View>
 
           {/* Section 4 */}
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>4. Limitations</Text>
-            <Text style={[styles.sectionText, { color: colors.textSecondary }]}>
-              In no event shall Charter Keke or its suppliers be liable for any damages (including, without limitation, damages for loss of data or profit, or due to business interruption) arising out of the use or inability to use the materials on the Charter Keke application.
+            <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>4. Code of Conduct & Safety Rules</Text>
+            <Text style={[styles.sectionText, { color: theme.colors.textSecondary }]}>
+              All users (riders and drivers) must strictly adhere to the community safety guidelines:
+            </Text>
+            <Text style={[styles.bulletPoint, { color: theme.colors.textSecondary }]}>
+              • Zero tolerance for physical or verbal harassment, discrimination, or abusive language.
+            </Text>
+            <Text style={[styles.bulletPoint, { color: theme.colors.textSecondary }]}>
+              • Smoking, alcohol consumption, or carrying illegal substances inside vehicles is strictly prohibited.
+            </Text>
+            <Text style={[styles.bulletPoint, { color: theme.colors.textSecondary }]}>
+              • Passengers must not exceed vehicle capacity (maximum 3 passengers per Keke).
+            </Text>
+            <Text style={[styles.bulletPoint, { color: theme.colors.textSecondary }]}>
+              • Violation of safety rules results in immediate, permanent account suspension.
             </Text>
           </View>
 
           {/* Section 5 */}
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>5. Accuracy of Materials</Text>
-            <Text style={[styles.sectionText, { color: colors.textSecondary }]}>
-              The materials appearing on Charter Keke's application could include technical, typographical, or photographic errors. Charter Keke does not warrant that any of the materials on the application are accurate, complete, or current. Charter Keke may make changes to the materials contained on the application at any time without notice.
+            <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>5. Payments, Wallets & Refunds</Text>
+            <Text style={[styles.sectionText, { color: theme.colors.textSecondary }]}>
+              All electronic wallet deposits, cash transfers, and ride fares are processed securely. Fare calculations are based on upfront distance and estimated duration. Fare adjustments may occur only if the destination is modified mid-ride or excessive detour occurs upon passenger request. Refund claims for erroneous charges must be reported via Customer Support within 48 hours.
             </Text>
           </View>
 
           {/* Section 6 */}
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>6. Links</Text>
-            <Text style={[styles.sectionText, { color: colors.textSecondary }]}>
-              Charter Keke has not reviewed all of the sites linked to its application and is not responsible for the contents of any such linked site. The inclusion of any link does not imply endorsement by Charter Keke of the site. Use of any such linked website is at the user's own risk.
+            <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>6. Revisions & Governing Law</Text>
+            <Text style={[styles.sectionText, { color: theme.colors.textSecondary }]}>
+              Charter Keke reserves the right to amend these Terms of Use at any time. Continued use of the platform following modifications constitutes acceptance of the revised terms. These terms are governed by and construed in accordance with the laws of the Federal Republic of Nigeria.
             </Text>
           </View>
 
-          {/* Section 7 */}
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>7. Modifications</Text>
-            <Text style={[styles.sectionText, { color: colors.textSecondary }]}>
-              Charter Keke may revise these terms of service for the application at any time without notice. By using the application, you are agreeing to be bound by the then current version of these terms of service.
+          {/* Contact Support */}
+          <View style={[styles.contactSection, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+            <Text style={[styles.contactTitle, { color: theme.colors.textPrimary }]}>Legal or Support Inquiries</Text>
+            <Text style={[styles.contactText, { color: theme.colors.textSecondary }]}>
+              If you have any questions or require legal clarification regarding these terms, please reach out to our team:
             </Text>
-          </View>
-
-          {/* Section 8 */}
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>8. Governing Law</Text>
-            <Text style={[styles.sectionText, { color: colors.textSecondary }]}>
-              These terms and conditions are governed by and construed in accordance with the laws of Nigeria, and you irrevocably submit to the exclusive jurisdiction of the courts located in Nigeria.
-            </Text>
-          </View>
-
-          {/* Contact */}
-          <View style={[styles.contactSection, { backgroundColor: colors.card }]}>
-            <Text style={[styles.contactTitle, { color: colors.text }]}>Questions?</Text>
-            <Text style={[styles.contactText, { color: colors.textSecondary }]}>
-              If you have any questions about these terms, please contact us at:
-            </Text>
-            <Text style={[styles.contactEmail, { color: colors.primary }]}>
+            <Text style={[styles.contactEmail, { color: BRAND.primary }]}>
               support@charterkeke.com
             </Text>
           </View>
@@ -141,59 +151,70 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
     borderBottomWidth: 1,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '700',
   },
   content: {
-    paddingHorizontal: 16,
-    paddingVertical: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
   },
   versionText: {
-    fontSize: 11,
-    marginBottom: 16,
-  },
-  section: {
+    fontSize: 12,
+    fontWeight: '500',
     marginBottom: 20,
   },
+  section: {
+    marginBottom: 22,
+  },
   sectionTitle: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
     marginBottom: 8,
   },
   sectionText: {
-    fontSize: 12,
-    lineHeight: 18,
+    fontSize: 13,
+    lineHeight: 20,
     marginBottom: 8,
   },
   bulletPoint: {
-    fontSize: 12,
-    lineHeight: 18,
-    marginLeft: 8,
-    marginBottom: 4,
+    fontSize: 13,
+    lineHeight: 20,
+    marginLeft: 6,
+    marginBottom: 6,
+  },
+  boldText: {
+    fontWeight: '700',
   },
   contactSection: {
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    marginTop: 20,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 12,
   },
   contactTitle: {
     fontSize: 14,
     fontWeight: '700',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   contactText: {
     fontSize: 12,
-    lineHeight: 16,
-    marginBottom: 8,
+    lineHeight: 18,
+    marginBottom: 6,
   },
   contactEmail: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useMemo } from 'react';
 import {
   View,
@@ -21,7 +20,6 @@ import { useTheme } from '@/context/ThemeContext';
 import ConfirmationDialog from '@/components/ui/ConfirmationDialog';
 import { ProfileSkeleton } from '@/components/ProfileSkeleton';
 import { apiService } from '@/services/api';
-import * as FileSystem from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { cacheService } from '@/services/cache';
 import { STORAGE_KEYS } from '@/utils/constants';
@@ -80,18 +78,11 @@ export default function ProfileScreen() {
       if (!renderedOnce.current) {
         renderedOnce.current = true;
         loadProfileWithCache();
-        // Fetch referral code - extract it correctly
         const fetchReferralCode = async () => {
           try {
             const res = await apiService.getReferralCode();
-            // console.log('[Profile] getReferralCode response:', JSON.stringify(res));
-
-            // Get the code string - must be a string
             const codeStr = (res?.referralCode?.referral_code || res?.referral_code || '');
-            const finalCode = String(codeStr).trim();
-
-            // console.log('[Profile] Extracted code:', finalCode, 'type:', typeof finalCode);
-            setReferralCode(finalCode);
+            setReferralCode(String(codeStr).trim());
           } catch (err) {
             console.error('[Profile] Error fetching referral code:', err);
             setReferralCode('');
@@ -121,8 +112,11 @@ export default function ProfileScreen() {
       setProfileData(nextProfile);
       await cacheService.set(STORAGE_KEYS.RIDER_PROFILE, nextProfile);
       await loadRideStats((nextProfile as any)?.id || (res as any)?.user?.id || '');
-    } catch (error) { console.error(error); }
-    finally { if (showLoader) setLoading(false); }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      if (showLoader) setLoading(false);
+    }
   };
 
   const loadRideStats = async (userId: string) => {
@@ -134,8 +128,12 @@ export default function ProfileScreen() {
       ]);
 
       const rides = (rideHistoryRes as any)?.rides || [];
-      const acceptedRides = rides.filter((ride: any) => ['accepted', 'started', 'in_progress', 'completed'].includes(String(ride.status || '').toLowerCase())).length;
-      const completedRides = rides.filter((ride: any) => String(ride.status || '').toLowerCase() === 'completed').length;
+      const acceptedRides = rides.filter((ride: any) =>
+        ['accepted', 'started', 'in_progress', 'completed'].includes(String(ride.status || '').toLowerCase())
+      ).length;
+      const completedRides = rides.filter(
+        (ride: any) => String(ride.status || '').toLowerCase() === 'completed'
+      ).length;
       const reviews = (reviewsRes as any)?.reviews || (Array.isArray(reviewsRes) ? reviewsRes : []);
       const reviewRatings = reviews
         .map((review: any) => Number(review.rating))
@@ -145,7 +143,9 @@ export default function ProfileScreen() {
         acceptedRides,
         completedRides,
         reviewsGiven: reviews.length,
-        averageRatingGiven: reviewRatings.length ? reviewRatings.reduce((sum: number, rating: number) => sum + rating, 0) / reviewRatings.length : 0,
+        averageRatingGiven: reviewRatings.length
+          ? reviewRatings.reduce((sum: number, rating: number) => sum + rating, 0) / reviewRatings.length
+          : 0,
       });
     } catch (error) {
       console.error('[Profile] Failed to load ride stats:', error);
@@ -171,7 +171,9 @@ export default function ProfileScreen() {
       if (clearCache) await clearCache();
       await logout();
       router.replace('/auth/welcome');
-    } catch (e) { Alert.alert('Error', 'Logout failed'); }
+    } catch (e) {
+      Alert.alert('Error', 'Logout failed');
+    }
   };
 
   const handleDeleteAccount = async () => {
@@ -199,8 +201,8 @@ export default function ProfileScreen() {
   };
 
   const handleReplayTour = async () => {
-    await AsyncStorage.removeItem(getTourStorageKey('rider')).catch(() => { });
-    await AsyncStorage.removeItem('@charter_keke_tour_rider_booking_seen').catch(() => { });
+    await AsyncStorage.removeItem(getTourStorageKey('rider')).catch(() => {});
+    await AsyncStorage.removeItem('@charter_keke_tour_rider_booking_seen').catch(() => {});
     router.push('/rider/booking');
   };
 
@@ -250,7 +252,13 @@ export default function ProfileScreen() {
     }
   };
 
-  if (loading) return <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.background }}><ProfileSkeleton isDark={!isLight} /></SafeAreaView>;
+  if (loading) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.background }}>
+        <ProfileSkeleton isDark={!isLight} />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -258,7 +266,6 @@ export default function ProfileScreen() {
       <SafeAreaView style={{ flex: 1 }}>
         <View style={styles.header}>
           <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>Profile</Text>
-          <View style={{ width: 40 }} />
         </View>
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -266,7 +273,11 @@ export default function ProfileScreen() {
           <View style={styles.profileSection}>
             <View style={styles.avatarContainer}>
               <Image
-                source={{ uri: profileData?.profile_picture_url || `https://ui-avatars.com/api/?name=${profileData?.first_name}&background=FF9101&color=000` }}
+                source={{
+                  uri:
+                    profileData?.profile_picture_url ||
+                    `https://ui-avatars.com/api/?name=${profileData?.first_name || 'Rider'}&background=FF9101&color=000`,
+                }}
                 style={styles.avatar}
               />
               <TouchableOpacity
@@ -275,18 +286,25 @@ export default function ProfileScreen() {
                 disabled={uploadingAvatar}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               >
-                <MaterialCommunityIcons name="pencil" size={14} color="#000" />
+                <MaterialCommunityIcons name="pencil" size={13} color="#000" />
               </TouchableOpacity>
             </View>
             {uploadingAvatar ? (
               <Text style={[styles.uploadingText, { color: theme.colors.textSecondary }]}>Uploading...</Text>
             ) : null}
-            <Text style={[styles.name, { color: theme.colors.textPrimary }]}>{profileData?.first_name} {profileData?.last_name}</Text>
+            <Text style={[styles.name, { color: theme.colors.textPrimary }]}>
+              {profileData?.first_name} {profileData?.last_name}
+            </Text>
             <Text style={[styles.email, { color: theme.colors.textSecondary }]}>{profileData?.email}</Text>
           </View>
 
           {/* Stats */}
-          <View style={[styles.statsContainer, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+          <View
+            style={[
+              styles.statsContainer,
+              { backgroundColor: theme.colors.card, borderColor: theme.colors.border },
+            ]}
+          >
             <View style={styles.stat}>
               <Text style={[styles.statNum, { color: theme.colors.textPrimary }]}>{rideStats.acceptedRides}</Text>
               <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Accepted</Text>
@@ -298,7 +316,9 @@ export default function ProfileScreen() {
             </View>
             <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
             <View style={styles.stat}>
-              <Text style={[styles.statNum, { color: theme.colors.textPrimary }]}>{rideStats.reviewsGiven ? rideStats.averageRatingGiven.toFixed(1) : 'N/A'}</Text>
+              <Text style={[styles.statNum, { color: theme.colors.textPrimary }]}>
+                {rideStats.reviewsGiven ? rideStats.averageRatingGiven.toFixed(1) : 'N/A'}
+              </Text>
               <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Given</Text>
             </View>
             <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
@@ -308,44 +328,25 @@ export default function ProfileScreen() {
             </View>
           </View>
 
-          {/* Menu */}
+          {/* Compact Menu Sections Organized by Importance */}
           <View style={styles.menuContainer}>
-            <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary }]}>ACCOUNT</Text>
-            <MenuItem icon="account-outline" label="Edit Profile" onPress={() => router.push('/rider/edit-profile')} theme={theme} />
-            <MenuItemWithSub icon="account-multiple-plus" label="Referrals" subLabel={referralCode} onPress={() => router.push('/rider/referrals')} theme={theme} />
-            <MenuItem icon="message-outline" label="Messages" onPress={() => router.push('/rider/messages')} theme={theme} />
-            <MenuItem icon="star-outline" label="My Reviews" onPress={() => router.push('/rider/my-reviews')} theme={theme} />
+            {/* HIERARCHY 1: APP PREFERENCES */}
+            <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary }]}>PREFERENCES</Text>
 
-            <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary, marginTop: 24 }]}>PREFERENCES</Text>
-            <View style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+            {/* Dark Mode Theme Toggle */}
+            <View
+              style={[
+                styles.menuItem,
+                { backgroundColor: theme.colors.card, borderColor: theme.colors.border },
+              ]}
+            >
               <View style={styles.menuLeft}>
                 <View style={[styles.iconBox, { backgroundColor: theme.colors.inputBackground }]}>
-                  <MaterialCommunityIcons name="bell-outline" size={20} color={theme.colors.textPrimary} />
-                </View>
-                <Text style={[styles.menuText, { color: theme.colors.textPrimary }]}>Notifications</Text>
-              </View>
-              <Switch
-                value={notifEnabled}
-                onValueChange={setNotifEnabled}
-                trackColor={{ true: BRAND.primary, false: theme.colors.border }}
-                thumbColor="#FFF"
-              />
-            </View>
-            <MenuItem icon="shield-check-outline" label="Privacy & Security" onPress={() => router.push('/rider/privacy-settings')} theme={theme} />
-            <MenuItem
-              icon="delete-outline"
-              label="Delete Account"
-              onPress={() => setShowDeleteAccount(true)}
-              theme={theme}
-              danger
-              loading={deletingAccount}
-            />
-
-            {/* Theme Toggle */}
-            <View style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-              <View style={styles.menuLeft}>
-                <View style={[styles.iconBox, { backgroundColor: theme.colors.inputBackground }]}>
-                  <MaterialCommunityIcons name={isLight ? 'weather-sunny' : 'weather-night'} size={20} color={theme.colors.textPrimary} />
+                  <MaterialCommunityIcons
+                    name={isLight ? 'weather-sunny' : 'weather-night'}
+                    size={18}
+                    color={theme.colors.textPrimary}
+                  />
                 </View>
                 <Text style={[styles.menuText, { color: theme.colors.textPrimary }]}>Dark Mode</Text>
               </View>
@@ -356,9 +357,92 @@ export default function ProfileScreen() {
                 thumbColor="#FFF"
               />
             </View>
-            <MenuItem icon="map-marker-question-outline" label="Take App Tour" onPress={handleReplayTour} theme={theme} />
-            <MenuItem icon="help-circle-outline" label="Help & Support" onPress={() => router.push('/rider/help-and-support')} theme={theme} />
-            <MenuItem icon="information-outline" label="About Charter Keke" onPress={() => router.push('/rider/about')} theme={theme} />
+
+            {/* Notifications Toggle */}
+            <View
+              style={[
+                styles.menuItem,
+                { backgroundColor: theme.colors.card, borderColor: theme.colors.border },
+              ]}
+            >
+              <View style={styles.menuLeft}>
+                <View style={[styles.iconBox, { backgroundColor: theme.colors.inputBackground }]}>
+                  <MaterialCommunityIcons name="bell-outline" size={18} color={theme.colors.textPrimary} />
+                </View>
+                <Text style={[styles.menuText, { color: theme.colors.textPrimary }]}>Notifications</Text>
+              </View>
+              <Switch
+                value={notifEnabled}
+                onValueChange={setNotifEnabled}
+                trackColor={{ true: BRAND.primary, false: theme.colors.border }}
+                thumbColor="#FFF"
+              />
+            </View>
+
+            {/* HIERARCHY 2: ACCOUNT & PERSONAL DETAILS */}
+            <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary, marginTop: 18 }]}>
+              ACCOUNT & DETAILS
+            </Text>
+            <MenuItem
+              icon="account-outline"
+              label="Edit Profile"
+              onPress={() => router.push('/rider/edit-profile')}
+              theme={theme}
+            />
+            <MenuItemWithSub
+              icon="account-multiple-plus"
+              label="Referrals"
+              subLabel={referralCode}
+              onPress={() => router.push('/rider/referrals')}
+              theme={theme}
+            />
+            <MenuItem
+              icon="message-outline"
+              label="Messages"
+              onPress={() => router.push('/rider/messages')}
+              theme={theme}
+            />
+            <MenuItem
+              icon="star-outline"
+              label="My Reviews"
+              onPress={() => router.push('/rider/my-reviews')}
+              theme={theme}
+            />
+
+            {/* HIERARCHY 3: SAFETY, LEGAL & SUPPORT */}
+            <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary, marginTop: 18 }]}>
+              SAFETY, LEGAL & SUPPORT
+            </Text>
+            <MenuItem
+              icon="shield-check-outline"
+              label="Privacy & Security"
+              onPress={() => router.push('/rider/privacy-settings')}
+              theme={theme}
+            />
+            <MenuItem
+              icon="file-document-outline"
+              label="Terms of Use"
+              onPress={() => router.push('/rider/terms')}
+              theme={theme}
+            />
+            <MenuItem
+              icon="help-circle-outline"
+              label="FAQ"
+              onPress={() => router.push('/rider/faq')}
+              theme={theme}
+            />
+            <MenuItem
+              icon="information-outline"
+              label="About Charter Keke"
+              onPress={() => router.push('/rider/about')}
+              theme={theme}
+            />
+            <MenuItem
+              icon="map-marker-question-outline"
+              label="Take App Tour"
+              onPress={handleReplayTour}
+              theme={theme}
+            />
             <MenuItem
               icon="cloud-download-outline"
               label="Check for Updates"
@@ -367,11 +451,31 @@ export default function ProfileScreen() {
               loading={isChecking}
             />
 
-            <TouchableOpacity style={[styles.logoutBtn, { borderColor: COLORS.light.destructive }]} onPress={() => setShowLogout(true)}>
-              <MaterialCommunityIcons name="logout" size={20} color={COLORS.light.destructive} />
-              <Text style={{ color: COLORS.light.destructive, fontWeight: '600' }}>Log Out</Text>
+            {/* HIERARCHY 4: ACCOUNT MANAGEMENT */}
+            <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary, marginTop: 18 }]}>
+              ACCOUNT MANAGEMENT
+            </Text>
+            <TouchableOpacity
+              style={[styles.logoutBtn, { borderColor: COLORS.light.destructive }]}
+              onPress={() => setShowLogout(true)}
+              activeOpacity={0.8}
+            >
+              <MaterialCommunityIcons name="logout" size={18} color={COLORS.light.destructive} />
+              <Text style={{ color: COLORS.light.destructive, fontWeight: '700', fontSize: 13 }}>Log Out</Text>
             </TouchableOpacity>
-            <Text style={[styles.versionText, { color: theme.colors.textSecondary }]}>{getAppVersionLabel()}</Text>
+
+            <MenuItem
+              icon="delete-outline"
+              label="Delete Account"
+              onPress={() => setShowDeleteAccount(true)}
+              theme={theme}
+              danger
+              loading={deletingAccount}
+            />
+
+            <Text style={[styles.versionText, { color: theme.colors.textSecondary }]}>
+              {getAppVersionLabel()}
+            </Text>
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -417,75 +521,125 @@ export default function ProfileScreen() {
 }
 
 const MenuItem = ({ icon, label, onPress, theme, loading, danger }: any) => (
-  <TouchableOpacity onPress={onPress} disabled={loading} style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+  <TouchableOpacity
+    onPress={onPress}
+    disabled={loading}
+    activeOpacity={0.7}
+    style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
+  >
     <View style={styles.menuLeft}>
       <View style={[styles.iconBox, { backgroundColor: theme.colors.inputBackground }]}>
         {loading ? (
           <ActivityIndicator size="small" color={danger ? COLORS.light.destructive : theme.colors.textPrimary} />
         ) : (
-          <MaterialCommunityIcons name={icon} size={20} color={danger ? COLORS.light.destructive : theme.colors.textPrimary} />
+          <MaterialCommunityIcons
+            name={icon}
+            size={18}
+            color={danger ? COLORS.light.destructive : theme.colors.textPrimary}
+          />
         )}
       </View>
-      <Text style={[styles.menuText, { color: danger ? COLORS.light.destructive : theme.colors.textPrimary }]}>{label}</Text>
+      <Text style={[styles.menuText, { color: danger ? COLORS.light.destructive : theme.colors.textPrimary }]}>
+        {label}
+      </Text>
     </View>
-    <MaterialCommunityIcons name="chevron-right" size={20} color={danger ? COLORS.light.destructive : theme.colors.textSecondary} />
+    <MaterialCommunityIcons
+      name="chevron-right"
+      size={18}
+      color={danger ? COLORS.light.destructive : theme.colors.textSecondary}
+    />
   </TouchableOpacity>
 );
 
 const MenuItemWithSub = ({ icon, label, subLabel, onPress, theme }: any) => {
-  // Ensure subLabel is definitely a string, never an object
   const safeLabel = typeof subLabel === 'string' && subLabel.length > 0 ? subLabel : '';
 
   return (
-    <TouchableOpacity onPress={onPress} style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.7}
+      style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
+    >
       <View style={styles.menuLeft}>
         <View style={[styles.iconBox, { backgroundColor: theme.colors.inputBackground }]}>
-          <MaterialCommunityIcons name={icon} size={20} color={theme.colors.textPrimary} />
+          <MaterialCommunityIcons name={icon} size={18} color={theme.colors.textPrimary} />
         </View>
         <View>
           <Text style={[styles.menuText, { color: theme.colors.textPrimary }]}>{label}</Text>
           {safeLabel ? (
-            <Text style={{ color: theme.colors.textSecondary, fontSize: 12 }}>{safeLabel}</Text>
+            <Text style={{ color: theme.colors.textSecondary, fontSize: 11, marginTop: 1 }}>{safeLabel}</Text>
           ) : null}
         </View>
       </View>
-      <MaterialCommunityIcons name="chevron-right" size={20} color={theme.colors.textSecondary} />
+      <MaterialCommunityIcons name="chevron-right" size={18} color={theme.colors.textSecondary} />
     </TouchableOpacity>
   );
 };
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 10 },
-  backBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
-  headerTitle: { fontSize: 18, fontWeight: '700' },
-  content: { paddingBottom: 80 },
-  profileSection: { alignItems: 'center', marginTop: 10, marginBottom: 24 },
-  detailsCard: { marginHorizontal: 16, borderWidth: 1, borderRadius: 16, padding: 16, marginBottom: 20 },
-  avatarContainer: { position: 'relative', marginBottom: 16 },
-  avatar: { width: 100, height: 100, borderRadius: 50, borderWidth: 4, borderColor: BRAND.primary },
-  editBadge: { position: 'absolute', bottom: 0, right: 0, backgroundColor: BRAND.primary, width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#FFF' },
-  uploadingText: { fontSize: 12, marginTop: -8, marginBottom: 8, fontWeight: '500' },
-  name: { fontSize: 22, fontWeight: '800', marginBottom: 4 },
-  email: { fontSize: 14 },
-  statsContainer: { flexDirection: 'row', marginHorizontal: 20, borderRadius: 16, padding: 16, borderWidth: 1, marginBottom: 24 },
+  header: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
+  headerTitle: { fontSize: 22, fontWeight: '800' },
+  content: { paddingBottom: 60 },
+  profileSection: { alignItems: 'center', marginTop: 6, marginBottom: 16 },
+  avatarContainer: { position: 'relative', marginBottom: 10 },
+  avatar: { width: 88, height: 88, borderRadius: 44, borderWidth: 3, borderColor: BRAND.primary },
+  editBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: BRAND.primary,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFF',
+  },
+  uploadingText: { fontSize: 11, marginTop: -4, marginBottom: 4, fontWeight: '500' },
+  name: { fontSize: 20, fontWeight: '800', marginBottom: 2 },
+  email: { fontSize: 13 },
+  statsContainer: {
+    flexDirection: 'row',
+    marginHorizontal: 20,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    marginBottom: 18,
+  },
   stat: { flex: 1, alignItems: 'center' },
-  statNum: { fontSize: 18, fontWeight: '700', marginBottom: 4 },
-  statLabel: { fontSize: 12 },
+  statNum: { fontSize: 16, fontWeight: '700', marginBottom: 2 },
+  statLabel: { fontSize: 11 },
   divider: { width: 1, height: '100%' },
   menuContainer: { paddingHorizontal: 20 },
-  sectionLabel: { fontSize: 12, fontWeight: '700', marginBottom: 8, marginLeft: 4 },
-  menuItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderRadius: 12, marginBottom: 8, borderWidth: 1 },
-  menuLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  iconBox: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
-  menuText: { fontSize: 14, fontWeight: '600' },
-  logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, borderRadius: 12, borderWidth: 1, marginTop: 20, gap: 8 },
-  versionText: { textAlign: 'center', fontSize: 12, fontWeight: '700', marginTop: 18, marginBottom: 8 },
+  sectionLabel: { fontSize: 11, fontWeight: '800', marginBottom: 6, marginLeft: 2, letterSpacing: 0.5 },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    marginBottom: 6,
+    borderWidth: 1,
+  },
+  menuLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  iconBox: { width: 32, height: 32, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+  menuText: { fontSize: 13, fontWeight: '600' },
+  logoutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 6,
+    gap: 8,
+  },
+  versionText: { textAlign: 'center', fontSize: 11, fontWeight: '600', marginTop: 14, marginBottom: 8 },
 });
-
-const DetailRow = ({ label, value }: { label: string; value: string }) => (
-  <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.05)' }}>
-    <Text style={{ fontSize: 13, fontWeight: '600', color: '#666' }}>{label}</Text>
-    <Text style={{ fontSize: 13, fontWeight: '700', color: '#111', flexShrink: 1, textAlign: 'right' }}>{value}</Text>
-  </View>
-);

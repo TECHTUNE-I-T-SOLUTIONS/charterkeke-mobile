@@ -43,15 +43,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const current = authService.getCurrentUser();
           setUser(current);
           setUserRole(((current as any)?.role || null) as UserRole | null);
-          // Ensure push subscription is active on app start
-          try {
-            if (current && current.id) {
-              await subscribeToPushNotifications(current.id as string);
-              await flushPendingPushSubscription(current.id as string);
-              console.log('🔔 [AUTH-CONTEXT] Push subscription ensured on app init');
-            }
-          } catch (err) {
-            console.error('❌ [AUTH-CONTEXT] Failed to ensure push subscription on init:', err);
+          // Ensure push subscription non-blockingly in the background
+          if (current && current.id) {
+            subscribeToPushNotifications(current.id as string)
+              .then(() => flushPendingPushSubscription(current.id as string))
+              .catch((err) => console.error('❌ [AUTH-CONTEXT] Non-blocking push error:', err));
           }
           // Start sync service
           syncService.startAutoSync();

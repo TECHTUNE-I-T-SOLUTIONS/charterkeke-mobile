@@ -4,7 +4,7 @@ import { BRAND } from '@/utils/colors';
 const bookingStyles = StyleSheet.create({
   container: { flex: 1 },
   map: { flex: 1 },
-  searchExpandedBackground: { ...StyleSheet.absoluteFillObject },
+  searchExpandedBackground: { ...StyleSheet.absoluteFill },
   header: {
     position: 'absolute',
     left: 20,

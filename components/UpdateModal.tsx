@@ -303,7 +303,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
 
 const styles = StyleSheet.create({
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   container: {
     flex: 1,

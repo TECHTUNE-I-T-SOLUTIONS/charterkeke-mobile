@@ -267,71 +267,79 @@ export const MapboxMap = React.forwardRef<any, MapboxMapProps>(
     };
 
     if (!canUseNativeMapbox && canUseFallbackMap) {
-      const FallbackMapView = ReactNativeMaps.default;
-      const FallbackPolyline = ReactNativeMaps.Polyline;
-      const FallbackUrlTile = ReactNativeMaps.UrlTile;
+      // react-native-maps also requires native code and won't work in Expo Go
+      // Only use it in non-Expo Go environments
+      if (!isExpoGo) {
+        const FallbackMapView = ReactNativeMaps.default;
+        const FallbackPolyline = ReactNativeMaps.Polyline;
+        const FallbackUrlTile = ReactNativeMaps.UrlTile;
 
-      return (
-        <View style={[styles.container, style]}>
-          <FallbackMapView
-            ref={ref}
-            style={styles.map}
-            provider={undefined} // PROVIDER_DEFAULT — uses native maps but we overlay OSM tiles
-            {...(autoCenter
-              ? { region: fallbackRegion }          // controlled: pans to selected location
-              : { initialRegion: fallbackRegion }   // uncontrolled: user pans freely
-            )}
-            showsUserLocation={showUserLocation}
-            showsCompass={showCompass}
-            showsScale={showScaleBar}
-            showsPointsOfInterest={false}
-            showsBuildings={false}
-            mapType="none" // Hide the base layer so our OSM tiles are the only visible map
-            onRegionChangeComplete={(region: any) => onRegionChange?.(region)}
-            onPress={(event: any) => {
-              const coordinate = event?.nativeEvent?.coordinate;
-              if (!coordinate) return;
-              onPressCoordinate?.({
-                latitude: Number(coordinate.latitude),
-                longitude: Number(coordinate.longitude),
-              });
-            }}
-            onTouchStart={onTouchStart}
-            onTouchEnd={onTouchEnd}
-          >
-            {/* Mapbox raster tile layer – uses existing token, OSM-powered, theme-aware */}
-            {FallbackUrlTile ? (() => {
-              const mbToken = process.env.EXPO_PUBLIC_MAPBOX_PUBLIC_TOKEN || '';
-              const styleId = isLight ? 'mapbox/streets-v12' : 'mapbox/dark-v11';
-              const tileUrl = `https://api.mapbox.com/styles/v1/${styleId}/tiles/256/{z}/{x}/{y}@2x?access_token=${mbToken}`;
-              return (
-                <FallbackUrlTile
-                  urlTemplate={tileUrl}
-                  maximumZ={19}
-                  flipY={false}
-                  zIndex={-1}
+        return (
+          <View style={[styles.container, style]}>
+            <FallbackMapView
+              ref={ref}
+              style={styles.map}
+              provider={undefined} // PROVIDER_DEFAULT — uses native maps but we overlay OSM tiles
+              {...(autoCenter
+                ? { region: fallbackRegion }          // controlled: pans to selected location
+                : { initialRegion: fallbackRegion }   // uncontrolled: user pans freely
+              )}
+              showsUserLocation={showUserLocation}
+              showsCompass={showCompass}
+              showsScale={showScaleBar}
+              showsPointsOfInterest={false}
+              showsBuildings={false}
+              mapType="none" // Hide the base layer so our OSM tiles are the only visible map
+              onRegionChangeComplete={(region: any) => onRegionChange?.(region)}
+              onPress={(event: any) => {
+                const coordinate = event?.nativeEvent?.coordinate;
+                if (!coordinate) return;
+                onPressCoordinate?.({
+                  latitude: Number(coordinate.latitude),
+                  longitude: Number(coordinate.longitude),
+                });
+              }}
+              onTouchStart={onTouchStart}
+              onTouchEnd={onTouchEnd}
+            >
+              {/* Mapbox raster tile layer – uses existing token, OSM-powered, theme-aware */}
+              {FallbackUrlTile ? (() => {
+                const mbToken = process.env.EXPO_PUBLIC_MAPBOX_PUBLIC_TOKEN || '';
+                const styleId = isLight ? 'mapbox/streets-v12' : 'mapbox/dark-v11';
+                const tileUrl = `https://api.mapbox.com/styles/v1/${styleId}/tiles/256/{z}/{x}/{y}@2x?access_token=${mbToken}`;
+                return (
+                  <FallbackUrlTile
+                    urlTemplate={tileUrl}
+                    maximumZ={19}
+                    flipY={false}
+                    zIndex={-1}
+                  />
+                );
+              })() : null}
+              {fallbackRouteCoordinates.length >= 2 && FallbackPolyline ? (
+                <FallbackPolyline
+                  coordinates={fallbackRouteCoordinates}
+                  strokeColor={routeColor}
+                  strokeWidth={routeWidth}
                 />
-              );
-            })() : null}
-            {fallbackRouteCoordinates.length >= 2 && FallbackPolyline ? (
-              <FallbackPolyline
-                coordinates={fallbackRouteCoordinates}
-                strokeColor={routeColor}
-                strokeWidth={routeWidth}
-              />
-            ) : null}
-            {children}
-          </FallbackMapView>
-        </View>
-      );
+              ) : null}
+              {children}
+            </FallbackMapView>
+          </View>
+        );
+      }
+      // In Expo Go, fall through to placeholder below
     }
 
     if (!canUseNativeMapbox) {
       return (
-        <View style={[styles.container, style, { justifyContent: 'center', alignItems: 'center' }]}>
-          <View style={{ padding: 12 }}>
-            <Text style={{ color: isLight ? '#111' : '#fff' }}>
-              {isExpoGo ? 'Map unavailable in Expo Go. Please use a development build.' : 'Map unavailable in this build.'}
+        <View style={[styles.container, style, { justifyContent: 'center', alignItems: 'center', backgroundColor: isLight ? '#f5f5f5' : '#1a1a1a' }]}>
+          <View style={{ padding: 20, alignItems: 'center' }}>
+            <Text style={{ color: isLight ? '#111' : '#fff', fontSize: 16, fontWeight: '600', textAlign: 'center' }}>
+              {isExpoGo ? 'Map requires development build' : 'Map unavailable'}
+            </Text>
+            <Text style={{ color: isLight ? '#666' : '#999', marginTop: 8, fontSize: 13, textAlign: 'center' }}>
+              {isExpoGo ? 'Maps work in development builds or production builds.' : 'Please check your build configuration.'}
             </Text>
           </View>
           {children}
@@ -463,5 +471,11 @@ const styles = StyleSheet.create({
     borderColor: '#fff',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  placeholderText: {
+    textAlign: 'center',
+    marginTop: 100,
+    fontSize: 16,
+    color: '#666',
   },
 });

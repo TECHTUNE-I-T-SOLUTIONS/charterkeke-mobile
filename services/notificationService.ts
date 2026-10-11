@@ -1,11 +1,25 @@
-import * as Notifications from 'expo-notifications';
-import * as TaskManager from 'expo-task-manager';
 import { Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { apiService } from '@services/api';
 import { navigate } from '@services/navigationService';
 import { WidgetStorage, WIDGET_STORAGE_KEYS } from '@services/widgetStorage';
+
+// Check if running in Expo Go before importing notification modules
+const IS_EXPO_GO = Constants.appOwnership === 'expo';
+
+// Conditional imports to avoid Expo Go crash
+let Notifications: any = null;
+let TaskManager: any = null;
+
+if (!IS_EXPO_GO) {
+  try {
+    Notifications = require('expo-notifications');
+    TaskManager = require('expo-task-manager');
+  } catch (error) {
+    console.warn('⚠️ [NOTIFICATIONS] Failed to import notification modules:', error);
+  }
+}
 
 const IS_DEV = process.env.EXPO_PUBLIC_DEVELOPMENT_MODE === 'true';
 const PENDING_PUSH_KEY = 'pending_push_subscription';
@@ -78,6 +92,12 @@ export const channelIdForType = (type?: string): string => {
  * Create all Android notification channels. Safe to call repeatedly (idempotent).
  */
 export const setupAndroidChannels = async () => {
+  // Skip in Expo Go as push notifications are not supported
+  if (IS_EXPO_GO || !Notifications) {
+    console.log('⚠️ [NOTIFICATIONS] Skipping Android channels (Expo Go or Notifications unavailable)');
+    return;
+  }
+
   if (Platform.OS !== 'android') return;
   try {
     await Notifications.setNotificationChannelAsync(ANDROID_CHANNELS.default, {
@@ -281,6 +301,12 @@ export const resolveNotificationRoute = (data: any, userRole?: 'driver' | 'rider
  * Configure notification behavior and handlers
  */
 export const configureNotifications = async () => {
+  // Skip in Expo Go
+  if (IS_EXPO_GO || !Notifications) {
+    console.log('⚠️ [NOTIFICATIONS] Skipping notification configuration (Expo Go or Notifications unavailable)');
+    return;
+  }
+
   try {
     // Android channels MUST exist before any notification is shown (API 26+).
     await setupAndroidChannels();
@@ -333,7 +359,7 @@ export const configureNotifications = async () => {
     await requestNotificationPermissions();
 
     // Handle notification when app is in foreground
-    Notifications.addNotificationReceivedListener((notification) => {
+    Notifications.addNotificationReceivedListener((notification: any) => {
       console.log('📬 [NOTIFICATIONS] Received while app open:', notification.request.content.title);
       // Increment unread count when notification is received
       if (onIncrementUnread) {
@@ -343,7 +369,7 @@ export const configureNotifications = async () => {
     });
 
     // Handle notification when user taps it
-    Notifications.addNotificationResponseReceivedListener((response) => {
+    Notifications.addNotificationResponseReceivedListener((response: any) => {
       console.log('👆 [NOTIFICATIONS] User tapped notification:', response.notification.request.content.title);
       handleNotificationResponse(response);
     });
@@ -359,10 +385,16 @@ export const configureNotifications = async () => {
  * Handles Firebase FCM errors gracefully by separating permission request from token retrieval
  */
 export const requestNotificationPermissions = async () => {
+  // Skip in Expo Go
+  if (IS_EXPO_GO || !Notifications) {
+    console.log('⚠️ [NOTIFICATIONS] Skipping permission request (Expo Go or Notifications unavailable)');
+    return null;
+  }
+
   try {
     devLog('Requesting notification permissions...');
     console.log('🔔 [NOTIFICATIONS] Requesting permissions...');
-    
+
     // Step 1: Check and request permissions (independent of token retrieval)
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
@@ -391,7 +423,7 @@ export const requestNotificationPermissions = async () => {
         projectId ? { projectId } : undefined
       )).data;
       devLog('Got push token:', tokenValue.slice(0, 30) + '...');
-      
+
       console.log('✅ [NOTIFICATIONS] Push token obtained:', tokenValue.slice(0, 20) + '...');
       return tokenValue;
     } catch (tokenError: any) {
@@ -400,13 +432,13 @@ export const requestNotificationPermissions = async () => {
       const errorCode = tokenError?.code || '';
 
       // Check for MISSING_INSTANCEID_SERVICE error (Firebase not initialized on device)
-      if (errorMessage.includes('MISSING_INSTANCEID_SERVICE') || 
+      if (errorMessage.includes('MISSING_INSTANCEID_SERVICE') ||
           errorMessage.includes('java.io.IOException')) {
         console.warn('⚠️ [NOTIFICATIONS] Firebase/Google Play Services unavailable on this device');
         console.warn('📱 This is normal on emulators without Google Play Services installed');
         console.log('💡 [NOTIFICATIONS] On real devices, ensure Google Play Services is installed');
         devLog('Firebase unavailable, permissions still granted');
-        
+
         return `placeholder_${Date.now()}_${Platform.OS}`;
       }
 
@@ -414,19 +446,19 @@ export const requestNotificationPermissions = async () => {
       console.warn('⚠️ [NOTIFICATIONS] Could not obtain push token:', errorMessage);
       console.warn('💡 [NOTIFICATIONS] Will retry token retrieval later');
       devLog('Token retrieval failed, using placeholder');
-      
+
       return `placeholder_${Date.now()}_${Platform.OS}`;
     }
   } catch (error: any) {
     const errorMessage = error?.message || String(error);
     console.error('❌ [NOTIFICATIONS] Error requesting permissions:', error);
-    
+
     // Don't fail completely - permission might still be granted
     if (errorMessage.includes('MISSING_INSTANCEID_SERVICE')) {
       console.warn('⚠️ [NOTIFICATIONS] Permissions granted but token unavailable (Firebase issue)');
       return `placeholder_${Date.now()}_${Platform.OS}`;
     }
-    
+
     devLog('Permission request error:', error);
     return null;
   }
@@ -464,9 +496,16 @@ export const markWelcomeNotificationSeen = async (seen: boolean = true) => {
  * Send welcome notification on first app launch
  */
 export const sendWelcomeNotification = async () => {
+  // Skip in Expo Go
+  if (IS_EXPO_GO || !Notifications) {
+    console.log('⚠️ [NOTIFICATIONS] Skipping welcome notification (Expo Go or Notifications unavailable)');
+    await markWelcomeNotificationSeen();
+    return;
+  }
+
   try {
     console.log('🎉 [NOTIFICATIONS] Sending welcome notification...');
-    
+
     // Send the welcome notification
     await Notifications.scheduleNotificationAsync({
       content: {
@@ -489,7 +528,7 @@ export const sendWelcomeNotification = async () => {
     });
 
     await markWelcomeNotificationSeen();
-    
+
     console.log('✅ [NOTIFICATIONS] Welcome notification sent');
   } catch (error) {
     console.error('❌ [NOTIFICATIONS] Error sending welcome notification:', error);
@@ -600,8 +639,13 @@ export const subscribeToPushNotifications = async (userId: string) => {
  * Retries up to 5 times with exponential backoff
  */
 const scheduleTokenRetry = async (userId: string, attempt: number = 1) => {
+  // Skip in Expo Go
+  if (IS_EXPO_GO || !Notifications) {
+    return;
+  }
+
   const MAX_RETRIES = 5;
-  
+
   if (attempt > MAX_RETRIES) {
     console.warn('⚠️ [NOTIFICATIONS] Max retry attempts reached for push token');
     return;
@@ -609,7 +653,7 @@ const scheduleTokenRetry = async (userId: string, attempt: number = 1) => {
 
   // Exponential backoff: 10s, 20s, 40s, 80s, 160s
   const delaySeconds = Math.min(10 * Math.pow(2, attempt - 1), 300);
-  
+
   setTimeout(async () => {
     try {
       console.log(`🔄 [NOTIFICATIONS] Retry attempt ${attempt}/${MAX_RETRIES} to get real push token`);
@@ -619,7 +663,7 @@ const scheduleTokenRetry = async (userId: string, attempt: number = 1) => {
 
       if (realToken?.data && !realToken.data.startsWith('placeholder')) {
         console.log('✅ [NOTIFICATIONS] Successfully obtained real push token on retry');
-        
+
         // Update local storage with real token
         const subscriptionStr = await AsyncStorage.getItem('pushSubscription');
         if (subscriptionStr) {
@@ -645,7 +689,7 @@ const scheduleTokenRetry = async (userId: string, attempt: number = 1) => {
         } catch (err) {
           console.error('❌ [NOTIFICATIONS] Failed to sync real token to backend:', err);
         }
-        
+
         return; // Success, no more retries needed
       }
     } catch (error: any) {
@@ -655,7 +699,7 @@ const scheduleTokenRetry = async (userId: string, attempt: number = 1) => {
       } else {
         console.error(`❌ [NOTIFICATIONS] Retry attempt ${attempt} failed:`, error);
       }
-      
+
       // Schedule next retry
       if (attempt < MAX_RETRIES) {
         scheduleTokenRetry(userId, attempt + 1);
@@ -667,7 +711,7 @@ const scheduleTokenRetry = async (userId: string, attempt: number = 1) => {
 /**
  * Handle notification action (accept ride, decline, etc)
  */
-const handleNotificationResponse = async (response: Notifications.NotificationResponse) => {
+const handleNotificationResponse = async (response: any) => {
     const { notification } = response;
     const data = notification.request.content.data;
     const actionId = response.actionIdentifier;
@@ -780,6 +824,12 @@ export const sendLocalNotification = async (
   message: string,
   data?: Record<string, any>
 ) => {
+  // Skip in Expo Go
+  if (IS_EXPO_GO || !Notifications) {
+    console.log('⚠️ [NOTIFICATIONS] Skipping local notification (Expo Go or Notifications unavailable)');
+    return;
+  }
+
   try {
     await Notifications.scheduleNotificationAsync({
       content: {
@@ -850,6 +900,11 @@ export const clearPushSubscription = async () => {
  * Manually retry getting push token (useful for settings screen or after device returns online)
  */
 export const manuallyRetryPushToken = async (userId: string) => {
+  // Skip in Expo Go
+  if (IS_EXPO_GO || !Notifications) {
+    return { success: false, message: 'Push notifications not available in Expo Go' };
+  }
+
   try {
     console.log('🔄 [NOTIFICATIONS] Manual push token retry initiated');
 
@@ -900,14 +955,14 @@ export const manuallyRetryPushToken = async (userId: string) => {
   } catch (error: any) {
     const errorMessage = error?.message || String(error);
     console.error('❌ [NOTIFICATIONS] Manual retry failed:', error);
-    
+
     if (errorMessage.includes('MISSING_INSTANCEID_SERVICE')) {
-      return { 
-        success: false, 
-        message: 'Google Play Services not available on this device. Manual token unavailable.' 
+      return {
+        success: false,
+        message: 'Google Play Services not available on this device. Manual token unavailable.'
       };
     }
-    
+
     return { success: false, message: errorMessage };
   }
 };
@@ -950,7 +1005,13 @@ export const flushPendingPushSubscription = async (userId: string) => {
 const NOTIFICATION_BACKGROUND_TASK = 'NOTIFICATION_BACKGROUND_TASK';
 
 export const registerBackgroundNotificationTask = () => {
-  TaskManager.defineTask(NOTIFICATION_BACKGROUND_TASK, async ({ data, error }) => {
+  // Skip in Expo Go
+  if (IS_EXPO_GO || !TaskManager || !Notifications) {
+    console.log('⚠️ [NOTIFICATIONS] Skipping background task registration (Expo Go or TaskManager unavailable)');
+    return;
+  }
+
+  TaskManager.defineTask(NOTIFICATION_BACKGROUND_TASK, async ({ data, error }: any) => {
     if (error) {
       console.error('❌ [NOTIFICATIONS] Background task error:', error);
       return;
@@ -958,7 +1019,7 @@ export const registerBackgroundNotificationTask = () => {
 
     console.log('📬 [NOTIFICATIONS] Background notification received');
     handleNotificationResponse({
-      notification: data as Notifications.Notification,
+      notification: data as any,
       actionName: 'default',
     } as any);
   });

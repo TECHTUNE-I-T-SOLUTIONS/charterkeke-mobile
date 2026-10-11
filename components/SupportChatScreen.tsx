@@ -90,6 +90,8 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
   const messageListRef = useRef<FlatList<SupportMessage> | null>(null);
   const inFlightMessageRef = useRef<Set<string>>(new Set());
   const sentMessageGuardRef = useRef<Map<string, number>>(new Map());
+  const lastUserSentTimestampRef = useRef<number | null>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ticketDrawerVisible = false;
   const setTicketDrawerVisible = (..._args: any[]) => undefined;
 
@@ -155,8 +157,18 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
       setActiveTicket(response.ticket);
       setIsCreatingNewTicket(false);
       mergeMessages(response.messages || []);
-      if ((response.messages || []).some((item) => item.sender_id !== myId && item.users?.id !== myId)) {
-        setSupportTyping(false);
+
+      if (lastUserSentTimestampRef.current) {
+        const hasNewReply = (response.messages || []).some((item) => {
+          const isOther = item.sender_id !== myId && item.users?.id !== myId && item.sender_type !== 'user';
+          const messageTime = new Date(item.created_at).getTime();
+          return isOther && messageTime >= (lastUserSentTimestampRef.current || 0) - 2000;
+        });
+        if (hasNewReply) {
+          setSupportTyping(false);
+          lastUserSentTimestampRef.current = null;
+          if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+        }
       }
     } finally {
       if (!silent) setLoading(false);
@@ -351,7 +363,12 @@ export default function SupportChatScreen({ category }: SupportChatScreenProps) 
       setText('');
       setAttachment(null);
     }
+    lastUserSentTimestampRef.current = Date.now();
     setSupportTyping(true);
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      setSupportTyping(false);
+    }, 30000);
 
     try {
       setSending(true);

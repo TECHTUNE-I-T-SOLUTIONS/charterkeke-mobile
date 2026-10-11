@@ -25,6 +25,7 @@ import { useAuth } from '@/context/AuthContext';
 import { BRAND, COLORS } from '@/utils/colors';
 import { locationService } from '@/services/location';
 import { geocodeMapboxLocations } from '@/utils/mapboxGeocoding';
+import Toast from '@/components/ui/Toast';
 import {
   searchGoogleAutocomplete,
   getGooglePlaceDetails,
@@ -111,6 +112,13 @@ export default function BookingScreen() {
   const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
   const [pickerMode, setPickerMode] = useState<'date' | 'time'>('date');
   const [discountedFare, setDiscountedFare] = useState<number | null>(null);
+
+  // Toast state
+  const [toast, setToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error' | 'info' | 'warning' }>({
+    visible: false,
+    message: '',
+    type: 'info'
+  });
 
   // Feature states
   const [weather, setWeather] = useState<WeatherData | null>(null);
@@ -245,7 +253,8 @@ export default function BookingScreen() {
         setCashbackRewards((cashbackResponse as any).availableRewards);
       }
 
-      // Don't auto-trigger current location - only when user clicks the button
+      // Auto-load current location for better UX
+      await prewarmCurrentLocation();
     } catch (error) {
       console.error('Error loading initial data:', error);
     }
@@ -696,7 +705,9 @@ export default function BookingScreen() {
   };
 
   const handleTimeSelect = async (time: string | null) => {
-    setPickupTime(time);
+    // If time is null (Book Now), set it to current time + 2 minutes buffer
+    const pickupTimeValue = time || new Date(Date.now() + 2 * 60 * 1000).toISOString();
+    setPickupTime(pickupTimeValue);
     setShowTimePicker(false);
 
     // Ensure fare is calculated before showing review
@@ -743,10 +754,16 @@ export default function BookingScreen() {
           params: { rideId },
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error booking ride:', error);
-      setErrorMessage('Failed to book ride. Please try again.');
+      const errorMessage = error.message || 'Failed to book ride. Please try again.';
+      setErrorMessage(errorMessage);
       setShowErrorDialog(true);
+      setToast({
+        visible: true,
+        message: errorMessage,
+        type: 'error'
+      });
     } finally {
       setIsLoading(false);
     }
@@ -978,12 +995,7 @@ export default function BookingScreen() {
             </View>
           </View>
 
-          <ScrollView
-            style={styles.topScroll}
-            contentContainerStyle={styles.topScrollContent}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
+          <View style={styles.topCardContent}>
             {/* Weather Display */}
             {weather && (
               <View style={[styles.weatherCard, { backgroundColor: cardBg, borderColor }]}>
@@ -1146,9 +1158,10 @@ export default function BookingScreen() {
                 </Text>
               )}
             </TouchableOpacity>
-          </ScrollView>
-          {/* Drag handle at the bottom of the top card */}
-          <View style={styles.topCardHandle} />
+
+            {/* Drag handle at the bottom of the top card */}
+            <View style={styles.topCardHandle} />
+          </View>
         </View>
       )}
 
@@ -1473,6 +1486,14 @@ export default function BookingScreen() {
         </View>
       </Modal>
 
+      {/* Toast Notification */}
+      <Toast
+        visible={toast.visible}
+        message={toast.message}
+        type={toast.type}
+        onDismiss={() => setToast({ ...toast, visible: false })}
+      />
+
       {/* Map Picker Modal removed – using inline map picker instead */}
     </View>
   );
@@ -1489,7 +1510,6 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    maxHeight: SCREEN_HEIGHT * 0.46,
     borderBottomLeftRadius: 28,
     borderBottomRightRadius: 28,
     elevation: 20,
@@ -1507,14 +1527,12 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginVertical: 10,
   },
-  topScroll: {
-    flex: 1,
-  },
-  topScrollContent: {
-    paddingBottom: 4,
+  topCardContent: {
+    padding: 16,
+    paddingBottom: 20,
   },
   mapContainer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   map: {
     flex: 1,
@@ -1959,7 +1977,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   crosshairContainer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
   },

@@ -203,7 +203,6 @@ export default function RiderBottomNavigation() {
 const DRIVER_NAV_ITEMS: NavItem[] = [
   { name: 'home', icon: 'home', route: '/driver/home', label: 'Home' },
   { name: 'rides', icon: 'rickshaw', iconFamily: 'community', route: '/driver/rides', label: 'Rides' },
-  { name: 'earnings', icon: 'trending-up', route: '/driver/earnings', label: 'Earnings' },
   { name: 'wallet', icon: 'wallet', route: '/driver/wallet', label: 'Wallet' },
   { name: 'profile', icon: 'person', route: '/driver/profile', label: 'Profile' },
 ];

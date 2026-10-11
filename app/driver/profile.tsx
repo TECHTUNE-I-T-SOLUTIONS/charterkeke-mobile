@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from 'react';
 import {
   View,
@@ -21,7 +20,6 @@ import { useTheme } from '@/context/ThemeContext';
 import ConfirmationDialog from '@/components/ui/ConfirmationDialog';
 import { ProfileSkeleton } from '@/components/ProfileSkeleton';
 import { apiService } from '@/services/api';
-import * as Clipboard from 'expo-clipboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { cacheService } from '@/services/cache';
 import { BRAND, COLORS } from '@/utils/colors';
@@ -29,7 +27,6 @@ import { useUpdateChecker } from '@/hooks/useUpdateChecker';
 import { UpdateCheckerModal } from '@/components/UpdateCheckerModal';
 import { usePushNotificationToggle } from '@/hooks/usePushNotificationToggle';
 import { getTourStorageKey } from '@/utils/appTour';
-import SosHeaderButton from '@/components/SosHeaderButton';
 import { getAppVersionLabel } from '@/utils/appInfo';
 
 interface ProfileData {
@@ -69,8 +66,8 @@ const countDriverRideStats = (rides: any[]) => {
 export default function DriverProfileScreen() {
   const router = useRouter();
   const { logout, clearCache, user } = useAuth();
-  const { theme, mode } = useTheme();
-  
+  const { theme, mode, toggleTheme } = useTheme();
+
   const [profileData, setProfileData] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [showLogout, setShowLogout] = useState(false);
@@ -91,18 +88,11 @@ export default function DriverProfileScreen() {
       if (!renderedOnce.current) {
         renderedOnce.current = true;
         loadProfile();
-        // Fetch and extract driver referral code
         const fetchReferralCode = async () => {
           try {
             const res = await apiService.getReferralCode();
-            console.log('[Driver Profile] getReferralCode response:', JSON.stringify(res));
-            
-            // Extract just the code string from nested structure
             const codeStr = (res?.referralCode?.referral_code || res?.referral_code || '');
-            const finalCode = String(codeStr).trim();
-            
-            console.log('[Driver Profile] Extracted code:', finalCode, 'type:', typeof finalCode);
-            setReferralCode(finalCode);
+            setReferralCode(String(codeStr).trim());
           } catch (err) {
             console.error('[Driver Profile] Error fetching referral code:', err);
             setReferralCode('');
@@ -112,7 +102,6 @@ export default function DriverProfileScreen() {
         return;
       }
 
-      // Always refresh on focus to keep ride count in sync with home screen
       fetchProfile(false);
     }, [])
   );
@@ -172,8 +161,11 @@ export default function DriverProfileScreen() {
 
       setProfileData(nextProfile);
       await cacheService.set('driver_profile', nextProfile);
-    } catch (error) { console.error(error); } 
-    finally { if (showLoader) setLoading(false); }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      if (showLoader) setLoading(false);
+    }
   };
 
   const handleLogout = async () => {
@@ -181,7 +173,9 @@ export default function DriverProfileScreen() {
       if (clearCache) await clearCache();
       await logout();
       router.replace('/auth/welcome');
-    } catch (e) { Alert.alert('Error', 'Logout failed'); }
+    } catch (e) {
+      Alert.alert('Error', 'Logout failed');
+    }
   };
 
   const handleDeleteAccount = async () => {
@@ -270,23 +264,33 @@ export default function DriverProfileScreen() {
     }
   };
 
-  if (loading) return <SafeAreaView style={{flex:1, backgroundColor: theme.colors.background}}><ProfileSkeleton isDark={!isLight}/></SafeAreaView>;
+  if (loading) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.background }}>
+        <ProfileSkeleton isDark={!isLight} />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
       <SafeAreaView style={{ flex: 1 }}>
         <View style={styles.header}>
-           <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>Profile</Text>
+          <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>Profile</Text>
         </View>
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {/* Profile Header */}
           <View style={styles.profileSection}>
             <View style={styles.avatarContainer}>
-              <Image 
-                source={{ uri: profileData?.profile_picture_url || `https://ui-avatars.com/api/?name=${profileData?.first_name || 'Driver'}&background=FF9101&color=000` }} 
-                style={styles.avatar} 
+              <Image
+                source={{
+                  uri:
+                    profileData?.profile_picture_url ||
+                    `https://ui-avatars.com/api/?name=${profileData?.first_name || 'Driver'}&background=FF9101&color=000`,
+                }}
+                style={styles.avatar}
               />
               <TouchableOpacity
                 style={[styles.editBadge, { borderColor: theme.colors.card }]}
@@ -294,133 +298,223 @@ export default function DriverProfileScreen() {
                 disabled={uploadingAvatar}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               >
-                <MaterialCommunityIcons name="pencil" size={14} color="#000" />
+                <MaterialCommunityIcons name="pencil" size={13} color="#000" />
               </TouchableOpacity>
               <View style={styles.verifiedBadge}>
-                <MaterialCommunityIcons name="check-decagram" size={16} color="#FFF" />
+                <MaterialCommunityIcons name="check-decagram" size={14} color="#FFF" />
               </View>
             </View>
             {uploadingAvatar ? (
               <Text style={[styles.uploadingText, { color: theme.colors.textSecondary }]}>Uploading...</Text>
             ) : null}
-            <Text style={[styles.name, { color: theme.colors.textPrimary }]}>{profileData?.first_name} {profileData?.last_name}</Text>
+            <Text style={[styles.name, { color: theme.colors.textPrimary }]}>
+              {profileData?.first_name} {profileData?.last_name}
+            </Text>
             <Text style={[styles.email, { color: theme.colors.textSecondary }]}>{profileData?.email}</Text>
-            
+
             <View style={styles.statsRow}>
-                <View style={styles.statItem}>
-                    <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{profileData?.accepted_rides || 0}</Text>
-                    <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Accepted</Text>
-                </View>
-                <View style={[styles.vertDivider, { backgroundColor: theme.colors.border }]} />
-                <View style={styles.statItem}>
-                    <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{profileData?.total_rides_completed || 0}</Text>
-                    <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Completed</Text>
-                </View>
-                <View style={[styles.vertDivider, { backgroundColor: theme.colors.border }]} />
-                <View style={styles.statItem}>
-                    <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{profileData?.average_rating?.toFixed(1) || '0.0'}</Text>
-                    <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Rating</Text>
-                </View>
+              <View style={styles.statItem}>
+                <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>
+                  {profileData?.accepted_rides || 0}
+                </Text>
+                <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Accepted</Text>
+              </View>
+              <View style={[styles.vertDivider, { backgroundColor: theme.colors.border }]} />
+              <View style={styles.statItem}>
+                <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>
+                  {profileData?.total_rides_completed || 0}
+                </Text>
+                <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Completed</Text>
+              </View>
+              <View style={[styles.vertDivider, { backgroundColor: theme.colors.border }]} />
+              <View style={styles.statItem}>
+                <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>
+                  {profileData?.average_rating?.toFixed(1) || '0.0'}
+                </Text>
+                <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Rating</Text>
+              </View>
             </View>
-            {profileData?.account_created_at ? (
-              <Text style={[styles.joinedText, { color: theme.colors.textSecondary }]}>
-                Joined {new Date(profileData.account_created_at).toLocaleDateString()}
-              </Text>
-            ) : null}
           </View>
 
-          <View style={[styles.detailsCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-            <Text style={[styles.detailsHeader, { color: theme.colors.textSecondary }]}>PROFILE DETAILS</Text>
-            <DetailRow label="First name" value={profileData?.first_name || '-'} theme={theme} />
-            <DetailRow label="Last name" value={profileData?.last_name || '-'} theme={theme} />
-            <DetailRow label="Email" value={profileData?.email || '-'} theme={theme} />
-            <DetailRow label="Phone" value={profileData?.phone_number || '-'} theme={theme} />
-            <DetailRow label="Rating" value={(profileData?.average_rating || 0).toFixed(1)} theme={theme} />
-            <DetailRow label="Accepted rides" value={String(profileData?.accepted_rides || 0)} theme={theme} />
-            <DetailRow label="Completed rides" value={String(profileData?.total_rides_completed || 0)} theme={theme} />
-            {profileData?.account_created_at ? (
-              <DetailRow
-                label="Joined"
-                value={new Date(profileData.account_created_at).toLocaleDateString()}
-                theme={theme}
-              />
-            ) : null}
-          </View>
-
-          {/* Menu */}
+          {/* Compact Menu Container */}
           <View style={styles.menuContainer}>
-             <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary }]}>DRIVER ACCOUNT</Text>
-             <MenuItem icon="card-account-details-outline" label="Documents" onPress={() => router.push('/driver/documents')} theme={theme} />
-             <MenuItem icon="car-outline" label="Vehicle Details" onPress={() => router.push('/driver/vehicle')} theme={theme} />
-             <MenuItem icon="bank-outline" label="Bank Accounts" onPress={() => router.push('/driver/bank-accounts')} theme={theme} />
-             <MenuItemWithSub icon="account-multiple-plus" label="Referrals" subLabel={referralCode} onPress={() => router.push('/driver/referrals')} theme={theme} />
-             <MenuItem icon="message-outline" label="Messages" onPress={() => router.push('/driver/messages')} theme={theme} />
+            {/* HIERARCHY 1: PREFERENCES */}
+            <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary }]}>PREFERENCES</Text>
 
-             <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary, marginTop: 24 }]}>SETTINGS</Text>
-             <MenuItem icon="shield-check-outline" label="Privacy & Security" onPress={() => router.push('/driver/privacy-settings')} theme={theme} />
-             <MenuItem
+            {/* Dark Mode Theme Toggle */}
+            <View
+              style={[
+                styles.menuItem,
+                { backgroundColor: theme.colors.card, borderColor: theme.colors.border },
+              ]}
+            >
+              <View style={styles.menuLeft}>
+                <View style={[styles.iconBox, { backgroundColor: theme.colors.inputBackground }]}>
+                  <MaterialCommunityIcons
+                    name={isLight ? 'weather-sunny' : 'weather-night'}
+                    size={18}
+                    color={theme.colors.textPrimary}
+                  />
+                </View>
+                <Text style={[styles.menuText, { color: theme.colors.textPrimary }]}>Dark Mode</Text>
+              </View>
+              <Switch
+                value={!isLight}
+                onValueChange={() => toggleTheme()}
+                trackColor={{ true: BRAND.primary, false: theme.colors.border }}
+                thumbColor="#FFF"
+              />
+            </View>
+
+            {/* Push Notifications Toggle */}
+            <View
+              style={[
+                styles.menuItem,
+                { backgroundColor: theme.colors.card, borderColor: theme.colors.border },
+              ]}
+            >
+              <View style={styles.menuLeft}>
+                <View style={[styles.iconBox, { backgroundColor: theme.colors.inputBackground }]}>
+                  <MaterialCommunityIcons name="bell-outline" size={18} color={theme.colors.textPrimary} />
+                </View>
+                <View>
+                  <Text style={[styles.menuText, { color: theme.colors.textPrimary }]}>Notifications</Text>
+                  {notifError ? (
+                    <Text style={{ fontSize: 10, color: '#E74C3C', marginTop: 1 }}>{notifError}</Text>
+                  ) : (
+                    <Text style={{ fontSize: 10, color: theme.colors.textSecondary, marginTop: 1 }}>
+                      {isSubscribed ? '✓ Enabled' : '✗ Disabled'}
+                    </Text>
+                  )}
+                </View>
+              </View>
+              {notifLoading ? (
+                <ActivityIndicator size="small" color={BRAND.primary} />
+              ) : (
+                <Switch
+                  value={isSubscribed}
+                  onValueChange={toggleSubscription}
+                  disabled={notifLoading || Boolean(notifError)}
+                  trackColor={{ true: BRAND.primary, false: theme.colors.border }}
+                  thumbColor="#FFF"
+                />
+              )}
+            </View>
+
+            {/* HIERARCHY 2: DRIVER ACCOUNT & VEHICLE */}
+            <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary, marginTop: 18 }]}>
+              DRIVER ACCOUNT
+            </Text>
+            <MenuItem
+              icon="card-account-details-outline"
+              label="Documents"
+              onPress={() => router.push('/driver/documents')}
+              theme={theme}
+            />
+            <MenuItem
+              icon="car-outline"
+              label="Vehicle Details"
+              onPress={() => router.push('/driver/vehicle')}
+              theme={theme}
+            />
+            <MenuItem
+              icon="bank-outline"
+              label="Bank Accounts"
+              onPress={() => router.push('/driver/bank-accounts')}
+              theme={theme}
+            />
+            <MenuItemWithSub
+              icon="account-multiple-plus"
+              label="Referrals"
+              subLabel={referralCode}
+              onPress={() => router.push('/driver/referrals')}
+              theme={theme}
+            />
+            <MenuItem
+              icon="message-outline"
+              label="Messages"
+              onPress={() => router.push('/driver/messages')}
+              theme={theme}
+            />
+
+            {/* HIERARCHY 3: SAFETY, LEGAL & SUPPORT */}
+            <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary, marginTop: 18 }]}>
+              SAFETY, LEGAL & SUPPORT
+            </Text>
+            <MenuItem
+              icon="help-circle-outline"
+              label="FAQ"
+              onPress={() => router.push('/driver/faq')}
+              theme={theme}
+            />
+            <MenuItem
+              icon="shield-check-outline"
+              label="Privacy & Security"
+              onPress={() => router.push('/driver/privacy-settings')}
+              theme={theme}
+            />
+            <MenuItem
+              icon="file-document-outline"
+              label="Terms of Use"
+              onPress={() => router.push('/driver/terms')}
+              theme={theme}
+            />
+            <MenuItem
+              icon="help-circle-outline"
+              label="Help & Support"
+              onPress={() => router.push('/driver/help-and-support')}
+              theme={theme}
+            />
+            <MenuItem
+              icon="information-outline"
+              label="About Charter Keke"
+              onPress={() => router.push('/driver/about')}
+              theme={theme}
+            />
+            <MenuItem
+              icon="map-marker-question-outline"
+              label="Take App Tour"
+              onPress={handleReplayTour}
+              theme={theme}
+            />
+            <MenuItem
+              icon="cloud-download-outline"
+              label="Check for Updates"
+              onPress={handleCheckUpdates}
+              theme={theme}
+            />
+            <MenuItem
+              icon="cloud-download-outline"
+              label="Check for Updates"
+              onPress={handleCheckUpdates}
+              theme={theme}
+            />
+
+            {/* HIERARCHY 4: ACCOUNT MANAGEMENT */}
+            <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary, marginTop: 18 }]}>
+              ACCOUNT MANAGEMENT
+            </Text>
+            <TouchableOpacity
+              style={[styles.logoutBtn, { borderColor: COLORS.light.destructive }]}
+              onPress={() => setShowLogout(true)}
+              activeOpacity={0.8}
+            >
+              <MaterialCommunityIcons name="logout" size={18} color={COLORS.light.destructive} />
+              <Text style={{ color: COLORS.light.destructive, fontWeight: '700', fontSize: 13 }}>Log Out</Text>
+            </TouchableOpacity>
+
+            <MenuItem
               icon="delete-outline"
               label="Delete Account"
               onPress={() => setShowDeleteAccount(true)}
               theme={theme}
               danger
               loading={deletingAccount}
-             />
-             <View style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-                <View style={styles.menuLeft}>
-                   <View style={[styles.iconBox, { backgroundColor: theme.colors.inputBackground }]}>
-                      <MaterialCommunityIcons name="bell-outline" size={20} color={theme.colors.textPrimary} />
-                   </View>
-                   <View>
-                      <Text style={[styles.menuText, { color: theme.colors.textPrimary }]}>Notifications</Text>
-                      {notifError ? (
-                        <Text style={{ fontSize: 11, color: '#E74C3C', marginTop: 2 }}>{notifError}</Text>
-                      ) : (
-                        <Text style={{ fontSize: 11, color: theme.colors.textSecondary, marginTop: 2 }}>
-                          {isSubscribed ? '✓ Enabled' : '✗ Disabled'}
-                        </Text>
-                      )}
-                   </View>
-                </View>
-                {notifLoading ? (
-                  <ActivityIndicator size="small" color={BRAND.primary} />
-                ) : (
-                  <Switch 
-                    value={isSubscribed} 
-                    onValueChange={toggleSubscription} 
-                    disabled={notifLoading || Boolean(notifError)}
-                    trackColor={{ true: BRAND.primary, false: theme.colors.border }}
-                    thumbColor="#FFF"
-                  />
-                )}
-             </View>
+            />
 
-             <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary, marginTop: 24 }]}>SUPPORT</Text>
-             <View style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-                <View style={styles.menuLeft}>
-                   <View style={[styles.iconBox, { backgroundColor: theme.colors.inputBackground }]}>
-                      <MaterialCommunityIcons name="alert-octagon-outline" size={20} color={BRAND.primary} />
-                   </View>
-                   <Text style={[styles.menuText, { color: theme.colors.textPrimary }]}>Emergency SOS</Text>
-                </View>
-                <SosHeaderButton role="driver" />
-             </View>
-             <MenuItem icon="map-marker-question-outline" label="Take App Tour" onPress={handleReplayTour} theme={theme} />
-             <MenuItem icon="help-circle-outline" label="Help & Support" onPress={() => router.push('/driver/help-and-support')} theme={theme} />
-             <MenuItem icon="information-outline" label="About Charter Keke" onPress={() => router.push('/driver/about')} theme={theme} />
-             <MenuItem 
-              icon="cloud-download-outline" 
-              label="Check for Updates" 
-              onPress={handleCheckUpdates} 
-              theme={theme}
-              loading={isChecking}
-             />
-             
-             <TouchableOpacity style={[styles.logoutBtn, { borderColor: COLORS.light.destructive }]} onPress={() => setShowLogout(true)}>
-                <MaterialCommunityIcons name="logout" size={20} color={COLORS.light.destructive} />
-                <Text style={{ color: COLORS.light.destructive, fontWeight: '600' }}>Log Out</Text>
-             </TouchableOpacity>
-             <Text style={[styles.versionText, { color: theme.colors.textSecondary }]}>{getAppVersionLabel()}</Text>
+            <Text style={[styles.versionText, { color: theme.colors.textSecondary }]}>
+              {getAppVersionLabel()}
+            </Text>
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -461,75 +555,123 @@ export default function DriverProfileScreen() {
 }
 
 const MenuItem = ({ icon, label, onPress, theme, loading, danger }: any) => (
-  <TouchableOpacity onPress={onPress} disabled={loading} style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+  <TouchableOpacity
+    onPress={onPress}
+    disabled={loading}
+    activeOpacity={0.7}
+    style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
+  >
     <View style={styles.menuLeft}>
-       <View style={[styles.iconBox, { backgroundColor: theme.colors.inputBackground }]}>
-          {loading ? (
-            <ActivityIndicator size="small" color={danger ? COLORS.light.destructive : theme.colors.textPrimary} />
-          ) : (
-            <MaterialCommunityIcons name={icon} size={20} color={danger ? COLORS.light.destructive : theme.colors.textPrimary} />
-          )}
-       </View>
-       <Text style={[styles.menuText, { color: danger ? COLORS.light.destructive : theme.colors.textPrimary }]}>{label}</Text>
+      <View style={[styles.iconBox, { backgroundColor: theme.colors.inputBackground }]}>
+        {loading ? (
+          <ActivityIndicator size="small" color={danger ? COLORS.light.destructive : theme.colors.textPrimary} />
+        ) : (
+          <MaterialCommunityIcons
+            name={icon}
+            size={18}
+            color={danger ? COLORS.light.destructive : theme.colors.textPrimary}
+          />
+        )}
+      </View>
+      <Text style={[styles.menuText, { color: danger ? COLORS.light.destructive : theme.colors.textPrimary }]}>
+        {label}
+      </Text>
     </View>
-    {!loading && <MaterialCommunityIcons name="chevron-right" size={20} color={danger ? COLORS.light.destructive : theme.colors.textSecondary} />}
+    {!loading && (
+      <MaterialCommunityIcons
+        name="chevron-right"
+        size={18}
+        color={danger ? COLORS.light.destructive : theme.colors.textSecondary}
+      />
+    )}
   </TouchableOpacity>
 );
 
 const MenuItemWithSub = ({ icon, label, subLabel, onPress, theme }: any) => (
-  <TouchableOpacity onPress={onPress} style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+  <TouchableOpacity
+    onPress={onPress}
+    activeOpacity={0.7}
+    style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
+  >
     <View style={styles.menuLeft}>
-       <View style={[styles.iconBox, { backgroundColor: theme.colors.inputBackground }]}>
-          <MaterialCommunityIcons name={icon} size={20} color={theme.colors.textPrimary} />
-       </View>
-       <View>
-         <Text style={[styles.menuText, { color: theme.colors.textPrimary }]}>{label}</Text>
-         {subLabel ? <Text style={{ color: theme.colors.textSecondary, fontSize: 12 }}>{subLabel}</Text> : null}
-       </View>
+      <View style={[styles.iconBox, { backgroundColor: theme.colors.inputBackground }]}>
+        <MaterialCommunityIcons name={icon} size={18} color={theme.colors.textPrimary} />
+      </View>
+      <View>
+        <Text style={[styles.menuText, { color: theme.colors.textPrimary }]}>{label}</Text>
+        {subLabel ? <Text style={{ color: theme.colors.textSecondary, fontSize: 11, marginTop: 1 }}>{subLabel}</Text> : null}
+      </View>
     </View>
-    <MaterialCommunityIcons name="chevron-right" size={20} color={theme.colors.textSecondary} />
+    <MaterialCommunityIcons name="chevron-right" size={18} color={theme.colors.textSecondary} />
   </TouchableOpacity>
-);
-
-const DetailRow = ({ label, value, theme }: any) => (
-  <View style={[styles.detailRow, { borderBottomColor: theme.colors.border }]}>
-    <Text style={[styles.detailLabel, { color: theme.colors.textSecondary }]}>{label}</Text>
-    <Text style={[styles.detailValue, { color: theme.colors.textPrimary }]} numberOfLines={1}>
-      {value}
-    </Text>
-  </View>
 );
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { padding: 20 },
-  headerTitle: { fontSize: 28, fontWeight: '800' },
-  content: { paddingBottom: 100 },
-  profileSection: { alignItems: 'center', marginBottom: 32 },
-  avatarContainer: { position: 'relative', marginBottom: 16 },
-  avatar: { width: 100, height: 100, borderRadius: 50, borderWidth: 4, borderColor: BRAND.primary },
-  editBadge: { position: 'absolute', top: 0, right: 0, backgroundColor: BRAND.primary, width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 2, zIndex: 10 },
-  verifiedBadge: { position: 'absolute', bottom: 0, right: 0, backgroundColor: '#10B981', width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#FFF' },
-  uploadingText: { fontSize: 12, marginTop: -8, marginBottom: 8, fontWeight: '500' },
-  name: { fontSize: 22, fontWeight: '800', marginBottom: 4 },
-  email: { fontSize: 14 },
-  statsRow: { flexDirection: 'row', marginTop: 20, alignItems: 'center', gap: 20 },
-  statItem: { alignItems: 'center', minWidth: 60 },
-  statValue: { fontSize: 20, fontWeight: '800' },
-  statLabel: { fontSize: 12 },
-  vertDivider: { width: 1, height: 30 },
-  joinedText: { fontSize: 12, marginTop: 10 },
-  detailsCard: { marginHorizontal: 20, marginBottom: 24, padding: 16, borderWidth: 1, borderRadius: 16 },
-  detailsHeader: { fontSize: 11, fontWeight: '700', letterSpacing: 0.6, marginBottom: 6 },
-  detailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1 },
-  detailLabel: { fontSize: 13, fontWeight: '600' },
-  detailValue: { fontSize: 13, fontWeight: '700', maxWidth: '58%', textAlign: 'right' },
+  header: { paddingHorizontal: 20, paddingVertical: 10 },
+  headerTitle: { fontSize: 22, fontWeight: '800' },
+  content: { paddingBottom: 60 },
+  profileSection: { alignItems: 'center', marginBottom: 20 },
+  avatarContainer: { position: 'relative', marginBottom: 10 },
+  avatar: { width: 88, height: 88, borderRadius: 44, borderWidth: 3, borderColor: BRAND.primary },
+  editBadge: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    backgroundColor: BRAND.primary,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    zIndex: 10,
+  },
+  verifiedBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: '#10B981',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFF',
+  },
+  uploadingText: { fontSize: 11, marginTop: -4, marginBottom: 4, fontWeight: '500' },
+  name: { fontSize: 20, fontWeight: '800', marginBottom: 2 },
+  email: { fontSize: 13 },
+  statsRow: { flexDirection: 'row', marginTop: 14, alignItems: 'center', gap: 16 },
+  statItem: { alignItems: 'center', minWidth: 50 },
+  statValue: { fontSize: 18, fontWeight: '800' },
+  statLabel: { fontSize: 11 },
+  vertDivider: { width: 1, height: 24 },
   menuContainer: { paddingHorizontal: 20 },
-  sectionLabel: { fontSize: 12, fontWeight: '700', marginBottom: 8, marginLeft: 4 },
-  menuItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderRadius: 12, marginBottom: 8, borderWidth: 1 },
-  menuLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  iconBox: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
-  menuText: { fontSize: 14, fontWeight: '600' },
-  logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, borderRadius: 12, borderWidth: 1, marginTop: 20, gap: 8 },
-  versionText: { textAlign: 'center', fontSize: 12, fontWeight: '700', marginTop: 18, marginBottom: 8 },
+  sectionLabel: { fontSize: 11, fontWeight: '800', marginBottom: 6, marginLeft: 2, letterSpacing: 0.5 },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    marginBottom: 6,
+    borderWidth: 1,
+  },
+  menuLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  iconBox: { width: 32, height: 32, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+  menuText: { fontSize: 13, fontWeight: '600' },
+  logoutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 6,
+    gap: 8,
+  },
+  versionText: { textAlign: 'center', fontSize: 11, fontWeight: '600', marginTop: 14, marginBottom: 8 },
 });

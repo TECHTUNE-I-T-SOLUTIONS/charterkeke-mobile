@@ -255,6 +255,15 @@ export default function RatingScreen() {
       const result = await apiService.submitRideReview(reviewData);
 
       if (result.success) {
+        // Confirm ride completion and clear any associated penalty
+        try {
+          await apiService.post(`/rides/${rideId}/confirm-completion`, {});
+          console.log('[RatingScreen] Ride completion confirmed, penalty cleared if any');
+        } catch (confirmError) {
+          console.warn('[RatingScreen] Failed to confirm ride completion:', confirmError);
+          // Don't block the user if this fails, just log it
+        }
+
         Alert.alert('Success', 'Thank you for your review!', [
           {
             text: 'OK',

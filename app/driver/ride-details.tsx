@@ -1,5 +1,3 @@
-// 'use client';
-
 import React, { useRef, useState, useEffect } from 'react';
 import {
   View,
@@ -494,16 +492,16 @@ export default function RideDetailsScreen() {
       {/* Header Overlay on Map */}
       <View style={styles.mapWrapper}>
            <MapboxMap
-           style={styles.map}
+           style={StyleSheet.absoluteFill}
            latitude={6.5244}
            longitude={3.3792}
-                mapStyle="navigation-day"
+           zoom={12}
+                mapStyle={isLight ? 'light' : 'dark'}
                 showCompass
                 showScaleBar
                 fitCoordinates={routeFitCoordinates}
                 routeCoordinates={routeCoordinates}
-           zoom={12}
-           autoCenter={false}
+           autoCenter={Boolean(routeFitCoordinates?.length)}
            onPressCoordinate={handleMapTap}
          >
                   <MapboxMarker
@@ -718,8 +716,8 @@ export default function RideDetailsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   mapWrapper: { height: verticalScale(250), position: 'relative' },
-  map: { ...StyleSheet.absoluteFillObject },
-  headerSafe: { ...StyleSheet.absoluteFillObject },
+  map: { ...StyleSheet.absoluteFill },
+  headerSafe: { ...StyleSheet.absoluteFill },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: scale(12) },
   backCircle: { width: scale(44), height: scale(44), borderRadius: scale(22), justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, elevation: 4 },
   statusPill: { paddingHorizontal: scale(12), paddingVertical: verticalScale(6), borderRadius: scale(16), justifyContent: 'center', elevation: 4 },

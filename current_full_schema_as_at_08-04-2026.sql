@@ -20,6 +20,7 @@ CREATE TABLE public.users (
   password_reset_expiry timestamp without time zone,
   deleted_at timestamp without time zone,
   deletion_reason text,
+  pending_cancellation_penalty numeric DEFAULT 0,
   CONSTRAINT users_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.drivers (
@@ -126,6 +127,9 @@ CREATE TABLE public.rides (
   remitted_at timestamp without time zone,
   remitted_by_payment_id uuid,
   eta_minutes integer,
+  accepted_at timestamp without time zone,
+  cancelled_at timestamp without time zone,
+  cancellation_penalty_amount numeric DEFAULT 0,
   CONSTRAINT rides_pkey PRIMARY KEY (id),
   CONSTRAINT rides_rider_id_fkey FOREIGN KEY (rider_id) REFERENCES public.users(id),
   CONSTRAINT rides_driver_id_fkey FOREIGN KEY (driver_id) REFERENCES public.drivers(id),
@@ -938,4 +942,39 @@ CREATE TABLE public.user_cashback_stats (
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT user_cashback_stats_pkey PRIMARY KEY (id),
   CONSTRAINT user_cashback_stats_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
+);
+CREATE TABLE public.account_deletion_requests (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  email text NOT NULL,
+  user_id uuid,
+  role text DEFAULT 'unknown'::text CHECK (role = ANY (ARRAY['rider'::text, 'driver'::text, 'admin'::text, 'unknown'::text])),
+  token text NOT NULL UNIQUE,
+  token_expires_at timestamp with time zone NOT NULL,
+  status text NOT NULL DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'confirmed'::text, 'completed'::text, 'expired'::text, 'cancelled'::text])),
+  requested_at timestamp with time zone NOT NULL DEFAULT now(),
+  confirmed_at timestamp with time zone,
+  completed_at timestamp with time zone,
+  ip_address text,
+  user_agent text,
+  reason text,
+  metadata jsonb DEFAULT '{}'::jsonb,
+  CONSTRAINT account_deletion_requests_pkey PRIMARY KEY (id),
+  CONSTRAINT account_deletion_requests_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.ride_cancellation_penalties (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ride_id uuid NOT NULL,
+  rider_id uuid NOT NULL,
+  penalty_amount numeric NOT NULL DEFAULT 0,
+  penalty_reason text NOT NULL DEFAULT 'Late cancellation'::text,
+  incurred_at timestamp with time zone NOT NULL DEFAULT now(),
+  charged_at timestamp with time zone,
+  charged_ride_id uuid,
+  status text NOT NULL DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'charged'::text, 'waived'::text])),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT ride_cancellation_penalties_pkey PRIMARY KEY (id),
+  CONSTRAINT rcp_ride_id_fkey FOREIGN KEY (ride_id) REFERENCES public.rides(id),
+  CONSTRAINT rcp_rider_id_fkey FOREIGN KEY (rider_id) REFERENCES public.users(id),
+  CONSTRAINT rcp_charged_ride_fkey FOREIGN KEY (charged_ride_id) REFERENCES public.rides(id)
 );

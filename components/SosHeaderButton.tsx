@@ -124,7 +124,7 @@ const styles = StyleSheet.create({
     height: 52,
   },
   loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 18,

@@ -1,5 +1,3 @@
-// 'use client';
-
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
@@ -295,15 +293,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   bgGraphicContainer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: -1,
     overflow: 'hidden',
   },
   video: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   videoOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0, 0, 0, 0.65)',
   },
   gradientSpot: {

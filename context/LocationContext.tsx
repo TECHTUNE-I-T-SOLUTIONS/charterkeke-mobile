@@ -34,41 +34,35 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
   });
   const [error, setError] = useState<string | null>(null);
 
-  // Initialize location permissions and network state
+  // Initialize network state and check existing location permission non-blockingly
   useEffect(() => {
     const initializeLocation = async () => {
       try {
-        const hasPermission = await locationService.requestPermissions();
-        
-        if (!hasPermission) {
-          // Silently fail if permissions are denied - user will be prompted again when needed
-          console.warn('Location permissions denied by user');
-          return;
-        }
-
-        // Get current location
-        const location = await locationService.getCurrentLocation();
-        if (location) {
-          setCurrentLocation(location);
-          setLastLocation(location);
-        } else {
-          const cached = await locationService.getCurrentLocationData?.();
-          if (cached) {
-            setCurrentLocation(cached);
-            setLastLocation(cached);
-          }
-        }
-
-        // Check network state
         const netInfo = await NetInfo.fetch();
         setNetworkState({
           isConnected: netInfo.isConnected || false,
           isInternetReachable: netInfo.isInternetReachable || false,
           type: (netInfo.type as any) || 'unknown',
         });
+
+        // Silently check permission without triggering popups on startup
+        const hasPermission = await locationService.checkLocationPermission();
+        if (hasPermission) {
+          const cached = await locationService.getCurrentLocationData?.();
+          if (cached) {
+            setCurrentLocation(cached);
+            setLastLocation(cached);
+          } else {
+            locationService.getCurrentLocation().then((location) => {
+              if (location) {
+                setCurrentLocation(location);
+                setLastLocation(location);
+              }
+            }).catch(() => {});
+          }
+        }
       } catch (err) {
         console.error('Location initialization error:', err);
-        // Don't set error state here - location is optional
       }
     };
 

@@ -1,12 +1,12 @@
-import { Router } from 'expo-router';
+import { router } from 'expo-router';
 
-let navigationRef: Router | null = null;
+let navigationRef: typeof router | null = null;
 
-export const setNavigationRef = (ref: Router) => {
+export const setNavigationRef = (ref: typeof router) => {
   navigationRef = ref;
 };
 
-export const getNavigationRef = (): Router | null => {
+export const getNavigationRef = (): typeof router | null => {
   return navigationRef;
 };
 

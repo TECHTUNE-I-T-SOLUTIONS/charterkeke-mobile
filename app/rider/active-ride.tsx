@@ -9,6 +9,7 @@ import {
   RefreshControl,
   Alert,
   StyleSheet,
+  Modal,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -27,10 +28,9 @@ import { supabaseService } from '@/services/supabase';
 const { width, height } = Dimensions.get('window');
 
 // ─── Cancellation policy ──────────────────────────────────────────────────────
-// Free-cancel window: 10 min from booking OR 5 min after driver accepts
-const FREE_CANCEL_AFTER_BOOKING_MS   = 10 * 60 * 1000; // 10 min
+// Free-cancel window: Always free if no driver accepted, OR 5 min after driver accepts
 const FREE_CANCEL_AFTER_ACCEPTED_MS  =  5 * 60 * 1000; // 5 min
-const CANCELLATION_PENALTY_AMOUNT    = 200;             // ₦200 penalty
+const CANCELLATION_PENALTY_PERCENT   = 0.30;            // 30% of fare
 
 interface ActiveRide {
   id: string;
@@ -77,6 +77,9 @@ export default function ActiveRideScreen() {
   const [lastMapTap, setLastMapTap] = useState(0);
   const [cancelling, setCancelling] = useState(false);
   const [now, setNow] = useState(Date.now());
+  const driverArrivalCheckTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [showDriverNoShowModal, setShowDriverNoShowModal] = useState(false);
+  const [driverAcceptedAt, setDriverAcceptedAt] = useState<string | null>(null);
 
   // Keep a live clock ticking for cancellation window countdown
   useEffect(() => {
@@ -98,24 +101,133 @@ export default function ActiveRideScreen() {
   // ─── Cancellation window logic ──────────────────────────────────────────────
   const cancelStatus = useMemo<CancelStatus>(() => {
     if (!activeRide) return 'not_allowed';
-    if (activeRideStatus === 'completed' || activeRideStatus === 'cancelled') return 'not_allowed';
+    if (activeRideStatus === 'completed' || activeRideStatus === 'cancelled' || activeRideStatus === 'in_progress') return 'not_allowed';
 
-    const bookedAt = activeRide.created_at ? new Date(activeRide.created_at).getTime() : null;
     const acceptedAt = activeRide.accepted_at ? new Date(activeRide.accepted_at).getTime() : null;
 
-    // Still within 10 min of booking
-    if (bookedAt && (now - bookedAt) < FREE_CANCEL_AFTER_BOOKING_MS) return 'free';
-
-    // Driver just accepted — within 5 min grace
-    if (acceptedAt && (now - acceptedAt) < FREE_CANCEL_AFTER_ACCEPTED_MS) return 'free';
-
-    // Outside all free windows
+    // If no driver has accepted yet (pending or dispatched), always free to cancel
     if (activeRideStatus === 'pending' || activeRideStatus === 'dispatched') {
-      // No driver yet but booking window expired
+      return 'free';
+    }
+
+    // If driver has accepted, check the 5-minute window
+    if (acceptedAt) {
+      // Within 5 minutes of acceptance -> free
+      if ((now - acceptedAt) < FREE_CANCEL_AFTER_ACCEPTED_MS) {
+        return 'free';
+      }
+      // After 5 minutes of acceptance -> penalty
       return 'penalty';
     }
-    return 'penalty';
+
+    // Default to free if no driver accepted
+    return 'free';
   }, [activeRide, activeRideStatus, now]);
+
+  // Calculate cancellation window countdown
+  const cancellationCountdown = useMemo(() => {
+    if (!activeRide) return null;
+    if (activeRideStatus === 'completed' || activeRideStatus === 'cancelled' || activeRideStatus === 'in_progress') return null;
+
+    const acceptedAt = activeRide.accepted_at ? new Date(activeRide.accepted_at).getTime() : null;
+
+    // Only show countdown if driver has accepted
+    if (acceptedAt) {
+      const elapsed = now - acceptedAt;
+      const remaining = FREE_CANCEL_AFTER_ACCEPTED_MS - elapsed;
+      if (remaining > 0) return Math.ceil(remaining / 1000); // Return seconds
+    }
+
+    // No countdown if no driver accepted (always free)
+    return null;
+  }, [activeRide, activeRideStatus, now]);
+
+  // Calculate cancellation penalty percentage
+  const cancellationPenaltyPercent = useMemo(() => {
+    if (cancelStatus === 'penalty') {
+      return Math.round(CANCELLATION_PENALTY_PERCENT * 100);
+    }
+    return 0;
+  }, [cancelStatus]);
+
+  // ─── Driver arrival check logic (15-minute window) ───────────────────────────
+  const startDriverArrivalCheck = (rideId: string) => {
+    // Clear any existing timer
+    if (driverArrivalCheckTimer.current) {
+      clearInterval(driverArrivalCheckTimer.current);
+    }
+
+    let elapsedMinutes = 0;
+    const CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+    driverArrivalCheckTimer.current = setInterval(() => {
+      elapsedMinutes += 5;
+
+      // Check if ride status has changed to "arrived" or "in_progress"
+      const currentStatus = String(activeRide?.status || '').toLowerCase();
+      if (currentStatus === 'arrived' || currentStatus === 'in_progress' || currentStatus === 'completed' || currentStatus === 'cancelled') {
+        if (driverArrivalCheckTimer.current) {
+          clearInterval(driverArrivalCheckTimer.current);
+          driverArrivalCheckTimer.current = null;
+        }
+        return;
+      }
+
+      // At 15 minutes, show the modal
+      if (elapsedMinutes >= 15) {
+        if (driverArrivalCheckTimer.current) {
+          clearInterval(driverArrivalCheckTimer.current);
+          driverArrivalCheckTimer.current = null;
+        }
+        setShowDriverNoShowModal(true);
+      }
+    }, CHECK_INTERVAL_MS);
+  };
+
+  const handleDriverNoShowResponse = async (driverCommunicated: boolean) => {
+    const currentRideId = activeRide?.id || rideId;
+    if (!currentRideId) return;
+
+    setShowDriverNoShowModal(false);
+
+    if (!driverCommunicated) {
+      // Driver didn't communicate - revert ride to dispatched and penalize driver
+      try {
+        await apiService.post(`/rides/${currentRideId}/revert-to-dispatched`, {
+          reason: 'Driver failed to arrive within 15 minutes without communication',
+        });
+        Alert.alert('Ride Re-dispatched', 'Your ride has been sent to other drivers. The previous driver has been penalized.');
+        fetchActiveRide();
+      } catch (error) {
+        Alert.alert('Error', 'Failed to re-dispatch ride. Please contact support.');
+      }
+    } else {
+      // Driver communicated - rider cancels without penalty
+      try {
+        await apiService.post(`/rides/${currentRideId}/cancel`, {
+          reason: 'Driver communicated but rider cancelled',
+          waiver: true, // Waive cancellation fee
+        });
+        Alert.alert('Ride Cancelled', 'Your ride has been cancelled without any fee.');
+        router.replace('/rider/rides-history');
+      } catch (error) {
+        Alert.alert('Error', 'Failed to cancel ride. Please contact support.');
+      }
+    }
+  };
+
+  // Start arrival check when ride status changes to accepted
+  useEffect(() => {
+    if (isAccepted && activeRide?.id && !driverAcceptedAt) {
+      setDriverAcceptedAt(new Date().toISOString());
+      startDriverArrivalCheck(activeRide.id);
+    }
+    // Clear timer if ride is no longer accepted
+    if (!isAccepted && driverArrivalCheckTimer.current) {
+      clearInterval(driverArrivalCheckTimer.current);
+      driverArrivalCheckTimer.current = null;
+    }
+  }, [isAccepted, activeRide?.id]);
 
   useEffect(() => {
     fetchActiveRide();
@@ -336,7 +448,9 @@ export default function ActiveRideScreen() {
     if (!activeRide) return;
 
     const isFree = cancelStatus === 'free';
-    const penaltyText = `A cancellation penalty of ₦${CANCELLATION_PENALTY_AMOUNT.toLocaleString()} will be added to your next booking.`;
+    const penaltyPercent = cancellationPenaltyPercent;
+    const penaltyAmount = activeRide.fare_amount * CANCELLATION_PENALTY_PERCENT;
+    const penaltyText = `A ${penaltyPercent}% cancellation fee (₦${penaltyAmount.toLocaleString()}) will be charged.`;
 
     Alert.alert(
       isFree ? 'Cancel Ride' : 'Cancel Ride — Penalty Applies',
@@ -358,9 +472,12 @@ export default function ActiveRideScreen() {
     if (!activeRide) return;
     setCancelling(true);
     try {
+      const penaltyAmount = isFree ? 0 : activeRide.fare_amount * CANCELLATION_PENALTY_PERCENT;
+      const waiveFee = isPending || isFree; // Waive fee if no driver accepted or within free window
       await apiService.post(`/rides/${activeRide.id}/cancel`, {
         reason: 'User cancelled',
-        penalty_amount: isFree ? 0 : CANCELLATION_PENALTY_AMOUNT,
+        penalty_amount: penaltyAmount,
+        waiver: waiveFee,
       });
       router.replace('/rider/booking');
     } catch (err: any) {
@@ -569,8 +686,11 @@ export default function ActiveRideScreen() {
             showScaleBar
             fitCoordinates={routeCoordinates || mapFocusCoordinates}
             routeCoordinates={routeCoordinates}
+            routeColor={colors.primary}
+            routeWidth={4}
             onPressCoordinate={handleMapTap}
           >
+            {/* Show markers */}
             {mapMarkers.map((marker) => (
               <MapboxMarker
                 key={marker.id}
@@ -582,20 +702,25 @@ export default function ActiveRideScreen() {
             ))}
           </MapboxMap>
 
-          {/* Double-tap hint */}
-          <View
+          {/* Full screen map button */}
+          <TouchableOpacity
+            onPress={() => setShowFullMap(true)}
             style={{
               position: 'absolute',
               bottom: 10,
               right: 10,
-              backgroundColor: 'rgba(0,0,0,0.45)',
-              borderRadius: 8,
-              paddingHorizontal: 8,
-              paddingVertical: 4,
+              backgroundColor: 'rgba(0,0,0,0.6)',
+              borderRadius: 20,
+              paddingHorizontal: 12,
+              paddingVertical: 8,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
             }}
           >
-            <Text style={{ color: '#fff', fontSize: 10 }}>Double-tap for full map</Text>
-          </View>
+            <MaterialCommunityIcons name="fullscreen" size={16} color="#fff" />
+            <Text style={{ color: '#fff', fontSize: 11, fontWeight: '600' }}>Full Map</Text>
+          </TouchableOpacity>
         </View>
 
         {/* ── Distance / ETA row ───────────────────────────────────────────────── */}
@@ -836,26 +961,34 @@ export default function ActiveRideScreen() {
         </View>
 
         {/* ── Cancellation policy notice ───────────────────────────────────────── */}
-        {(isPending || isAccepted) && cancelStatus === 'penalty' && (
+        {(isPending || isAccepted) && cancelStatus !== 'not_allowed' && (
           <View
             style={{
               marginHorizontal: 16,
               marginTop: 10,
               borderRadius: 12,
-              backgroundColor: '#fef2f2',
+              backgroundColor: cancelStatus === 'free' ? '#f0fdf4' : '#fef2f2',
               borderWidth: 1,
-              borderColor: '#fecaca',
+              borderColor: cancelStatus === 'free' ? '#bbf7d0' : '#fecaca',
               padding: 12,
               flexDirection: 'row',
               gap: 10,
               alignItems: 'flex-start',
             }}
           >
-            <MaterialCommunityIcons name="alert-circle" size={18} color="#ef4444" />
-            <Text style={{ color: '#b91c1c', fontSize: 12, flex: 1, lineHeight: 17 }}>
-              The free cancellation window has closed. Cancelling now will incur a{' '}
-              <Text style={{ fontWeight: '800' }}>₦{CANCELLATION_PENALTY_AMOUNT.toLocaleString()} penalty</Text>{' '}
-              added to your next booking.
+            <MaterialCommunityIcons
+              name={cancelStatus === 'free' ? 'clock-outline' : 'alert-circle'}
+              size={18}
+              color={cancelStatus === 'free' ? '#16a34a' : '#ef4444'}
+            />
+            <Text style={{ color: cancelStatus === 'free' ? '#15803d' : '#b91c1c', fontSize: 12, flex: 1, lineHeight: 17 }}>
+              {isPending
+                ? 'Free cancellation available while waiting for driver'
+                : cancelStatus === 'free' && cancellationCountdown !== null
+                  ? `Free cancellation window: ${Math.floor(cancellationCountdown / 60)}:${(cancellationCountdown % 60).toString().padStart(2, '0')} remaining`
+                  : cancelStatus === 'penalty'
+                    ? `Free cancellation window closed. Cancelling now incurs a ${cancellationPenaltyPercent}% fee`
+                    : 'Free cancellation window active'}
             </Text>
           </View>
         )}
@@ -880,7 +1013,7 @@ export default function ActiveRideScreen() {
           </TouchableOpacity>
 
           {/* Cancel button — only show if ride is still cancellable */}
-          {(isPending || isAccepted) && (
+          {(isPending || isAccepted) && cancelStatus !== 'not_allowed' && (
             <TouchableOpacity
               onPress={handleCancelRide}
               disabled={cancelling}
@@ -914,14 +1047,48 @@ export default function ActiveRideScreen() {
               >
                 {cancelling
                   ? 'Cancelling…'
+                  : isPending
+                  ? 'Cancel Ride (Free)'
                   : cancelStatus === 'free'
                   ? 'Cancel Ride (Free)'
-                  : `Cancel Ride — ₦${CANCELLATION_PENALTY_AMOUNT.toLocaleString()} penalty`}
+                  : `Cancel Ride — ${cancellationPenaltyPercent}% fee`}
               </Text>
             </TouchableOpacity>
           )}
         </View>
       </ScrollView>
+
+      {/* Driver No-Show Modal */}
+      <Modal
+        visible={showDriverNoShowModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowDriverNoShowModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <MaterialCommunityIcons name="clock-alert" size={48} color={colors.primary} />
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Driver Not Arrived</Text>
+            <Text style={[styles.modalText, { color: colors.textSecondary }]}>
+              It has been 15 minutes since your driver accepted the ride. Did the driver communicate with you about any delays?
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonSecondary, { backgroundColor: colors.background, borderColor: colors.border }]}
+                onPress={() => handleDriverNoShowResponse(true)}
+              >
+                <Text style={[styles.modalButtonText, { color: colors.text }]}>Yes, Driver Communicated</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonPrimary, { backgroundColor: colors.primary }]}
+                onPress={() => handleDriverNoShowResponse(false)}
+              >
+                <Text style={styles.modalButtonText}>No, No Communication</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <RideMapFullscreenModal
         visible={showFullMap}
@@ -940,3 +1107,15 @@ export default function ActiveRideScreen() {
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalContent: { width: '100%', maxWidth: 400, borderRadius: 20, padding: 24, borderWidth: 1, alignItems: 'center' },
+  modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 12, textAlign: 'center' },
+  modalText: { fontSize: 14, lineHeight: 20, marginBottom: 24, textAlign: 'center' },
+  modalButtons: { flexDirection: 'row', gap: 12, width: '100%' },
+  modalButton: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+  modalButtonPrimary: {},
+  modalButtonSecondary: { borderWidth: 1 },
+  modalButtonText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+});
