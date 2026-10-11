@@ -942,9 +942,9 @@ const StatCard = ({ label, value, icon, color, theme, onPress }: any) => (
     <View style={[styles.statIcon, { backgroundColor: color + '15' }]}>
       <MaterialCommunityIcons name={icon} size={20} color={color} />
     </View>
-    <View>
-      <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{value}</Text>
-      <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>{label}</Text>
+    <View style={{ flex: 1 }}>
+      <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.statValue, { color: theme.colors.textPrimary }]}>{value}</Text>
+      <Text numberOfLines={1} style={[styles.statLabel, { color: theme.colors.textSecondary }]}>{label}</Text>
     </View>
   </TouchableOpacity>
 );
@@ -970,10 +970,10 @@ const styles = StyleSheet.create({
   statusNote: { fontSize: 12, marginTop: 4, fontWeight: '600' },
   statusInfo: { flex: 1 },
   statsContainer: { flexDirection: 'row', gap: 12, paddingHorizontal: 20, marginTop: 20 },
-  statCard: { flex: 1, flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 16, borderWidth: 1, gap: 12 },
-  statIcon: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  statValue: { fontSize: 18, fontWeight: '700' },
-  statLabel: { fontSize: 11 },
+  statCard: { flex: 1, flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 16, borderWidth: 1, gap: 8 },
+  statIcon: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  statValue: { fontSize: 15, fontWeight: '700' },
+  statLabel: { fontSize: 10 },
   mapSection: { margin: 20, height: 440, borderRadius: 20, overflow: 'hidden', borderWidth: 1, position: 'relative' },
   mapInfo: {
     position: 'absolute',

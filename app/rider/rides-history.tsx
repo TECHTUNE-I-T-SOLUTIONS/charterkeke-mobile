@@ -18,6 +18,7 @@ import { useTheme } from '@/context/ThemeContext';
 import { useAlert } from '@/context/AlertContext';
 import { BRAND } from '@/utils/colors';
 import { apiService } from '@/services/api';
+import { supabaseService } from '@/services/supabase';
 import { ListScreenSkeleton } from '@/components/ListScreenSkeleton';
 import { useRideHistory } from '@/hooks/useLocationCache';
 
@@ -53,6 +54,32 @@ export default function RidesHistoryScreen() {
   );
 
   useEffect(() => { if (user && !authLoading) refetch(); }, [user, authLoading, refetch]);
+
+  // Realtime subscription for rider's ride list updates
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const supabase = supabaseService.getClient();
+    const channel = supabase
+      .channel(`rider-rides-list-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'rides',
+          filter: `rider_id=eq.${user.id}`,
+        },
+        () => {
+          refetch();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, refetch]);
 
   const filteredRides = useMemo(() => {
     if (filterStatus === 'all') return rides;

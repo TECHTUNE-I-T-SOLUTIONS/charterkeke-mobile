@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -117,8 +118,24 @@ export default function AvailableRidesScreen() {
 
   const handleAcceptRide = async (rideId: string) => {
     setSelectedRideId(rideId);
-    await acceptRide(rideId);
-    setSelectedRideId(null);
+    try {
+      await acceptRide(rideId);
+      Alert.alert(
+        'Ride Accepted! 🎉',
+        'You have successfully accepted this ride. Head to pickup location.',
+        [
+          {
+            text: 'View Ride Details',
+            onPress: () => router.push({ pathname: '/driver/ride-details', params: { rideId } } as any),
+          },
+        ]
+      );
+      await handleRefresh();
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to accept ride. It may have already been accepted by another driver.');
+    } finally {
+      setSelectedRideId(null);
+    }
   };
 
   useEffect(() => {

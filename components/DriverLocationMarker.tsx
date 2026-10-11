@@ -73,7 +73,7 @@ export function DriverLocationMarker({ color = BRAND.primary, size = 32 }: Drive
           },
         ]}
       >
-        <MaterialCommunityIcons name="keke" size={size * 0.6} color="#fff" />
+        <MaterialCommunityIcons name={"keke" as any} size={size * 0.6} color="#fff" />
       </View>
     </View>
   );

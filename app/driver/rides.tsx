@@ -18,6 +18,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '@/context/ThemeContext';
 import { useAlert } from '@/context/AlertContext';
 import { apiService } from '@/services/api';
+import { supabaseService } from '@/services/supabase';
 import { cacheService } from '@/services/cache';
 import { WidgetStorage, WIDGET_STORAGE_KEYS } from '@/services/widgetStorage';
 import { formatCurrency } from '@/utils/formatting';
@@ -132,6 +133,29 @@ export default function RidesListScreen() {
     await fetchRides(!hasCached, `driver_rides_${activeTab}`);
     setRefreshing(false);
   };
+
+  // Realtime subscription to auto-update driver rides when changes occur in Supabase
+  useEffect(() => {
+    const supabase = supabaseService.getClient();
+    const channel = supabase
+      .channel(`driver-rides-list-${activeTab}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'rides',
+        },
+        () => {
+          fetchRides(false, `driver_rides_${activeTab}`);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [activeTab]);
 
   const handleAcceptRide = async (ride: RideItem) => {
     if (acceptingRideId) return;

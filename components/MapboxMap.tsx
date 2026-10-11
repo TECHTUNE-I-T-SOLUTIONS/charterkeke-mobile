@@ -407,10 +407,11 @@ MapboxMap.displayName = 'MapboxMap';
 interface MarkerProps {
   id: string;
   coordinate: [number, number];
-  title: string;
+  title?: string;
   description?: string;
   color?: string;
   onPress?: () => void;
+  children?: React.ReactNode;
 }
 
 export const MapboxMarker: React.FC<MarkerProps> = ({
@@ -420,6 +421,7 @@ export const MapboxMarker: React.FC<MarkerProps> = ({
   description,
   color = '#3B82F6',
   onPress,
+  children,
 }) => {
   if (!canUseNativeMapbox && canUseFallbackMap) {
     const FallbackMarker = ReactNativeMaps.Marker;
@@ -435,7 +437,9 @@ export const MapboxMarker: React.FC<MarkerProps> = ({
           description={description}
           pinColor={color}
           onPress={onPress}
-        />
+        >
+          {children}
+        </FallbackMarker>
       );
     }
   }
@@ -448,10 +452,10 @@ export const MapboxMarker: React.FC<MarkerProps> = ({
     <Mapbox.PointAnnotation
       id={id}
       coordinate={coordinate}
-      title={title}
+      title={title || ''}
       onSelected={() => onPress?.()}
     >
-      <View style={[styles.marker, { backgroundColor: color }]} />
+      {children || <View style={[styles.marker, { backgroundColor: color }]} />}
     </Mapbox.PointAnnotation>
   );
 };

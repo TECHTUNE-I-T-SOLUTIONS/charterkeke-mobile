@@ -3,6 +3,7 @@ import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
+import { DriverLocationMarker } from '@/components/DriverLocationMarker';
 import { useTheme } from '@/context/ThemeContext';
 import { COLORS } from '@/utils/colors';
 
@@ -64,7 +65,11 @@ export const RideMapFullscreenModal: React.FC<RideMapFullscreenModalProps> = ({
             {pickup && <MapboxMarker id="pickup" coordinate={pickup} title="Pickup" color="#FF9203" />}
             {dropoff && <MapboxMarker id="dropoff" coordinate={dropoff} title="Dropoff" color="#000000" />}
             {riderLocation && <MapboxMarker id="rider" coordinate={riderLocation} title="Rider" color="#2563EB" />}
-            {driverLocation && <MapboxMarker id="driver" coordinate={driverLocation} title="Tricycle" color="#10B981" />}
+            {driverLocation && (
+              <MapboxMarker id="driver" coordinate={driverLocation} title="Driver">
+                <DriverLocationMarker size={32} />
+              </MapboxMarker>
+            )}
           </MapboxMap>
         </View>
         <View style={[styles.footer, { borderTopColor: colors.border, backgroundColor: colors.card }]}>

@@ -114,6 +114,23 @@ export default function RideDetailsScreen() {
     };
   }, [rideData, rideId]);
 
+  // Realtime subscription on rides table for auto-refresh
+  const activeRideId = ride?.id || rideId;
+  useEffect(() => {
+    if (!activeRideId) return;
+
+    let active = true;
+    supabaseService.subscribeToRideUpdates(String(activeRideId), (updatedRide: any) => {
+      if (!active || !updatedRide) return;
+      setRide((prev: any) => (prev ? { ...prev, ...updatedRide } : updatedRide));
+    });
+
+    return () => {
+      active = false;
+      supabaseService.unsubscribeRideUpdates(String(activeRideId)).catch(() => {});
+    };
+  }, [activeRideId]);
+
    useEffect(() => {
       let cancelled = false;
 

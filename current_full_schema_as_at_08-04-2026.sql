@@ -131,6 +131,7 @@ CREATE TABLE public.rides (
   accepted_at timestamp without time zone,
   cancelled_at timestamp without time zone,
   cancellation_penalty_amount numeric DEFAULT 0,
+  metadata jsonb DEFAULT '{}'::jsonb,
   CONSTRAINT rides_pkey PRIMARY KEY (id),
   CONSTRAINT rides_rider_id_fkey FOREIGN KEY (rider_id) REFERENCES public.users(id),
   CONSTRAINT rides_driver_id_fkey FOREIGN KEY (driver_id) REFERENCES public.drivers(id),

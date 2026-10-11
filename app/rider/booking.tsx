@@ -1963,24 +1963,24 @@ const styles = StyleSheet.create({
   modalContent: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    padding: 20,
-    paddingBottom: 32,
+    padding: 16,
+    paddingBottom: 16,
     width: '100%',
-    maxHeight: '90%',
+    maxHeight: '85%',
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 12,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
   },
   modalBody: {
-    gap: 12,
-    maxHeight: '70%',
+    gap: 10,
+    flexShrink: 1,
   },
   scheduleOption: {
     flexDirection: 'row',

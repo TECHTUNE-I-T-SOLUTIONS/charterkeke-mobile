@@ -185,7 +185,7 @@ export default function RideDetailsScreen() {
   const cancellationCountdown = useMemo(() => {
     if (!rideDetails) return null;
     const currentStatus = String(rideDetails.status || '').toLowerCase();
-    if (currentStatus === 'completed' || currentStatus === 'cancelled' || currentStatus === 'in_progress') return null;
+    if (currentStatus !== 'accepted') return null; // Only show countdown if driver accepted
 
     // Use driverAcceptedAt state or fall back to rideDetails.accepted_at
     const acceptedAt = driverAcceptedAt ? new Date(driverAcceptedAt).getTime() : null;
@@ -197,7 +197,6 @@ export default function RideDetailsScreen() {
       if (remaining > 0) return Math.ceil(remaining / 1000); // Return seconds
     }
 
-    // No countdown if no driver accepted (always free)
     return null;
   }, [rideDetails, driverAcceptedAt, now]);
 
@@ -391,6 +390,53 @@ export default function RideDetailsScreen() {
       cancelled = true;
     };
   }, [rideDataParam, rideIdParam, showError]);
+
+  // Realtime subscription on rides table for auto-refresh
+  const targetRideId = rideDetails?.id || rideIdParam;
+  useEffect(() => {
+    if (!targetRideId) return;
+
+    let active = true;
+    supabaseService.subscribeToRideUpdates(String(targetRideId), (updatedRide: any) => {
+      if (!active || !updatedRide) return;
+      setRideDetails((prev) => (prev ? { ...prev, ...updatedRide } : updatedRide));
+      if (updatedRide.drivers) {
+        setDriverDetails(mapDriverDetails(updatedRide.drivers));
+      }
+    });
+
+    return () => {
+      active = false;
+      supabaseService.unsubscribeRideUpdates(String(targetRideId)).catch(() => {});
+    };
+  }, [targetRideId]);
+
+  // Occasional driver location polling (30s) when ride is active
+  useEffect(() => {
+    if (!targetRideId) return;
+    const currentStatus = String(rideDetails?.status || '').toLowerCase();
+    if (currentStatus !== 'accepted' && currentStatus !== 'in_progress') return;
+
+    let mounted = true;
+    const pollDriverLoc = async () => {
+      try {
+        const res: any = await apiService.get(`/rides/${targetRideId}/driver-location`);
+        const loc = res?.location || res?.driverLocation;
+        if (mounted && loc && typeof loc.latitude === 'number' && typeof loc.longitude === 'number') {
+          setLiveDriverLocation([Number(loc.longitude), Number(loc.latitude)]);
+        }
+      } catch {
+        /* best-effort */
+      }
+    };
+
+    pollDriverLoc();
+    const timer = setInterval(pollDriverLoc, 30000);
+    return () => {
+      mounted = false;
+      clearInterval(timer);
+    };
+  }, [targetRideId, rideDetails?.status]);
 
   useEffect(() => {
     let cancelled = false;

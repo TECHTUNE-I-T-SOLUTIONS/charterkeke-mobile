@@ -15,7 +15,9 @@ import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
+import { DriverLocationMarker } from '@/components/DriverLocationMarker';
 import { RideMapFullscreenModal } from '@/components/RideMapFullscreenModal';
+import { RideRoadProgressCard } from '@/components/RideRoadProgressCard';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useAuth } from '@/context/AuthContext';
 import { useLocation } from '@/context/LocationContext';
@@ -127,7 +129,7 @@ export default function ActiveRideScreen() {
   // Calculate cancellation window countdown
   const cancellationCountdown = useMemo(() => {
     if (!activeRide) return null;
-    if (activeRideStatus === 'completed' || activeRideStatus === 'cancelled' || activeRideStatus === 'in_progress') return null;
+    if (activeRideStatus !== 'accepted') return null; // Only show countdown if driver accepted
 
     const acceptedAt = activeRide.accepted_at ? new Date(activeRide.accepted_at).getTime() : null;
 
@@ -138,7 +140,6 @@ export default function ActiveRideScreen() {
       if (remaining > 0) return Math.ceil(remaining / 1000); // Return seconds
     }
 
-    // No countdown if no driver accepted (always free)
     return null;
   }, [activeRide, activeRideStatus, now]);
 
@@ -302,6 +303,35 @@ export default function ActiveRideScreen() {
       supabaseService.unsubscribeRideLocation(resolvedRideId).catch(() => {});
     };
   }, [resolvedRideId]);
+
+  // Occasional location polling (every 30s) to reduce server load
+  useEffect(() => {
+    if (!resolvedRideId || !hasDriver) return;
+    if (!isAccepted && !isInProgress) return;
+
+    let mounted = true;
+    const fetchDriverLoc = async () => {
+      try {
+        const res: any = await apiService.get(`/rides/${resolvedRideId}/driver-location`);
+        const loc = res?.location || res?.driverLocation;
+        if (mounted && loc && typeof loc.latitude === 'number' && typeof loc.longitude === 'number') {
+          setDriverLocation({
+            latitude: Number(loc.latitude),
+            longitude: Number(loc.longitude),
+          });
+        }
+      } catch {
+        /* best-effort polling */
+      }
+    };
+
+    fetchDriverLoc();
+    const timer = setInterval(fetchDriverLoc, 30000); // 30s polling
+    return () => {
+      mounted = false;
+      clearInterval(timer);
+    };
+  }, [resolvedRideId, hasDriver, isAccepted, isInProgress]);
 
   // Postgres Realtime — instant status updates from rides table
   useEffect(() => {
@@ -663,6 +693,45 @@ export default function ActiveRideScreen() {
           </View>
         )}
 
+        {/* ── "Driver on the way" banner (accepted) ─────────────────────────── */}
+        {isAccepted && (
+          <View
+            style={{
+              marginHorizontal: 16,
+              marginTop: 16,
+              borderRadius: 16,
+              backgroundColor: isDark ? '#064e3b' : '#ecfdf5',
+              borderWidth: 1,
+              borderColor: '#10b981',
+              padding: 16,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 14,
+            }}
+          >
+            <View
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: '#10b981',
+                justifyContent: 'center',
+                alignItems: 'center',
+              }}
+            >
+              <MaterialCommunityIcons name="navigation-variant" size={22} color="#FFFFFF" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: isDark ? '#34d399' : '#065f46', fontWeight: '800', fontSize: 14, marginBottom: 2 }}>
+                Driver is on the way 🛺
+              </Text>
+              <Text style={{ color: isDark ? '#a7f3d0' : '#047857', fontSize: 12, lineHeight: 16 }}>
+                Your driver has accepted the ride and is heading to your pickup location.
+              </Text>
+            </View>
+          </View>
+        )}
+
         {/* ── Map ─────────────────────────────────────────────────────────────── */}
         <View
           style={{
@@ -698,7 +767,9 @@ export default function ActiveRideScreen() {
                 coordinate={[marker.longitude, marker.latitude]}
                 title={marker.title}
                 color={marker.type === 'driver' ? colors.primary : '#ef4444'}
-              />
+              >
+                {marker.type === 'driver' ? <DriverLocationMarker size={32} /> : null}
+              </MapboxMarker>
             ))}
           </MapboxMap>
 
@@ -722,6 +793,18 @@ export default function ActiveRideScreen() {
             <Text style={{ color: '#fff', fontSize: 11, fontWeight: '600' }}>Full Map</Text>
           </TouchableOpacity>
         </View>
+
+        {/* ── Live Road Progress Bar (Commented out as requested) ─────────────────── */}
+        {/* {(isAccepted || isInProgress) && (
+          <RideRoadProgressCard
+            status={activeRideStatus}
+            distanceKm={displayDistanceKm}
+            etaMinutes={displayEtaMin}
+            pickupZone={activeRide.pickup_zone}
+            destinationZone={activeRide.destination_zone}
+            driverName={driver ? `${driver.first_name} ${driver.last_name}` : 'Driver'}
+          />
+        )} */}
 
         {/* ── Distance / ETA row ───────────────────────────────────────────────── */}
         <View
@@ -984,9 +1067,9 @@ export default function ActiveRideScreen() {
             <Text style={{ color: cancelStatus === 'free' ? '#15803d' : '#b91c1c', fontSize: 12, flex: 1, lineHeight: 17 }}>
               {isPending
                 ? 'Free cancellation available while waiting for driver'
-                : cancelStatus === 'free' && cancellationCountdown !== null
+                : isAccepted && cancelStatus === 'free' && cancellationCountdown !== null
                   ? `Free cancellation window: ${Math.floor(cancellationCountdown / 60)}:${(cancellationCountdown % 60).toString().padStart(2, '0')} remaining`
-                  : cancelStatus === 'penalty'
+                  : isAccepted && cancelStatus === 'penalty'
                     ? `Free cancellation window closed. Cancelling now incurs a ${cancellationPenaltyPercent}% fee`
                     : 'Free cancellation window active'}
             </Text>
