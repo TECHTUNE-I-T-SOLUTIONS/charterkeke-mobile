@@ -82,6 +82,8 @@ export default function ActiveRideScreen() {
   const driverArrivalCheckTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const [showDriverNoShowModal, setShowDriverNoShowModal] = useState(false);
   const [driverAcceptedAt, setDriverAcceptedAt] = useState<string | null>(null);
+  const [showCompletionConfirmationModal, setShowCompletionConfirmationModal] = useState(false);
+  const [verifyingCompletion, setVerifyingCompletion] = useState(false);
 
   // Keep a live clock ticking for cancellation window countdown
   useEffect(() => {
@@ -355,10 +357,7 @@ export default function ActiveRideScreen() {
             Alert.alert('Ride Started 🚗', 'Your ride has started. Enjoy your trip!');
           } else if (newStatus === 'completed') {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            Alert.alert('Ride Completed ✅', 'Your ride is complete. Rate your driver!', [
-              { text: 'Rate Now', onPress: () => router.replace(`/rider/rating?rideId=${resolvedRideId}`) },
-              { text: 'Later', style: 'cancel' },
-            ]);
+            setShowCompletionConfirmationModal(true);
           } else if (newStatus === 'cancelled') {
             Alert.alert('Ride Cancelled', 'This ride has been cancelled.', [
               { text: 'Book Again', onPress: () => router.replace('/rider/booking') },
@@ -1167,6 +1166,62 @@ export default function ActiveRideScreen() {
                 onPress={() => handleDriverNoShowResponse(false)}
               >
                 <Text style={styles.modalButtonText}>No, No Communication</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Completion Confirmation Modal */}
+      <Modal
+        visible={showCompletionConfirmationModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCompletionConfirmationModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <MaterialCommunityIcons name="check-circle" size={48} color={colors.primary} />
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Confirm Ride Completion</Text>
+            <Text style={[styles.modalText, { color: colors.textSecondary }]}>
+              Your driver has marked this ride as completed. Please confirm if you have arrived at your destination.
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonSecondary, { backgroundColor: colors.background, borderColor: colors.border }]}
+                onPress={async () => {
+                  setShowCompletionConfirmationModal(false);
+                  // Rider denies completion - report issue
+                  Alert.alert(
+                    'Report Issue',
+                    'Are you sure the ride was not completed? We will investigate this.',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Report',
+                        style: 'destructive',
+                        onPress: () => {
+                          // TODO: Add actual reporting logic
+                          Alert.alert('Issue Reported', 'Thank you. Our team will review this.');
+                        }
+                      }
+                    ]
+                  );
+                }}
+              >
+                <Text style={[styles.modalButtonText, { color: colors.text }]}>Not Completed</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonPrimary, { backgroundColor: colors.primary }]}
+                onPress={() => {
+                  setShowCompletionConfirmationModal(false);
+                  Alert.alert('Ride Completed ✅', 'Your ride is complete. Rate your driver!', [
+                    { text: 'Rate Now', onPress: () => router.replace(`/rider/rating?rideId=${resolvedRideId}`) },
+                    { text: 'Later', style: 'cancel' },
+                  ]);
+                }}
+              >
+                <Text style={styles.modalButtonText}>Confirm Completed</Text>
               </TouchableOpacity>
             </View>
           </View>
