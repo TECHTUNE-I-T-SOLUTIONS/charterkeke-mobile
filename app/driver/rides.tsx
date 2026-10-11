@@ -211,6 +211,13 @@ export default function RidesListScreen() {
            </View>
         </View>
 
+        <View style={[styles.dateRow, { backgroundColor: theme.colors.inputBackground }]}>
+           <MaterialCommunityIcons name="calendar-clock" size={14} color={theme.colors.textSecondary} />
+           <Text style={[styles.dateText, { color: theme.colors.textSecondary }]}>
+              {item.created_at ? new Date(item.created_at).toLocaleDateString() : 'N/A'} • {item.created_at ? new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' }) : 'N/A'}
+           </Text>
+        </View>
+
         {isAvailable && (
           <View style={styles.actionRow}>
             <TouchableOpacity disabled={isAccepting} onPress={() => {}} style={[styles.actionBtn, { borderColor: theme.colors.border, opacity: isAccepting ? 0.55 : 1 }]}>
@@ -319,6 +326,8 @@ const styles = StyleSheet.create({
   metaItem: { alignItems: 'center', flex: 1 },
   metaLabel: { fontSize: 10 },
   metaValue: { fontSize: 13, fontWeight: '600' },
+  dateRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 8, marginTop: 8 },
+  dateText: { fontSize: 11 },
   actionRow: { flexDirection: 'row', gap: 12, marginTop: 16 },
   actionBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 1, alignItems: 'center' },
   acceptingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
