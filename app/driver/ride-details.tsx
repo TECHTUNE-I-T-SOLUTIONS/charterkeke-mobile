@@ -10,6 +10,8 @@ import {
   StatusBar,
   Dimensions,
   Image,
+  Modal,
+  Alert,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -57,6 +59,9 @@ export default function RideDetailsScreen() {
   const [lastMapTap, setLastMapTap] = useState(0);
   const [hasNotifiedArrival, setHasNotifiedArrival] = useState(false);
   const [receiptModalMode, setReceiptModalMode] = useState<'share' | 'download' | null>(null);
+  const [showCompletionModal, setShowCompletionModal] = useState(false);
+  const [verifyingLocation, setVerifyingLocation] = useState(false);
+  const [locationVerified, setLocationVerified] = useState(false);
   const receiptRef = useRef<View>(null);
   const etaPersistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastPersistedEtaRef = useRef<number | null>(null);
@@ -275,55 +280,6 @@ export default function RideDetailsScreen() {
     };
   }, [ride?.id, ride?.status, rideId]);
 
-  const handleUpdate = async (status: string) => {
-    if (updating) return;
-
-    const previousRide = ride;
-    try {
-      setUpdating(true);
-      setActionLabel(status === 'completed' ? 'Completing trip...' : 'Starting trip...');
-      const targetRideId = String(rideId || ride?.id || '');
-      if (!targetRideId) {
-        showError('Ride unavailable', 'We could not identify this ride yet. Please reopen the ride and try again.');
-        return;
-      }
-      setRide((current: any) => current ? { ...current, status } : current);
-      const response = await apiService.updateRideStatus(targetRideId, status as 'in_progress' | 'completed', displayEtaMin);
-      
-      if (response) {
-        // Update local state with the response data
-        setRide(response);
-        
-        if (status === 'completed') {
-          showSuccess('Ride completed', 'The trip has been completed successfully.');
-          router.back();
-        } else {
-          showSuccess('Trip started', 'The ride is now in progress.');
-        }
-      }
-    } catch (error: any) {
-      console.error('❌ [RIDE] Update failed:', error);
-      const currentStatus = String(error?.details?.currentStatus || error?.details?.ride?.status || '').toLowerCase();
-      if (
-        (status === 'in_progress' && currentStatus === 'in_progress') ||
-        (status === 'completed' && currentStatus === 'completed')
-      ) {
-        const resolvedRide = error?.details?.ride || previousRide;
-        setRide((current: any) => ({ ...(current || resolvedRide || {}), ...(resolvedRide || {}), status }));
-        showSuccess(
-          status === 'completed' ? 'Ride completed' : 'Trip started',
-          status === 'completed' ? 'The trip was already completed.' : 'The ride is already in progress.'
-        );
-        return;
-      }
-      setRide(previousRide);
-      showError('Could not update ride', error?.message || 'Failed to update ride status');
-    } finally {
-      setActionLabel(null);
-      setUpdating(false);
-    }
-  };
-
   const handleAcceptRide = async () => {
     if (updating) return;
 
@@ -412,6 +368,66 @@ export default function RideDetailsScreen() {
   const isCompleted = rideStatus === 'completed';
   const nextTripStatus = rideStatus === 'accepted' ? 'in_progress' : 'completed';
   const primaryActionLabel = isAwaitingAcceptance ? 'Accept Ride' : rideStatus === 'accepted' ? 'Start Trip' : 'Complete Trip';
+
+  // Move handleUpdate here so it's accessible from modal
+  const handleUpdate = async (status: string) => {
+    if (updating) return;
+
+    const previousRide = ride;
+    try {
+      setUpdating(true);
+      setActionLabel(status === 'completed' ? 'Completing trip...' : 'Starting trip...');
+      const targetRideId = String(rideId || ride?.id || '');
+      if (!targetRideId) {
+        showError('Ride unavailable', 'We could not identify this ride yet. Please reopen the ride and try again.');
+        return;
+      }
+
+      // If completing, show verification modal first
+      if (status === 'completed') {
+        setShowCompletionModal(true);
+        setUpdating(false);
+        setActionLabel(null);
+        return;
+      }
+
+      setRide((current: any) => current ? { ...current, status } : current);
+      const response = await apiService.updateRideStatus(targetRideId, status as 'in_progress' | 'completed', displayEtaMin);
+
+      if (response) {
+        // Update local state with the response data
+        setRide(response);
+
+        if (status === 'completed') {
+          showSuccess('Ride completed', 'The trip has been completed successfully.');
+          router.back();
+        } else {
+          showSuccess('Trip started', 'The ride is now in progress.');
+        }
+      }
+    } catch (error: any) {
+      console.error('❌ [RIDE] Update failed:', error);
+      const currentStatus = String(error?.details?.currentStatus || error?.details?.ride?.status || '').toLowerCase();
+      if (
+        (status === 'in_progress' && currentStatus === 'in_progress') ||
+        (status === 'completed' && currentStatus === 'completed')
+      ) {
+        const resolvedRide = error?.details?.ride || previousRide;
+        setRide((current: any) => ({ ...(current || resolvedRide || {}), ...(resolvedRide || {}), status }));
+        showSuccess(
+          status === 'completed' ? 'Ride completed' : 'Trip started',
+          status === 'completed' ? 'The trip was already completed.' : 'The ride is already in progress.'
+        );
+        return;
+      }
+      setRide(previousRide);
+      showError('Could not update ride', error?.message || 'Failed to update ride status');
+    } finally {
+      setActionLabel(null);
+      setUpdating(false);
+    }
+  };
+
   const persistLiveEta = async (etaMinutes: number) => {
     const targetRideId = String(rideId || ride?.id || '');
     if (!targetRideId || !Number.isFinite(etaMinutes) || etaMinutes <= 0) return;
@@ -729,6 +745,82 @@ export default function RideDetailsScreen() {
           textSecondary: theme.colors.textSecondary,
         }}
       />
+
+      {/* Completion Verification Modal */}
+      <Modal
+        visible={showCompletionModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCompletionModal(false)}
+      >
+        <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.7)' }]}>
+          <View style={[styles.modalContent, { backgroundColor: theme.colors.surface }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>Complete Trip Verification</Text>
+              <TouchableOpacity onPress={() => setShowCompletionModal(false)}>
+                <MaterialCommunityIcons name="close" size={24} color={theme.colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.modalBody}>
+              <Text style={[styles.modalText, { color: theme.colors.textSecondary, marginBottom: 16 }]}>
+                Please confirm that you have arrived at the destination before completing the trip.
+              </Text>
+
+              <View style={[styles.locationCheck, { backgroundColor: theme.colors.inputBackground, borderColor: theme.colors.border }]}>
+                <MaterialCommunityIcons name="map-marker-check" size={32} color={locationVerified ? '#10B981' : theme.colors.textSecondary} />
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={[styles.checkLabel, { color: theme.colors.textPrimary }]}>
+                    {locationVerified ? 'Location Verified' : 'Verifying Location...'}
+                  </Text>
+                  <Text style={[styles.checkSublabel, { color: theme.colors.textSecondary }]}>
+                    {locationVerified ? 'You are at the destination' : 'Checking GPS coordinates'}
+                  </Text>
+                </View>
+                {verifyingLocation && <ActivityIndicator size="small" color={BRAND.primary} />}
+              </View>
+
+              <TouchableOpacity
+                style={[styles.verifyBtn, { backgroundColor: BRAND.primary }]}
+                onPress={async () => {
+                  setVerifyingLocation(true);
+                  // Simulate location verification (in production, check actual GPS)
+                  setTimeout(() => {
+                    setVerifyingLocation(false);
+                    setLocationVerified(true);
+                  }, 1500);
+                }}
+                disabled={verifyingLocation || locationVerified}
+              >
+                {verifyingLocation ? 'Verifying...' : 'Verify Location'}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.completeBtn, { backgroundColor: locationVerified ? BRAND.primary : theme.colors.border }]}
+                onPress={async () => {
+                  if (!locationVerified) {
+                    Alert.alert('Location Not Verified', 'Please verify your location first before completing the trip.');
+                    return;
+                  }
+                  setShowCompletionModal(false);
+                  // Proceed with completion using the handleUpdate function
+                  await handleUpdate('completed');
+                }}
+                disabled={!locationVerified}
+              >
+                Confirm Completion
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.cancelBtn, { backgroundColor: 'transparent' }]}
+                onPress={() => setShowCompletionModal(false)}
+              >
+                Cancel
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <View pointerEvents="none" style={styles.hiddenReceipt}>
         <View ref={receiptRef} collapsable={false}>
           <RideReceiptTemplate ride={ride} audience="driver" />
@@ -783,4 +875,16 @@ const styles = StyleSheet.create({
   receiptBtn: { flex: 1, minHeight: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
   receiptBtnText: { color: '#000', fontWeight: '800', fontSize: 14 },
   hiddenReceipt: { position: 'absolute', left: -1200, top: 0, opacity: 1 },
+  modalOverlay: { flex: 1, justifyContent: 'flex-end' },
+  modalContent: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 32 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  modalTitle: { fontSize: 20, fontWeight: '700' },
+  modalBody: { gap: 16 },
+  modalText: { fontSize: 14, lineHeight: 20 },
+  locationCheck: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 12, borderWidth: 1 },
+  checkLabel: { fontSize: 16, fontWeight: '600' },
+  checkSublabel: { fontSize: 12, marginTop: 4 },
+  verifyBtn: { paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginBottom: 12 },
+  completeBtn: { paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginBottom: 8 },
+  cancelBtn: { paddingVertical: 14, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: 'transparent' },
 });

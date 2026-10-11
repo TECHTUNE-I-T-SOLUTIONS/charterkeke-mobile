@@ -129,9 +129,14 @@ export default function AvailableRidesScreen() {
             text: 'View Ride Details',
             onPress: () => router.push({ pathname: '/driver/ride-details', params: { rideId } } as any),
           },
+          {
+            text: 'Stay Here',
+            style: 'cancel',
+          },
         ]
       );
-      await handleRefresh();
+      // Don't refresh immediately - let the user see the updated state
+      // The card will be filtered out by the backend on next refresh
     } catch (err: any) {
       Alert.alert('Error', err?.message || 'Failed to accept ride. It may have already been accepted by another driver.');
     } finally {
