@@ -91,7 +91,7 @@ export default function ActiveRideScreen() {
   const [driverAcceptedAt, setDriverAcceptedAt] = useState<string | null>(null);
   const [showCompletionConfirmationModal, setShowCompletionConfirmationModal] = useState(false);
   const [verifyingCompletion, setVerifyingCompletion] = useState(false);
-  const [trackingProgress, setTrackingProgress] = useState<'just-started' | 'started' | 'half-way' | 'very-close' | 'almost-finished' | 'ride-completed' | null>(null);
+  const [trackingProgress, setTrackingProgress] = useState<'just-started' | 'started' | 'half-way' | 'very-close' | 'very-close-to-finish' | 'almost-finished' | 'ride-completed' | null>(null);
 
   // Keep a live clock ticking for cancellation window countdown
   useEffect(() => {
@@ -365,6 +365,8 @@ export default function ActiveRideScreen() {
       setTrackingProgress('half-way');
     } else if (distance > maxDistance * 0.2) {
       setTrackingProgress('very-close');
+    } else if (distance > 0.3) {
+      setTrackingProgress('very-close-to-finish');
     } else if (distance > 0.1) {
       setTrackingProgress('almost-finished');
     } else {
@@ -880,6 +882,8 @@ export default function ActiveRideScreen() {
                     ? require('../../assets/tracking-half-way.png')
                     : trackingProgress === 'very-close'
                     ? require('../../assets/tracking-very-close.png')
+                    : trackingProgress === 'very-close-to-finish'
+                    ? require('../../assets/tracking-very-close-to-finish.png')
                     : trackingProgress === 'almost-finished'
                     ? require('../../assets/tracking-almost-finished.png')
                     : require('../../assets/tracking-ride-completed.png')
