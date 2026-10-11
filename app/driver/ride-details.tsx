@@ -31,6 +31,7 @@ import { exportRideReceipt, saveCapturedRideReceiptImage, shareReceiptFile, shar
 import { RideReceiptExportModal } from '@/components/RideReceiptExportModal';
 import { RideReceiptTemplate } from '@/components/RideReceiptTemplate';
 import { captureRef } from 'react-native-view-shot';
+import { useDriverLocationTracking } from '@/hooks/useDriverLocationTracking';
 
 const { width } = Dimensions.get('window');
 const PLATFORM_FEE_PERCENTAGE = 0.15;
@@ -77,6 +78,13 @@ export default function RideDetailsScreen() {
     return [lng as number, lat as number] as [number, number];
   };
   const safeRideStatus = String(ride?.status || '').trim().toUpperCase() || 'DETAILS';
+
+  // Enable driver location tracking when ride is active
+  const { isTracking } = useDriverLocationTracking({
+    rideId: ride?.id,
+    enabled: safeRideStatus === 'ACCEPTED' || safeRideStatus === 'IN_PROGRESS',
+    intervalMs: 30000, // 30 seconds
+  });
 
   useEffect(() => {
     if (rideData) {

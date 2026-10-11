@@ -73,7 +73,7 @@ module.exports = ({ config }) => {
     ios: {
       icon: './assets/ios-app-icon-1024.png',
       bundleIdentifier: 'com.charterkeke.mobile',
-      buildNumber: '230',
+      buildNumber: '231',
       googleServicesFile: './GoogleService-Info.plist',
       config: { usesNonExemptEncryption: false },
       infoPlist: {
@@ -104,7 +104,7 @@ module.exports = ({ config }) => {
       },
       package: 'com.charterkeke.mobile',
       googleServicesFile: './google-services.json',
-      versionCode: 228,
+      versionCode: 229,
       permissions: [
         'android.permission.ACCESS_FINE_LOCATION',
         'android.permission.ACCESS_COARSE_LOCATION',
