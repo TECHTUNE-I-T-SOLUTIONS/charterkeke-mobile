@@ -10,6 +10,7 @@ import {
   Alert,
   StyleSheet,
   Modal,
+  Image,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -45,6 +46,12 @@ interface ActiveRide {
   distance_km?: number;
   created_at?: string;       // when ride was booked
   accepted_at?: string;      // when driver accepted (may come from ride or metadata)
+  pickup_latitude?: number;
+  pickup_longitude?: number;
+  destination_latitude?: number;
+  destination_longitude?: number;
+  pickup_description?: string;
+  destination_description?: string;
   driver?: {
     users: {
       first_name: string;
@@ -84,6 +91,7 @@ export default function ActiveRideScreen() {
   const [driverAcceptedAt, setDriverAcceptedAt] = useState<string | null>(null);
   const [showCompletionConfirmationModal, setShowCompletionConfirmationModal] = useState(false);
   const [verifyingCompletion, setVerifyingCompletion] = useState(false);
+  const [trackingProgress, setTrackingProgress] = useState<'just-started' | 'started' | 'half-way' | 'very-close' | 'almost-finished' | 'ride-completed' | null>(null);
 
   // Keep a live clock ticking for cancellation window countdown
   useEffect(() => {
@@ -335,6 +343,35 @@ export default function ActiveRideScreen() {
     };
   }, [resolvedRideId, hasDriver, isAccepted, isInProgress]);
 
+  // Calculate tracking progress based on distance
+  useEffect(() => {
+    if (!isAccepted && !isInProgress) {
+      setTrackingProgress(null);
+      return;
+    }
+
+    const distance = displayDistanceKm;
+    if (!distance) return;
+
+    // If accepted, driver is heading to pickup - use shorter thresholds
+    // If in progress, driver is heading to destination - use normal thresholds
+    const maxDistance = isAccepted ? 5 : 3;
+
+    if (distance > maxDistance * 0.8) {
+      setTrackingProgress('just-started');
+    } else if (distance > maxDistance * 0.6) {
+      setTrackingProgress('started');
+    } else if (distance > maxDistance * 0.4) {
+      setTrackingProgress('half-way');
+    } else if (distance > maxDistance * 0.2) {
+      setTrackingProgress('very-close');
+    } else if (distance > 0.1) {
+      setTrackingProgress('almost-finished');
+    } else {
+      setTrackingProgress('ride-completed');
+    }
+  }, [displayDistanceKm, isAccepted, isInProgress]);
+
   // Postgres Realtime — instant status updates from rides table
   useEffect(() => {
     if (!resolvedRideId) return;
@@ -402,15 +439,31 @@ export default function ActiveRideScreen() {
   // Map markers
   const mapMarkers = useMemo(() => {
     const markers = [];
-    if (currentLocation) {
+    // Add pickup marker (use ride pickup coordinates if available, otherwise current location)
+    const pickupLat = activeRide?.pickup_latitude || currentLocation?.latitude;
+    const pickupLng = activeRide?.pickup_longitude || currentLocation?.longitude;
+    if (pickupLat && pickupLng) {
       markers.push({
         id: 'pickup',
-        latitude: currentLocation.latitude,
-        longitude: currentLocation.longitude,
-        title: 'Your Location',
+        latitude: pickupLat,
+        longitude: pickupLng,
+        title: 'Pickup Location',
         type: 'pickup',
       });
     }
+    // Add destination marker
+    const destLat = activeRide?.destination_latitude;
+    const destLng = activeRide?.destination_longitude;
+    if (destLat && destLng) {
+      markers.push({
+        id: 'destination',
+        latitude: destLat,
+        longitude: destLng,
+        title: 'Destination',
+        type: 'destination',
+      });
+    }
+    // Add driver marker with keke icon
     if (driverLocation) {
       markers.push({
         id: 'driver',
@@ -421,20 +474,32 @@ export default function ActiveRideScreen() {
       });
     }
     return markers;
-  }, [currentLocation, driverLocation]);
+  }, [currentLocation, driverLocation, activeRide]);
 
-  // Route (driver → pickup, or just straight line)
+  // Route (driver → pickup → destination)
   useEffect(() => {
     let cancelled = false;
 
     const loadRoute = async () => {
-      if (!currentLocation || !driverLocation) return;
+      const pickupLat = activeRide?.pickup_latitude || currentLocation?.latitude;
+      const pickupLng = activeRide?.pickup_longitude || currentLocation?.longitude;
+      const destLat = activeRide?.destination_latitude;
+      const destLng = activeRide?.destination_longitude;
+
+      if (!pickupLat || !pickupLng || !destLat || !destLng) return;
 
       setRouteLoading(true);
       try {
+        // If driver location is available, show route from driver to pickup
+        // Otherwise show route from pickup to destination
+        const startCoords: [number, number] = driverLocation
+          ? [driverLocation.longitude, driverLocation.latitude]
+          : [pickupLng, pickupLat];
+        const endCoords: [number, number] = [destLng, destLat];
+
         const route = await fetchMapboxRoute(
-          [currentLocation.longitude, currentLocation.latitude],
-          [driverLocation.longitude, driverLocation.latitude],
+          startCoords,
+          endCoords,
           { profile: 'driving-traffic' }
         );
         if (cancelled) return;
@@ -443,10 +508,8 @@ export default function ActiveRideScreen() {
           setRouteDistanceKm(parseFloat(route.distanceKm.toFixed(2)));
           setRouteDurationMin(Math.max(1, Math.round(route.durationMin)));
         } else {
-          setRouteCoordinates([
-            [currentLocation.longitude, currentLocation.latitude],
-            [driverLocation.longitude, driverLocation.latitude],
-          ]);
+          // Fallback to straight line
+          setRouteCoordinates([startCoords, endCoords]);
         }
       } catch {
         // silently ignore
@@ -457,14 +520,28 @@ export default function ActiveRideScreen() {
 
     loadRoute();
     return () => { cancelled = true; };
-  }, [currentLocation, driverLocation]);
+  }, [currentLocation, driverLocation, activeRide]);
 
   const mapFocusCoordinates = useMemo<[number, number][]>(() => {
     const coords: [number, number][] = [];
-    if (currentLocation) coords.push([currentLocation.longitude, currentLocation.latitude]);
-    if (driverLocation) coords.push([driverLocation.longitude, driverLocation.latitude]);
+    // Add pickup location
+    const pickupLat = activeRide?.pickup_latitude || currentLocation?.latitude;
+    const pickupLng = activeRide?.pickup_longitude || currentLocation?.longitude;
+    if (pickupLat && pickupLng) {
+      coords.push([pickupLng, pickupLat] as [number, number]);
+    }
+    // Add destination location
+    const destLat = activeRide?.destination_latitude;
+    const destLng = activeRide?.destination_longitude;
+    if (destLat && destLng) {
+      coords.push([destLng, destLat] as [number, number]);
+    }
+    // Add driver location
+    if (driverLocation) {
+      coords.push([driverLocation.longitude, driverLocation.latitude] as [number, number]);
+    }
     return coords;
-  }, [currentLocation, driverLocation]);
+  }, [currentLocation, driverLocation, activeRide]);
 
   const handleMapTap = () => {
     const t = Date.now();
@@ -765,12 +842,71 @@ export default function ActiveRideScreen() {
                 id={marker.id}
                 coordinate={[marker.longitude, marker.latitude]}
                 title={marker.title}
-                color={marker.type === 'driver' ? colors.primary : '#ef4444'}
+                color={
+                  marker.type === 'driver' ? colors.primary :
+                  marker.type === 'pickup' ? '#10B981' :
+                  marker.type === 'destination' ? '#EF4444' :
+                  '#ef4444'
+                }
               >
                 {marker.type === 'driver' ? <DriverLocationMarker size={32} /> : null}
               </MapboxMarker>
             ))}
           </MapboxMap>
+
+          {/* Live Tracking Progress Banner */}
+          {trackingProgress && (
+            <View
+              style={{
+                position: 'absolute',
+                bottom: 60,
+                left: 16,
+                right: 16,
+                backgroundColor: 'rgba(0,0,0,0.7)',
+                borderRadius: 12,
+                padding: 12,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+              }}
+            >
+              <Image
+                source={
+                  trackingProgress === 'just-started'
+                    ? require('../../assets/tracking-just-started.png')
+                    : trackingProgress === 'started'
+                    ? require('../../assets/tracking-started.png')
+                    : trackingProgress === 'half-way'
+                    ? require('../../assets/tracking-half-way.png')
+                    : trackingProgress === 'very-close'
+                    ? require('../../assets/tracking-very-close.png')
+                    : trackingProgress === 'almost-finished'
+                    ? require('../../assets/tracking-almost-finished.png')
+                    : require('../../assets/tracking-ride-completed.png')
+                }
+                style={{ width: 50, height: 50, borderRadius: 8 }}
+                resizeMode="contain"
+              />
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 14, marginBottom: 2 }}>
+                  {trackingProgress === 'just-started'
+                    ? 'Driver Just Started'
+                    : trackingProgress === 'started'
+                    ? 'Driver is on the way'
+                    : trackingProgress === 'half-way'
+                    ? 'Halfway There'
+                    : trackingProgress === 'very-close'
+                    ? 'Very Close'
+                    : trackingProgress === 'almost-finished'
+                    ? 'Almost There'
+                    : 'Arrived!'}
+                </Text>
+                <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12 }}>
+                  {displayDistanceKm.toFixed(1)} km away • ETA: {displayEtaMin} min
+                </Text>
+              </View>
+            </View>
+          )}
 
           {/* Full screen map button */}
           <TouchableOpacity
