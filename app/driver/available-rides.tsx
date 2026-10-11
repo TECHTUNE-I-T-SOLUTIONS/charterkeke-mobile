@@ -22,6 +22,7 @@ import { useWindowDimensions } from 'react-native';
 const PLATFORM_FEE_PERCENTAGE = 0.15;
 
 export default function AvailableRidesScreen() {
+  const router = useRouter();
   const { width } = useWindowDimensions();
   const scale = (value: number) => (width / 375) * value;
   const { currentLocation } = useLocation();

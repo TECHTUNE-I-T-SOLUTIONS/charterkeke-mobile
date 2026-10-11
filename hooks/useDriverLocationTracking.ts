@@ -35,7 +35,7 @@ export function useDriverLocationTracking({
         });
 
         // Send to backend
-        await apiService.post(`/driver/${user.id}/update-location`, {
+        await apiService.post(`/driver/update-location`, {
           latitude: location.coords.latitude,
           longitude: location.coords.longitude,
           rideId,
