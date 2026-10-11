@@ -9,7 +9,7 @@ module.exports = ({ config }) => {
     name: 'Charter Keke',
     slug: 'charter-keke-mobile',
     version: '2.2.2',
-    runtimeVersion: '2',
+    runtimeVersion: '2.2.2',
     orientation: 'portrait',
     icon: './assets/charter keke.png',
     userInterfaceStyle: 'automatic',
