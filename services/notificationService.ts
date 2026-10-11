@@ -61,6 +61,7 @@ export const ANDROID_CHANNELS = {
   default: 'default',
   rideRequests: 'ride-requests',
   rideUpdates: 'ride-updates',
+  liveTracking: 'live-tracking',
   chat: 'chat',
 } as const;
 
@@ -79,6 +80,8 @@ export const channelIdForType = (type?: string): string => {
     case 'ride_completed':
     case 'ride_cancelled':
       return ANDROID_CHANNELS.rideUpdates;
+    case 'live_tracking':
+      return ANDROID_CHANNELS.liveTracking;
     case 'message':
     case 'chat_message':
     case 'support_message':
@@ -128,6 +131,19 @@ export const setupAndroidChannels = async () => {
       lightColor: '#1a1a1a',
       sound: 'default',
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    });
+
+    // Live tracking updates - MAX importance for heads-up banner
+    await Notifications.setNotificationChannelAsync(ANDROID_CHANNELS.liveTracking, {
+      name: 'Live Tracking',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 200, 100, 200],
+      lightColor: '#34D399',
+      sound: 'default',
+      bypassDnd: false,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      enableVibrate: true,
+      showBadge: true,
     });
 
     await Notifications.setNotificationChannelAsync(ANDROID_CHANNELS.chat, {

@@ -1149,25 +1149,35 @@ export default function ActiveRideScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <MaterialCommunityIcons name="clock-alert" size={48} color={colors.primary} />
+            <View style={styles.modalIconContainer}>
+              <MaterialCommunityIcons name="clock-alert" size={56} color={colors.primary} />
+            </View>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Driver Not Arrived</Text>
             <Text style={[styles.modalText, { color: colors.textSecondary }]}>
               It has been 15 minutes since your driver accepted the ride. Did the driver communicate with you about any delays?
             </Text>
             <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonSecondary, { backgroundColor: colors.background, borderColor: colors.border }]}
+                style={[styles.modalButton, styles.modalButtonPrimary, { backgroundColor: colors.primary }]}
                 onPress={() => handleDriverNoShowResponse(true)}
               >
-                <Text style={[styles.modalButtonText, { color: colors.text }]}>Yes, Driver Communicated</Text>
+                <MaterialCommunityIcons name="check-circle" size={20} color="#FFF" />
+                <Text style={styles.modalButtonText}>Yes, Driver Communicated</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonPrimary, { backgroundColor: colors.primary }]}
+                style={[styles.modalButton, styles.modalButtonSecondary, { backgroundColor: colors.background, borderColor: colors.border }]}
                 onPress={() => handleDriverNoShowResponse(false)}
               >
-                <Text style={styles.modalButtonText}>No, No Communication</Text>
+                <MaterialCommunityIcons name="alert-circle" size={20} color={colors.text} />
+                <Text style={[styles.modalButtonText, { color: colors.text }]}>No, No Communication</Text>
               </TouchableOpacity>
             </View>
+            <TouchableOpacity
+              style={styles.modalCancelButton}
+              onPress={() => setShowDriverNoShowModal(false)}
+            >
+              <Text style={[styles.modalCancelText, { color: colors.textSecondary }]}>Cancel</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1181,12 +1191,27 @@ export default function ActiveRideScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <MaterialCommunityIcons name="check-circle" size={48} color={colors.primary} />
+            <View style={styles.modalIconContainer}>
+              <MaterialCommunityIcons name="check-circle" size={56} color={colors.primary} />
+            </View>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Confirm Ride Completion</Text>
             <Text style={[styles.modalText, { color: colors.textSecondary }]}>
               Your driver has marked this ride as completed. Please confirm if you have arrived at your destination.
             </Text>
             <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonPrimary, { backgroundColor: colors.primary }]}
+                onPress={() => {
+                  setShowCompletionConfirmationModal(false);
+                  Alert.alert('Ride Completed ✅', 'Your ride is complete. Rate your driver!', [
+                    { text: 'Rate Now', onPress: () => router.replace(`/rider/rating?rideId=${resolvedRideId}`) },
+                    { text: 'Later', style: 'cancel' },
+                  ]);
+                }}
+              >
+                <MaterialCommunityIcons name="check" size={20} color="#FFF" />
+                <Text style={styles.modalButtonText}>Confirm Completed</Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalButtonSecondary, { backgroundColor: colors.background, borderColor: colors.border }]}
                 onPress={async () => {
@@ -1209,21 +1234,16 @@ export default function ActiveRideScreen() {
                   );
                 }}
               >
+                <MaterialCommunityIcons name="alert-circle" size={20} color={colors.text} />
                 <Text style={[styles.modalButtonText, { color: colors.text }]}>Not Completed</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonPrimary, { backgroundColor: colors.primary }]}
-                onPress={() => {
-                  setShowCompletionConfirmationModal(false);
-                  Alert.alert('Ride Completed ✅', 'Your ride is complete. Rate your driver!', [
-                    { text: 'Rate Now', onPress: () => router.replace(`/rider/rating?rideId=${resolvedRideId}`) },
-                    { text: 'Later', style: 'cancel' },
-                  ]);
-                }}
-              >
-                <Text style={styles.modalButtonText}>Confirm Completed</Text>
-              </TouchableOpacity>
             </View>
+            <TouchableOpacity
+              style={styles.modalCancelButton}
+              onPress={() => setShowCompletionConfirmationModal(false)}
+            >
+              <Text style={[styles.modalCancelText, { color: colors.textSecondary }]}>Cancel</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1249,11 +1269,14 @@ export default function ActiveRideScreen() {
 const styles = StyleSheet.create({
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   modalContent: { width: '100%', maxWidth: 400, borderRadius: 20, padding: 24, borderWidth: 1, alignItems: 'center' },
+  modalIconContainer: { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(245, 130, 11, 0.1)', justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
   modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 12, textAlign: 'center' },
   modalText: { fontSize: 14, lineHeight: 20, marginBottom: 24, textAlign: 'center' },
-  modalButtons: { flexDirection: 'row', gap: 12, width: '100%' },
-  modalButton: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+  modalButtons: { flexDirection: 'row', gap: 12, width: '100%', marginBottom: 12 },
+  modalButton: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 },
   modalButtonPrimary: {},
   modalButtonSecondary: { borderWidth: 1 },
   modalButtonText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  modalCancelButton: { paddingVertical: 12, marginTop: 8 },
+  modalCancelText: { fontSize: 14, fontWeight: '600', textAlign: 'center' },
 });
