@@ -58,6 +58,7 @@ CREATE TABLE public.drivers (
   identity_verification_payload jsonb NOT NULL DEFAULT '{}'::jsonb,
   identity_verified_at timestamp with time zone,
   pending_lateness_penalty numeric DEFAULT 0,
+  last_known_location jsonb,
   CONSTRAINT drivers_pkey PRIMARY KEY (id),
   CONSTRAINT drivers_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
 );
