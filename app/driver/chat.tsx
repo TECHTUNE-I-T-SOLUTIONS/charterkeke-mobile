@@ -922,7 +922,7 @@ const styles = StyleSheet.create({
     marginLeft: scale(8),
   },
   modalOverlay: {
-    ...StyleSheet.absoluteFill,
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',

@@ -2543,7 +2543,7 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   changePhotoOverlay: {
-    ...StyleSheet.absoluteFill,
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',

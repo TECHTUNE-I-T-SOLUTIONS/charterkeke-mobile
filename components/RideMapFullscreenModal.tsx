@@ -78,7 +78,7 @@ export const RideMapFullscreenModal: React.FC<RideMapFullscreenModalProps> = ({
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, marginTop: 16 },
   title: { fontSize: 16, fontWeight: '700', flex: 1, marginRight: 12 },
   closeBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   mapWrap: { flex: 1 },

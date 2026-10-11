@@ -9,7 +9,7 @@ module.exports = ({ config }) => {
     name: 'Charter Keke',
     slug: 'charter-keke-mobile',
     version: '2.2.2',
-    runtimeVersion: '2.2.2',
+    runtimeVersion: '2',
     orientation: 'portrait',
     icon: './assets/charter keke.png',
     userInterfaceStyle: 'automatic',
@@ -24,8 +24,23 @@ module.exports = ({ config }) => {
       [
         '@rnmapbox/maps',
         {
-          RNMapboxMapsVersion: '11.8.0',
-          RNMapboxMapsDownloadsToken: process.env.MAPBOX_SECRET_TOKEN || '',
+          RNMapboxMapsVersion: '11.24.2',
+          RNMapboxMapsDownloadToken:
+            (process.env.MAPBOX_SECRET_TOKEN && !process.env.MAPBOX_SECRET_TOKEN.startsWith('$')
+              ? process.env.MAPBOX_SECRET_TOKEN
+              : null) ||
+            (process.env.MAPBOX_DOWNLOADS_TOKEN && !process.env.MAPBOX_DOWNLOADS_TOKEN.startsWith('$')
+              ? process.env.MAPBOX_DOWNLOADS_TOKEN
+              : null) ||
+            '',
+          RNMapboxMapsDownloadsToken:
+            (process.env.MAPBOX_SECRET_TOKEN && !process.env.MAPBOX_SECRET_TOKEN.startsWith('$')
+              ? process.env.MAPBOX_SECRET_TOKEN
+              : null) ||
+            (process.env.MAPBOX_DOWNLOADS_TOKEN && !process.env.MAPBOX_DOWNLOADS_TOKEN.startsWith('$')
+              ? process.env.MAPBOX_DOWNLOADS_TOKEN
+              : null) ||
+            '',
         },
       ],
       [
@@ -40,20 +55,12 @@ module.exports = ({ config }) => {
         {
           icon: './assets/charter keke.png',
           color: '#1a1a1a',
+          modes: ['production'],
         },
       ],
       [
         'expo-camera',
         { cameraPermission: 'Allow Charter Keke to access your camera' },
-      ],
-      [
-        '@react-native-voice/voice',
-        {
-          microphonePermission:
-            'Allow Charter Keke to use your microphone for voice location search.',
-          speechRecognitionPermission:
-            'Allow Charter Keke to transcribe your speech when searching for pickup and destination addresses.',
-        },
       ],
     ],
     web: {
@@ -66,7 +73,7 @@ module.exports = ({ config }) => {
     ios: {
       icon: './assets/ios-app-icon-1024.png',
       bundleIdentifier: 'com.charterkeke.mobile',
-      buildNumber: '231',
+      buildNumber: '230',
       googleServicesFile: './GoogleService-Info.plist',
       config: { usesNonExemptEncryption: false },
       infoPlist: {
@@ -97,7 +104,7 @@ module.exports = ({ config }) => {
       },
       package: 'com.charterkeke.mobile',
       googleServicesFile: './google-services.json',
-      versionCode: 229,
+      versionCode: 228,
       permissions: [
         'android.permission.ACCESS_FINE_LOCATION',
         'android.permission.ACCESS_COARSE_LOCATION',

@@ -70,6 +70,8 @@ interface WeatherData {
 type BookingStep = 'pickup' | 'destination' | 'time' | 'review';
 
 const RECENT_LOCATIONS_KEY = '@charter_keke_recent_locations';
+const CACHED_PICKUP_LOCATION_KEY = '@charter_keke_cached_pickup_location';
+const CACHE_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours (1 day)
 const MAX_RECENT_ITEMS = 5;
 
 export default function BookingScreen() {
@@ -253,11 +255,63 @@ export default function BookingScreen() {
         setCashbackRewards((cashbackResponse as any).availableRewards);
       }
 
-      // Auto-load current location for better UX
-      await prewarmCurrentLocation();
+      // If pickup wasn't provided via route params, load cached location or prewarm
+      const hasParamPickup = typeof params.pickup === 'string' && params.pickup.trim().length > 0;
+      if (!hasParamPickup) {
+        await prewarmCurrentLocation(false);
+      }
     } catch (error) {
       console.error('Error loading initial data:', error);
     }
+  };
+
+  const getCachedPickupLocation = async (): Promise<Location | null> => {
+    try {
+      const stored = await AsyncStorage.getItem(CACHED_PICKUP_LOCATION_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed?.location?.address && parsed?.timestamp) {
+          const age = Date.now() - parsed.timestamp;
+          if (age < CACHE_EXPIRY_MS) {
+            return parsed.location;
+          } else {
+            // Expired (> 24 hours)
+            await AsyncStorage.removeItem(CACHED_PICKUP_LOCATION_KEY);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error loading cached pickup location:', error);
+    }
+    return null;
+  };
+
+  const setCachedPickupLocation = async (location: Location) => {
+    try {
+      await AsyncStorage.setItem(
+        CACHED_PICKUP_LOCATION_KEY,
+        JSON.stringify({ location, timestamp: Date.now() })
+      );
+    } catch (error) {
+      console.error('Error saving cached pickup location:', error);
+    }
+  };
+
+  const clearCachedPickupLocation = async () => {
+    try {
+      await AsyncStorage.removeItem(CACHED_PICKUP_LOCATION_KEY);
+    } catch (error) {
+      console.error('Error clearing cached pickup location:', error);
+    }
+  };
+
+  const handleClearPickup = async () => {
+    setPickupSearch('');
+    setPickupLocation(null);
+    setPickupSuggestions([]);
+    setShowPickupSuggestions(false);
+    await clearCachedPickupLocation();
+    pickupInputRef.current?.focus();
   };
 
   const getRecentLocations = async (): Promise<Location[]> => {
@@ -284,7 +338,19 @@ export default function BookingScreen() {
     }
   };
 
-  const prewarmCurrentLocation = async () => {
+  const prewarmCurrentLocation = async (forceFresh = false) => {
+    // If not forcing fresh GPS and valid cache exists (under 24h), use cached location without querying GPS
+    if (!forceFresh) {
+      const cached = await getCachedPickupLocation();
+      if (cached) {
+        setPickupLocation(cached);
+        setPickupSearch(cached.address);
+        setCameraCenter([cached.lng, cached.lat]);
+        loadWeather(cached);
+        return;
+      }
+    }
+
     try {
       setIsPrewarmingLocation(true);
       const location = await locationService.getCurrentLocation();
@@ -299,12 +365,21 @@ export default function BookingScreen() {
         if (response.ok) {
           const data = await response.json();
           if (data.address && data.success) {
-            setPickupLocation({
+            const loc: Location = {
               lat: location.latitude,
               lng: location.longitude,
               address: sanitizeAddress(data.address),
-            });
-            setPickupSearch(sanitizeAddress(data.address));
+            };
+            setPickupLocation(loc);
+            setPickupSearch(loc.address);
+            setCameraCenter([loc.lng, loc.lat]);
+            await setCachedPickupLocation(loc);
+            loadWeather(loc);
+
+            // Recalculate fare if destination is already set
+            if (destinationLocation) {
+              await calculateEstimate();
+            }
           }
         }
       }
@@ -367,6 +442,7 @@ export default function BookingScreen() {
 
   const handlePickupChange = (text: string) => {
     setPickupSearch(text);
+    clearCachedPickupLocation();
 
     if (pickupSearchTimer.current) clearTimeout(pickupSearchTimer.current);
 
@@ -459,8 +535,14 @@ export default function BookingScreen() {
       setCameraCenter([location.lng, location.lat]);
       setCameraZoom(15);
 
+      await clearCachedPickupLocation();
       await saveRecentLocation(location);
       await loadWeather(location);
+
+      // Recalculate fare if destination is already set
+      if (destinationLocation) {
+        await calculateEstimate();
+      }
 
       Keyboard.dismiss();
       setCurrentStep('destination');
@@ -600,7 +682,7 @@ export default function BookingScreen() {
   const handleUseCurrentLocation = async () => {
     setIsLoading(true);
     try {
-      await prewarmCurrentLocation();
+      await prewarmCurrentLocation(true);
     } catch (error) {
       setErrorMessage('Could not get your current location. Please check your GPS settings.');
       setShowErrorDialog(true);
@@ -614,6 +696,7 @@ export default function BookingScreen() {
     Keyboard.dismiss();
 
     if (type === 'pickup') {
+      clearCachedPickupLocation();
       setPickupLocation(location);
       setPickupSearch(location.address);
       setShowPickupSuggestions(false);
@@ -809,6 +892,7 @@ export default function BookingScreen() {
       };
 
       if (mapPickerType === 'pickup') {
+        clearCachedPickupLocation();
         setPickupLocation(location);
         setPickupSearch(location.address);
         loadWeather(location);
@@ -1050,6 +1134,14 @@ export default function BookingScreen() {
                     />
                   </View>
                   <View style={styles.locationActions}>
+                    {pickupSearch ? (
+                      <TouchableOpacity
+                        style={styles.locationActionButton}
+                        onPress={handleClearPickup}
+                      >
+                        <MaterialCommunityIcons name="close-circle" size={20} color={isLight ? '#999' : '#666'} />
+                      </TouchableOpacity>
+                    ) : null}
                     <TouchableOpacity
                       style={styles.locationActionButton}
                       onPress={handleUseCurrentLocation}
@@ -1060,12 +1152,14 @@ export default function BookingScreen() {
                         <MaterialCommunityIcons name="crosshairs-gps" size={20} color={BRAND.primary} />
                       )}
                     </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.locationActionButton}
-                      onPress={() => handleOpenMapPicker('pickup')}
-                    >
-                      <MaterialCommunityIcons name="map-marker" size={20} color={BRAND.primary} />
-                    </TouchableOpacity>
+                    {!pickupSearch ? (
+                      <TouchableOpacity
+                        style={styles.locationActionButton}
+                        onPress={() => handleOpenMapPicker('pickup')}
+                      >
+                        <MaterialCommunityIcons name="map-marker" size={20} color={BRAND.primary} />
+                      </TouchableOpacity>
+                    ) : null}
                   </View>
                 </View>
 
@@ -1323,7 +1417,7 @@ export default function BookingScreen() {
                 <MaterialCommunityIcons name="close" size={24} color={textColor} />
               </TouchableOpacity>
             </View>
-            <View style={styles.modalBody}>
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
               <View style={[styles.reviewSection, { backgroundColor: cardBg, borderColor }]}>
                 <Text style={[styles.reviewLabel, { color: textColor }]}>Pickup</Text>
                 <Text style={[styles.reviewValue, { color: textColor }]} numberOfLines={2}>{pickupLocation?.address}</Text>
@@ -1413,7 +1507,7 @@ export default function BookingScreen() {
                   </Text>
                 )}
               </TouchableOpacity>
-            </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1528,11 +1622,11 @@ const styles = StyleSheet.create({
     marginVertical: 10,
   },
   topCardContent: {
-    padding: 16,
+    padding: 6,
     paddingBottom: 20,
   },
   mapContainer: {
-    ...StyleSheet.absoluteFill,
+    ...StyleSheet.absoluteFillObject,
   },
   map: {
     flex: 1,
@@ -1886,6 +1980,7 @@ const styles = StyleSheet.create({
   },
   modalBody: {
     gap: 12,
+    maxHeight: '70%',
   },
   scheduleOption: {
     flexDirection: 'row',
@@ -1977,7 +2072,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   crosshairContainer: {
-    ...StyleSheet.absoluteFill,
+    ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
   },

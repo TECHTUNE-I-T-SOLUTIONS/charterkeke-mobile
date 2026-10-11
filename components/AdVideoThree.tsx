@@ -368,7 +368,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   gridPattern: {
-    ...StyleSheet.absoluteFill,
+    ...StyleSheet.absoluteFillObject,
     flexDirection: 'row',
     flexWrap: 'wrap',
     opacity: 0.05,

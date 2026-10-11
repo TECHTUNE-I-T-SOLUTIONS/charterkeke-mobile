@@ -57,6 +57,7 @@ CREATE TABLE public.drivers (
   identity_verification_reason text,
   identity_verification_payload jsonb NOT NULL DEFAULT '{}'::jsonb,
   identity_verified_at timestamp with time zone,
+  pending_lateness_penalty numeric DEFAULT 0,
   CONSTRAINT drivers_pkey PRIMARY KEY (id),
   CONSTRAINT drivers_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
 );
@@ -977,4 +978,55 @@ CREATE TABLE public.ride_cancellation_penalties (
   CONSTRAINT rcp_ride_id_fkey FOREIGN KEY (ride_id) REFERENCES public.rides(id),
   CONSTRAINT rcp_rider_id_fkey FOREIGN KEY (rider_id) REFERENCES public.users(id),
   CONSTRAINT rcp_charged_ride_fkey FOREIGN KEY (charged_ride_id) REFERENCES public.rides(id)
+);
+CREATE TABLE public.rider_penalties (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  ride_id uuid NOT NULL,
+  penalty_type character varying NOT NULL DEFAULT 'cancellation'::character varying CHECK (penalty_type::text = ANY (ARRAY['cancellation'::character varying, 'no_show'::character varying, 'other'::character varying]::text[])),
+  penalty_amount numeric NOT NULL,
+  penalty_percent numeric NOT NULL,
+  ride_fare_amount numeric NOT NULL,
+  status character varying NOT NULL DEFAULT 'pending'::character varying CHECK (status::text = ANY (ARRAY['pending'::character varying, 'applied'::character varying, 'confirmed'::character varying, 'waived'::character varying]::text[])),
+  applied_ride_id uuid,
+  applied_at timestamp without time zone,
+  confirmed_at timestamp without time zone,
+  created_at timestamp without time zone DEFAULT now(),
+  updated_at timestamp without time zone DEFAULT now(),
+  metadata jsonb DEFAULT '{}'::jsonb,
+  CONSTRAINT rider_penalties_pkey PRIMARY KEY (id),
+  CONSTRAINT rider_penalties_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id),
+  CONSTRAINT rider_penalties_ride_id_fkey FOREIGN KEY (ride_id) REFERENCES public.rides(id),
+  CONSTRAINT rider_penalties_applied_ride_id_fkey FOREIGN KEY (applied_ride_id) REFERENCES public.rides(id)
+);
+CREATE TABLE public.driver_penalties (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  driver_id uuid NOT NULL,
+  ride_id uuid NOT NULL,
+  penalty_type character varying NOT NULL DEFAULT 'lateness'::character varying CHECK (penalty_type::text = ANY (ARRAY['lateness'::character varying, 'no_show'::character varying, 'cancellation'::character varying, 'other'::character varying]::text[])),
+  penalty_amount numeric NOT NULL,
+  penalty_percent numeric NOT NULL,
+  ride_fare_amount numeric NOT NULL,
+  status character varying NOT NULL DEFAULT 'pending'::character varying CHECK (status::text = ANY (ARRAY['pending'::character varying, 'applied'::character varying, 'confirmed'::character varying, 'waived'::character varying]::text[])),
+  remittance_id uuid,
+  applied_at timestamp without time zone,
+  confirmed_at timestamp without time zone,
+  created_at timestamp without time zone DEFAULT now(),
+  updated_at timestamp without time zone DEFAULT now(),
+  metadata jsonb DEFAULT '{}'::jsonb,
+  CONSTRAINT driver_penalties_pkey PRIMARY KEY (id),
+  CONSTRAINT driver_penalties_driver_id_fkey FOREIGN KEY (driver_id) REFERENCES public.drivers(id),
+  CONSTRAINT driver_penalties_ride_id_fkey FOREIGN KEY (ride_id) REFERENCES public.rides(id)
+);
+CREATE TABLE public.faqs (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  question text NOT NULL,
+  answer text NOT NULL,
+  category character varying NOT NULL,
+  audience character varying NOT NULL DEFAULT 'all'::character varying CHECK (audience::text = ANY (ARRAY['rider'::character varying, 'driver'::character varying, 'all'::character varying]::text[])),
+  order_index integer DEFAULT 0,
+  is_active boolean DEFAULT true,
+  created_at timestamp without time zone DEFAULT now(),
+  updated_at timestamp without time zone DEFAULT now(),
+  CONSTRAINT faqs_pkey PRIMARY KEY (id)
 );

@@ -293,15 +293,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   bgGraphicContainer: {
-    ...StyleSheet.absoluteFill,
+    ...StyleSheet.absoluteFillObject,
     zIndex: -1,
     overflow: 'hidden',
   },
   video: {
-    ...StyleSheet.absoluteFill,
+    ...StyleSheet.absoluteFillObject,
   },
   videoOverlay: {
-    ...StyleSheet.absoluteFill,
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0, 0, 0, 0.65)',
   },
   gradientSpot: {

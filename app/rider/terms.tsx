@@ -40,7 +40,7 @@ export default function TermsScreen() {
       >
         <View style={styles.content}>
           <Text style={[styles.versionText, { color: theme.colors.textSecondary }]}>
-            Last Updated: February 2026 | Version 2.2.1
+            Last Updated: February 2026 | Version 2.2.2
           </Text>
 
           {/* Section 1 */}

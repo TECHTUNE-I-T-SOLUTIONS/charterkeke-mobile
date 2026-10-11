@@ -53,7 +53,8 @@
     "**/*.tsx"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "drafts"
   ],
   "extends": "expo/tsconfig.base"
 }
