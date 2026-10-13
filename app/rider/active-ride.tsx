@@ -279,7 +279,9 @@ export default function ActiveRideScreen() {
         : (await apiService.getRiderActiveRides())?.rides?.[0] || null;
 
       if (ride) {
-        setActiveRide(normalizeRide(ride));
+        const normalized = normalizeRide(ride);
+        setActiveRide(normalized);
+        console.log('✅ [ACTIVE-RIDE] Fetched ride with fare:', normalized.fare_amount);
       }
     } catch (error) {
       console.error('Failed to fetch active ride:', error);

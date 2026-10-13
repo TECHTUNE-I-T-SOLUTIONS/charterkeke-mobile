@@ -791,7 +791,9 @@ export default function RideDetailsScreen() {
                 }}
                 disabled={verifyingLocation || locationVerified}
               >
-                {verifyingLocation ? 'Verifying...' : 'Verify Location'}
+                <Text style={[styles.verifyBtnText, { color: '#fff' }]}>
+                  {verifyingLocation ? 'Verifying...' : 'Verify Location'}
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -807,14 +809,18 @@ export default function RideDetailsScreen() {
                 }}
                 disabled={!locationVerified}
               >
-                Confirm Completion
+                <Text style={[styles.completeBtnText, { color: locationVerified ? '#fff' : theme.colors.textSecondary }]}>
+                  Confirm Completion
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.cancelBtn, { backgroundColor: 'transparent' }]}
+                style={[styles.cancelBtn, { backgroundColor: 'transparent', borderColor: theme.colors.border }]}
                 onPress={() => setShowCompletionModal(false)}
               >
-                Cancel
+                <Text style={[styles.cancelBtnText, { color: theme.colors.textSecondary }]}>
+                  Cancel
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -885,6 +891,9 @@ const styles = StyleSheet.create({
   checkLabel: { fontSize: 16, fontWeight: '600' },
   checkSublabel: { fontSize: 12, marginTop: 4 },
   verifyBtn: { paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginBottom: 12 },
+  verifyBtnText: { fontSize: 16, fontWeight: '700' },
   completeBtn: { paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginBottom: 8 },
+  completeBtnText: { fontSize: 16, fontWeight: '700' },
   cancelBtn: { paddingVertical: 14, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: 'transparent' },
+  cancelBtnText: { fontSize: 16, fontWeight: '600' },
 });

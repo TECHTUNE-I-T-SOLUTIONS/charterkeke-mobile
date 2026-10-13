@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Image } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -61,7 +61,7 @@ export function DriverLocationMarker({ color = BRAND.primary, size = 32 }: Drive
         ]}
       />
 
-      {/* Keke icon */}
+      {/* App icon/keke marker */}
       <View
         style={[
           styles.marker,
@@ -73,7 +73,14 @@ export function DriverLocationMarker({ color = BRAND.primary, size = 32 }: Drive
           },
         ]}
       >
-        <MaterialCommunityIcons name={"keke" as any} size={size * 0.6} color="#fff" />
+        <Image
+          source={require('@/assets/charter keke.png')}
+          style={{
+            width: size * 0.7,
+            height: size * 0.7,
+            resizeMode: 'contain',
+          }}
+        />
       </View>
     </View>
   );
