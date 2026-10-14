@@ -391,25 +391,7 @@ export default function RideDetailsScreen() {
     };
   }, [rideDataParam, rideIdParam, showError]);
 
-  // Realtime subscription on rides table for auto-refresh
   const targetRideId = rideDetails?.id || rideIdParam;
-  useEffect(() => {
-    if (!targetRideId) return;
-
-    let active = true;
-    supabaseService.subscribeToRideUpdates(String(targetRideId), (updatedRide: any) => {
-      if (!active || !updatedRide) return;
-      setRideDetails((prev) => (prev ? { ...prev, ...updatedRide } : updatedRide));
-      if (updatedRide.drivers) {
-        setDriverDetails(mapDriverDetails(updatedRide.drivers));
-      }
-    });
-
-    return () => {
-      active = false;
-      supabaseService.unsubscribeRideUpdates(String(targetRideId)).catch(() => {});
-    };
-  }, [targetRideId]);
 
   // Occasional driver location polling (30s) when ride is active
   useEffect(() => {

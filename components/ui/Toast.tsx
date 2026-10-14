@@ -77,11 +77,12 @@ const Toast = ({
     <Animated.View
       style={{
         position: 'absolute',
-        bottom: 40,
+        top: 60,
         left: 20,
         right: 20,
         opacity,
-        zIndex: 1000,
+        zIndex: 10000,
+        elevation: 20,
       }}
     >
       <View

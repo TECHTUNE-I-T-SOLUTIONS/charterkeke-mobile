@@ -27,6 +27,7 @@ import { COLORS } from '@/utils/colors';
 import { fetchMapboxRoute } from '@/utils/mapboxDirections';
 import { apiService } from '@/services/api';
 import { supabaseService } from '@/services/supabase';
+import { sendLiveTrackingNotification } from '@/services/liveTrackingNotification';
 
 const { width, height } = Dimensions.get('window');
 
@@ -386,6 +387,72 @@ export default function ActiveRideScreen() {
       setTrackingProgress('ride-completed');
     }
   }, [displayDistanceKm, isAccepted, isInProgress]);
+
+  // Live status notification (Expo local + native live activity / live update when available)
+  const liveIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!resolvedRideId || !activeRide) return;
+    const s = String(activeRide.status || '').toLowerCase();
+    const progressMap: Record<string, { progress: number; stops: number; courier: string }> = {
+      pending: { progress: 0.08, stops: 2, courier: 'Searching…' },
+      dispatched: { progress: 0.12, stops: 2, courier: 'Searching…' },
+      accepted: { progress: 0.45, stops: 1, courier: activeRide.driver ? `${activeRide.driver.users.first_name}` : 'Driver' },
+      in_progress: { progress: 0.85, stops: 0, courier: activeRide.driver ? `${activeRide.driver.users.first_name}` : 'Driver' },
+      completed: { progress: 1, stops: 0, courier: activeRide.driver ? `${activeRide.driver.users.first_name}` : 'Driver' },
+    };
+    const cfg = progressMap[s] || progressMap.pending;
+    const titleByStatus: Record<string, string> = {
+      pending: 'Looking for a driver… 🛺',
+      dispatched: 'Looking for a driver… 🛺',
+      accepted: 'Driver on the way 🟢',
+      in_progress: 'Ride in progress 🚗',
+      completed: 'Ride completed ✅',
+      cancelled: 'Ride cancelled',
+    };
+    const title = titleByStatus[s] || `Ride ${s}`;
+    const body = s === 'pending' || s === 'dispatched'
+      ? `Broadcasting to nearby drivers • ${activeRide.pickup_zone} → ${activeRide.destination_zone}`
+      : s === 'accepted'
+        ? `${activeRide.driver ? activeRide.driver.users.first_name + ' ' + activeRide.driver.users.last_name : 'Driver'} is heading to pickup • ETA ${displayEtaMin || 8} min`
+        : `${activeRide.pickup_zone} → ${activeRide.destination_zone}`;
+
+    // Fallback local notification (works in Expo Go and production)
+    sendLiveTrackingNotification({
+      title,
+      body,
+      data: { type: 'live_tracking', rideId: resolvedRideId, status: s, pickup: activeRide.pickup_zone, destination: activeRide.destination_zone },
+    }).catch(() => {});
+
+    // Native path: ActivityKit / NotificationCompat live update (dev / production build only)
+    (async () => {
+      try {
+        const dl: any = await import('@/modules/droptrack-live/src/index').catch(() => null);
+        const mod = dl?.default ?? dl;
+        if (!mod?.isSupported?.() || !resolvedRideId) return;
+        const state = {
+          status: s === 'pending' || s === 'dispatched' ? 'Broadcasting' : s === 'accepted' ? 'Driver on the way' : s === 'in_progress' ? 'En route' : s,
+          progress: cfg.progress,
+          etaEpochMillis: Date.now() + (displayEtaMin || 8) * 60 * 1000,
+          stopsRemaining: cfg.stops,
+          courierName: cfg.courier,
+          riderReassigned: false,
+        };
+        if (s === 'completed' || s === 'cancelled') {
+          if (liveIdRef.current) {
+            await mod.endDelivery(liveIdRef.current, state, 6).catch(() => {});
+            liveIdRef.current = null;
+          }
+          return;
+        }
+        if (!liveIdRef.current && (s === 'pending' || s === 'dispatched' || s === 'accepted')) {
+          liveIdRef.current = await mod.startDelivery({ orderId: String(resolvedRideId) }, state).catch(() => null) as any;
+          if (!liveIdRef.current) liveIdRef.current = String(resolvedRideId);
+        } else if (liveIdRef.current) {
+          await mod.updateDelivery(liveIdRef.current, state).catch(() => {});
+        }
+      } catch {}
+    })();
+  }, [resolvedRideId, activeRide?.status, activeRide?.driver?.users?.first_name, displayEtaMin]);
 
   // Postgres Realtime — instant status updates from rides table
   useEffect(() => {

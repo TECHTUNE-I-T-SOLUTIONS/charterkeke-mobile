@@ -1,0 +1,6 @@
+{
+  "name": "droptrack-live",
+  "version": "1.0.0",
+  "description": "Live tracking native module (iOS ActivityKit + Android Live Updates)",
+  "platforms": ["ios", "android", "web"]
+}

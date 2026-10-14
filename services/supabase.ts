@@ -165,8 +165,39 @@ class SupabaseService {
   }
 
   // ─── Ride status realtime (Postgres Changes on rides table) ─────────────────
+  private rideStatusChannels = new Map<string, ReturnType<SupabaseClient['channel']>>();
+
   async subscribeToRideUpdates(rideId: string, callback: (ride: any) => void) {
     const channelName = `ride-status-${rideId}`;
+    // Reuse existing channel to avoid "cannot add postgres_changes after subscribe()" on duplicate mounts
+    const existing = this.rideStatusChannels.get(channelName);
+    if (existing) {
+      // Realtime-js allows multiple .on() before subscribe, but not after. If already SUBSCRIBED, we need a dedicated sub-channel.
+      const state = (existing as any).state;
+      if (state === 'subscribed' || state === 'joined') {
+        // Create a namespaced sub-channel for the extra subscriber — same row, different channel name
+        const subChannelName = `${channelName}:${Date.now()}:${Math.random().toString(36).slice(2, 6)}`;
+        const subChannel = this.supabase
+          .channel(subChannelName)
+          .on(
+            'postgres_changes',
+            { event: 'UPDATE', schema: 'public', table: 'rides', filter: `id=eq.${rideId}` },
+            (payload) => callback(payload.new)
+          )
+          .subscribe();
+        return subChannel;
+      }
+      existing.on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'rides', filter: `id=eq.${rideId}` },
+        (payload) => callback(payload.new)
+      );
+      if (!(existing as any).state || (existing as any).state === 'unsubscribed') {
+        existing.subscribe();
+      }
+      return existing;
+    }
+
     const channel = this.supabase
       .channel(channelName)
       .on(
@@ -182,13 +213,29 @@ class SupabaseService {
         }
       )
       .subscribe();
+    this.rideStatusChannels.set(channelName, channel);
     return channel;
   }
 
   async unsubscribeRideUpdates(rideId: string) {
-    const channelName = `ride-status-${rideId}`;
-    const channel = this.supabase.channel(channelName);
-    return this.supabase.removeChannel(channel);
+    // Remove both the primary channel and any sub-channels for this ride
+    const prefix = `ride-status-${rideId}`;
+    const toRemove: string[] = [];
+    this.rideStatusChannels.forEach((ch, name) => {
+      if (name === prefix || name.startsWith(prefix + ':')) toRemove.push(name);
+    });
+    for (const name of toRemove) {
+      const ch = this.rideStatusChannels.get(name);
+      if (ch) {
+        this.rideStatusChannels.delete(name);
+        await this.supabase.removeChannel(ch).catch(() => {});
+      }
+    }
+    // Fallback: also try to remove a channel that was never tracked (e.g. sub-channel created after early return)
+    if (toRemove.length === 0) {
+      const channel = this.supabase.channel(prefix);
+      return this.supabase.removeChannel(channel).catch(() => {});
+    }
   }
 
   // Subscribe to message updates (for read status changes)

@@ -1,0 +1,18 @@
+{
+  "name": "droptrack-live",
+  "version": "1.0.0",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "files": ["src", "ios", "android"],
+  "scripts": {
+    "build": "tsc --build tsconfig.build.json",
+    "test": "echo \"Tests not configured\""
+  },
+  "peerDependencies": {
+    "expo-modules-core": "*",
+    "react-native": "*"
+  },
+  "expo": {
+    "modules": ["ios", "android"]
+  }
+}

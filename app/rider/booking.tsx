@@ -37,6 +37,7 @@ import { createRideBooking } from '@/services/ridesService';
 import { getWeatherImpact } from '@/services/weatherService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
+import { sendLiveTrackingNotification } from '@/services/liveTrackingNotification';
 import bookingStyles, { mapDarkStyle } from './booking.styles';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -832,6 +833,32 @@ export default function BookingScreen() {
       if (response) {
         setShowReviewModal(false);
         const rideId = response.ride?.id || response.id;
+        // Immediate live-update: "Looking for driver..." so user sees activity even before active-ride mounts
+        try {
+          await sendLiveTrackingNotification({
+            title: 'Looking for a driver… 🛺',
+            body: `Searching nearby drivers • ${bookingData.pickup.address} → ${bookingData.dropoff.address}`,
+            data: { type: 'live_tracking', rideId, status: 'dispatched', pickup: bookingData.pickup.address, destination: bookingData.dropoff.address },
+          });
+        } catch {}
+        try {
+          // Try native live activity / live update if available (dev build, not Expo Go)
+          const dl: any = await import('@/modules/droptrack-live/src/index').catch(() => null);
+          const mod = dl?.default ?? dl;
+          if (mod?.isSupported?.() && rideId) {
+            await mod.startDelivery(
+              { orderId: String(rideId) },
+              {
+                status: 'Broadcasting',
+                progress: 0.08,
+                etaEpochMillis: Date.now() + 8 * 60 * 1000,
+                stopsRemaining: 2,
+                courierName: 'Searching…',
+                riderReassigned: false,
+              }
+            ).catch(() => {});
+          }
+        } catch {}
         router.push({
           pathname: '/rider/active-ride',
           params: { rideId },
@@ -1558,15 +1585,16 @@ export default function BookingScreen() {
         </Modal>
       )}
 
-      {/* Error Dialog */}
+      {/* Error Dialog — centered, always visible */}
       <Modal
         visible={showErrorDialog}
         transparent
         animationType="fade"
+        statusBarTranslucent
         onRequestClose={() => setShowErrorDialog(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.errorDialog, { backgroundColor: bgColor, borderColor }]}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+          <View style={[styles.errorDialog, { backgroundColor: bgColor, borderColor, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 16, elevation: 12 }]}>
             <MaterialCommunityIcons name="alert-circle" size={48} color="#FF5252" />
             <Text style={[styles.errorTitle, { color: textColor }]}>Error</Text>
             <Text style={[styles.errorMessage, { color: textColor }]}>{errorMessage}</Text>

@@ -1,6 +1,6 @@
 {
-  "version": "2.2.2",
-  "buildNumber": 231,
-  "releaseDate": "2025-09-13",
-  "changelog": "Adds Android quick actions, launcher widget scaffold, deep-link prefill, and support AI memory improvements."
+  "version": "2.2.3",
+  "buildNumber": 233,
+  "releaseDate": "2026-10-14",
+  "changelog": "Native Live Status tracking (iOS Live Activity/Dynamic Island + Android Live Update promoted chip) with POST_PROMOTED_NOTIFICATIONS permission, custom sound, and Expo Go local fallback."
 }

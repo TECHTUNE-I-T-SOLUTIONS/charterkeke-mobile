@@ -28,17 +28,13 @@ const queryClient = new QueryClient({
 // Inner component that renders the navigation
 function RootLayoutContent() {
   useEffect(() => {
-    // Initialize push notifications on app startup (skip in Expo Go)
     const initializeNotifications = async () => {
-      if (IS_EXPO_GO) {
-        console.log('⚠️ [App] Skipping notification initialization in Expo Go');
-        return;
-      }
-
       try {
         await configureNotifications();
-        await registerBackgroundNotificationTask();
-        console.log('✅ [App] Notifications initialized');
+        if (!IS_EXPO_GO) {
+          await registerBackgroundNotificationTask();
+        }
+        console.log('✅ [App] Notifications initialized' + (IS_EXPO_GO ? ' (Expo Go - local only)' : ''));
       } catch (error) {
         console.error('❌ [App] Failed to initialize notifications:', error);
       }

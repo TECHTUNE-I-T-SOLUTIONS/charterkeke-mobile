@@ -4,13 +4,10 @@ import Constants from 'expo-constants';
 const IS_EXPO_GO = Constants.appOwnership === 'expo';
 
 let Notifications: any = null;
-
-if (!IS_EXPO_GO) {
-  try {
-    Notifications = require('expo-notifications');
-  } catch (error) {
-    console.warn('⚠️ [LiveTracking] Failed to import notification modules:', error);
-  }
+try {
+  Notifications = require('expo-notifications');
+} catch (error) {
+  console.warn('⚠️ [LiveTracking] Failed to import notification modules:', error);
 }
 
 /**
@@ -28,49 +25,165 @@ export async function sendLiveTrackingNotification({
   imageUrl?: string;
   data?: any;
 }) {
-  if (IS_EXPO_GO || !Notifications) {
-    console.log('⚠️ [LiveTracking] Skipping notification (Expo Go or Notifications unavailable)');
+  if (!Notifications) {
+    console.log('⚠️ [LiveTracking] Notifications module unavailable');
     return;
   }
+  // In Expo Go, local notifications still work on many devices — attempt anyway, just don't require native channel
+  if (IS_EXPO_GO) {
+    console.log('[LiveTracking] Expo Go detected — attempting local notification (may be limited)');
+  }
 
+  // Ensure permission — Android 13+ and iOS need it explicitly, otherwise schedule is silent
   try {
-    // Android Big Picture Style
-    const androidNotification = {
-      channelId: 'live-tracking',
-      priority: 'max' as const,
-      sticky: false,
-      autoCancel: true,
-      vibrate: [0, 200, 100, 200],
-      // Big picture style for Android
-      style: {
-        type: Notifications.AndroidNotificationStyle.BIG_PICTURE,
-        picture: imageUrl || undefined,
-        largeIcon: undefined,
-        contentTitle: title,
-        summaryText: body,
-      },
-    };
+    const perms = await Notifications.getPermissionsAsync?.();
+    if (perms && perms.status !== 'granted') {
+      const req = await Notifications.requestPermissionsAsync?.();
+      console.log('[LiveTracking] permission request result:', req?.status || req);
+    }
+  } catch {}
+  // Android 16 promoted-live-update gate: POST_PROMOTED_NOTIFICATIONS.
+  // Regular POST_NOTIFICATIONS is not enough — promoted chips/lock-screen elevation is a separate toggle.
+  // In a dev/production build (not Expo Go) we explicitly request/open it here so the live chip is not silently downgraded.
+  if (Platform.OS === 'android' && !IS_EXPO_GO) {
+    try {
+      const { PermissionsAndroid } = require('react-native');
+      const promotedPerm = 'android.permission.POST_PROMOTED_NOTIFICATIONS' as any;
+      if (PermissionsAndroid && promotedPerm) {
+        const already = await PermissionsAndroid.check?.(promotedPerm);
+        if (!already) {
+          const res = await PermissionsAndroid.request(promotedPerm as any);
+          console.log('[LiveTracking] POST_PROMOTED_NOTIFICATIONS request:', res);
+        }
+      }
+    } catch {}
+    try {
+      const mod: any = await import('droptrack-live').catch(() => null);
+      const dl = mod?.default ?? mod;
+      if (dl?.areActivitiesEnabled && !dl.areActivitiesEnabled()) {
+        console.log('[LiveTracking] promoted live-update toggle off — opening system settings');
+        await dl.requestPromotedPermission?.().catch(() => {});
+      }
+    } catch {}
+  }
+  const customSound = 'notifications.wav';
+  try {
+    if (Platform.OS === 'android' && Notifications.setNotificationChannelAsync) {
+      try {
+        await Notifications.setNotificationChannelAsync('live-tracking', {
+          name: 'Live Tracking',
+          importance: Notifications.AndroidImportance.MAX,
+          vibrationPattern: [0, 200, 100, 200],
+          lightColor: '#F5820B',
+          sound: customSound,
+          lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+          enableVibrate: true,
+          showBadge: true,
+        });
+      } catch {}
+    }
 
-    // iOS content
-    const iosNotification = {
-      sound: 'default',
-      badge: 1,
-    };
+    // Android Big Picture Style when image provided, otherwise high-priority ongoing-like heads-up
+    const androidNotification: any = imageUrl
+      ? {
+          channelId: 'live-tracking',
+          priority: 'max' as const,
+          sticky: false,
+          autoCancel: true,
+          vibrate: [0, 200, 100, 200],
+          style: {
+            type: Notifications.AndroidNotificationStyle.BIG_PICTURE,
+            picture: imageUrl,
+            contentTitle: title,
+            summaryText: body,
+          },
+        }
+      : {
+          channelId: 'live-tracking',
+          priority: 'max' as const,
+          sticky: false,
+          autoCancel: false,
+          vibrate: [0, 200, 100, 200],
+          categoryId: 'live_tracking',
+        };
+
+    const iosNotification: any = { sound: customSound, badge: 1, interruptionLevel: 'timeSensitive' as const };
 
     await Notifications.scheduleNotificationAsync({
       content: {
         title,
         body,
+        sound: customSound,
         data: data || {},
-        ...(imageUrl && { imageUrl }), // iOS also supports imageUrl
+        ...(imageUrl && { imageUrl }),
         ...(Platform.OS === 'android' ? androidNotification : iosNotification),
       },
-      trigger: null, // Send immediately
+      trigger: null,
     });
 
     console.log('✅ [LiveTracking] Notification sent with banner');
   } catch (error) {
     console.error('❌ [LiveTracking] Failed to send notification:', error);
+  }
+}
+
+export async function sendMessageNotification({
+  title,
+  body,
+  data,
+}: {
+  title: string;
+  body: string;
+  data?: any;
+}) {
+  if (!Notifications) {
+    console.log('⚠️ [LiveTracking] Notifications unavailable for message');
+    return;
+  }
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        data: { ...(data || {}), type: 'message' },
+        sound: 'notifications.wav',
+        badge: 1,
+      },
+      trigger: null,
+    });
+    console.log('✅ [LiveTracking] Message notification sent');
+  } catch (e) {
+    console.error('❌ [LiveTracking] Message notification failed:', e);
+  }
+}
+
+export async function sendSupportNotification({
+  title,
+  body,
+  data,
+}: {
+  title: string;
+  body: string;
+  data?: any;
+}) {
+  if (!Notifications) {
+    console.log('⚠️ [LiveTracking] Notifications unavailable for support');
+    return;
+  }
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        data: { ...(data || {}), type: 'support_message' },
+        sound: 'notifications.wav',
+        badge: 1,
+      },
+      trigger: null,
+    });
+    console.log('✅ [LiveTracking] Support notification sent');
+  } catch (e) {
+    console.error('❌ [LiveTracking] Support notification failed:', e);
   }
 }
 

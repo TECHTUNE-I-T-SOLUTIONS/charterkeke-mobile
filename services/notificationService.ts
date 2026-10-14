@@ -5,20 +5,17 @@ import { apiService } from '@services/api';
 import { navigate } from '@services/navigationService';
 import { WidgetStorage, WIDGET_STORAGE_KEYS } from '@services/widgetStorage';
 
-// Check if running in Expo Go before importing notification modules
 const IS_EXPO_GO = Constants.appOwnership === 'expo';
 
-// Conditional imports to avoid Expo Go crash
 let Notifications: any = null;
 let TaskManager: any = null;
 
-if (!IS_EXPO_GO) {
-  try {
-    Notifications = require('expo-notifications');
-    TaskManager = require('expo-task-manager');
-  } catch (error) {
-    console.warn('⚠️ [NOTIFICATIONS] Failed to import notification modules:', error);
-  }
+try {
+  Notifications = require('expo-notifications');
+  TaskManager = require('expo-task-manager');
+  console.log('[NOTIFICATIONS] Module loaded', IS_EXPO_GO ? '(Expo Go - local OK)' : '(standalone)');
+} catch (error: any) {
+  console.warn('⚠️ [NOTIFICATIONS] Failed to import notification modules:', error?.message || error);
 }
 
 const IS_DEV = process.env.EXPO_PUBLIC_DEVELOPMENT_MODE === 'true';
@@ -95,20 +92,21 @@ export const channelIdForType = (type?: string): string => {
  * Create all Android notification channels. Safe to call repeatedly (idempotent).
  */
 export const setupAndroidChannels = async () => {
-  // Skip in Expo Go as push notifications are not supported
-  if (IS_EXPO_GO || !Notifications) {
-    console.log('⚠️ [NOTIFICATIONS] Skipping Android channels (Expo Go or Notifications unavailable)');
+  if (!Notifications) {
+    console.log('⚠️ [NOTIFICATIONS] Notifications module unavailable');
     return;
   }
+  if (IS_EXPO_GO) console.log('[NOTIFICATIONS] Expo Go: setting up local channels');
 
   if (Platform.OS !== 'android') return;
   try {
+    const customSound = 'notifications.wav';
     await Notifications.setNotificationChannelAsync(ANDROID_CHANNELS.default, {
       name: 'General',
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#1a1a1a',
-      sound: 'default',
+      sound: customSound,
     });
 
     // High-urgency channel for drivers receiving new ride requests.
@@ -117,7 +115,7 @@ export const setupAndroidChannels = async () => {
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 400, 250, 400],
       lightColor: '#00C853',
-      sound: 'default',
+      sound: customSound,
       bypassDnd: false,
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
       enableVibrate: true,
@@ -129,7 +127,7 @@ export const setupAndroidChannels = async () => {
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#1a1a1a',
-      sound: 'default',
+      sound: customSound,
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     });
 
@@ -139,7 +137,7 @@ export const setupAndroidChannels = async () => {
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 200, 100, 200],
       lightColor: '#34D399',
-      sound: 'default',
+      sound: customSound,
       bypassDnd: false,
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
       enableVibrate: true,
@@ -150,7 +148,7 @@ export const setupAndroidChannels = async () => {
       name: 'Messages',
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 200, 150, 200],
-      sound: 'default',
+      sound: customSound,
     });
 
     console.log('✅ [NOTIFICATIONS] Android notification channels configured');
@@ -317,10 +315,12 @@ export const resolveNotificationRoute = (data: any, userRole?: 'driver' | 'rider
  * Configure notification behavior and handlers
  */
 export const configureNotifications = async () => {
-  // Skip in Expo Go
-  if (IS_EXPO_GO || !Notifications) {
-    console.log('⚠️ [NOTIFICATIONS] Skipping notification configuration (Expo Go or Notifications unavailable)');
+  if (!Notifications) {
+    console.log('⚠️ [NOTIFICATIONS] Notifications module unavailable');
     return;
+  }
+  if (IS_EXPO_GO) {
+    console.log('[NOTIFICATIONS] Expo Go detected — configuring local notifications only (push tokens limited)');
   }
 
   try {
@@ -401,9 +401,8 @@ export const configureNotifications = async () => {
  * Handles Firebase FCM errors gracefully by separating permission request from token retrieval
  */
 export const requestNotificationPermissions = async () => {
-  // Skip in Expo Go
-  if (IS_EXPO_GO || !Notifications) {
-    console.log('⚠️ [NOTIFICATIONS] Skipping permission request (Expo Go or Notifications unavailable)');
+  if (!Notifications) {
+    console.log('⚠️ [NOTIFICATIONS] Notifications module unavailable');
     return null;
   }
 
@@ -512,9 +511,8 @@ export const markWelcomeNotificationSeen = async (seen: boolean = true) => {
  * Send welcome notification on first app launch
  */
 export const sendWelcomeNotification = async () => {
-  // Skip in Expo Go
-  if (IS_EXPO_GO || !Notifications) {
-    console.log('⚠️ [NOTIFICATIONS] Skipping welcome notification (Expo Go or Notifications unavailable)');
+  if (!Notifications) {
+    console.log('⚠️ [NOTIFICATIONS] Notifications module unavailable');
     await markWelcomeNotificationSeen();
     return;
   }
@@ -655,10 +653,7 @@ export const subscribeToPushNotifications = async (userId: string) => {
  * Retries up to 5 times with exponential backoff
  */
 const scheduleTokenRetry = async (userId: string, attempt: number = 1) => {
-  // Skip in Expo Go
-  if (IS_EXPO_GO || !Notifications) {
-    return;
-  }
+  if (!Notifications) return;
 
   const MAX_RETRIES = 5;
 
@@ -840,9 +835,8 @@ export const sendLocalNotification = async (
   message: string,
   data?: Record<string, any>
 ) => {
-  // Skip in Expo Go
-  if (IS_EXPO_GO || !Notifications) {
-    console.log('⚠️ [NOTIFICATIONS] Skipping local notification (Expo Go or Notifications unavailable)');
+  if (!Notifications) {
+    console.log('⚠️ [NOTIFICATIONS] Notifications module unavailable');
     return;
   }
 
@@ -916,9 +910,8 @@ export const clearPushSubscription = async () => {
  * Manually retry getting push token (useful for settings screen or after device returns online)
  */
 export const manuallyRetryPushToken = async (userId: string) => {
-  // Skip in Expo Go
-  if (IS_EXPO_GO || !Notifications) {
-    return { success: false, message: 'Push notifications not available in Expo Go' };
+  if (!Notifications) {
+    return { success: false, message: 'Push notifications unavailable' };
   }
 
   try {

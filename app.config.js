@@ -8,7 +8,7 @@ module.exports = ({ config }) => {
     ...config,
     name: 'Charter Keke',
     slug: 'charter-keke-mobile',
-    version: '2.2.2',
+    version: '2.2.3',
     runtimeVersion: '2',
     orientation: 'portrait',
     icon: './assets/charter keke.png',
@@ -21,6 +21,7 @@ module.exports = ({ config }) => {
     plugins: [
       ['expo-router', {}],
       './plugins/with-androidx-support-excludes.js',
+      './plugins/droptrack-live-wrapper.js',
       [
         '@rnmapbox/maps',
         {
@@ -104,7 +105,7 @@ module.exports = ({ config }) => {
       },
       package: 'com.charterkeke.mobile',
       googleServicesFile: './google-services.json',
-      versionCode: 229,
+      versionCode: 231,
       permissions: [
         'android.permission.ACCESS_FINE_LOCATION',
         'android.permission.ACCESS_COARSE_LOCATION',
@@ -114,6 +115,9 @@ module.exports = ({ config }) => {
         'android.permission.WRITE_EXTERNAL_STORAGE',
         'android.permission.INTERNET',
         'android.permission.RECORD_AUDIO',
+        'android.permission.POST_NOTIFICATIONS',
+        'android.permission.POST_PROMOTED_NOTIFICATIONS',
+        'android.permission.USE_EXACT_ALARM',
       ],
       softwareKeyboardLayoutMode: 'pan',
     },

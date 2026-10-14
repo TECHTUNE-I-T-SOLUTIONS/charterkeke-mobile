@@ -1,6 +1,6 @@
 {
   "name": "charter-keke-mobile",
-  "version": "2.2.2",
+  "version": "2.2.3",
   "description": "Professional mobile app for Charter Keke ride-sharing platform",
   "main": "expo-router/entry",
   "scripts": {
@@ -89,7 +89,8 @@
     "react-native-web": "^0.21.0",
     "react-native-worklets": "0.5.1",
     "socket.io-client": "4.7.2",
-    "zustand": "^4.4.7"
+    "zustand": "^4.4.7",
+    "droptrack-live": "file:./modules/droptrack-live"
   },
   "devDependencies": {
     "@babel/core": "^7.26.0",
