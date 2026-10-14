@@ -42,23 +42,33 @@ const withDroptrackLive = (config) => {
     return mod;
   });
 
-  // 2) Ensure custom notification sound is in android res/raw during prebuild (expo prebuild --clean wipes it)
+  // 2) Ensure custom notification sound + tracker icon are in android res during prebuild (expo prebuild --clean wipes them)
   config = withDangerousMod(config, [
     'android',
     async (mod) => {
-      const src = path.join(mod.modRequest.projectRoot, 'assets', 'sounds', 'notifications.wav');
-      const destDir = path.join(mod.modRequest.platformProjectRoot, 'app', 'src', 'main', 'res', 'raw');
-      const dest = path.join(destDir, 'notifications.wav');
       try {
-        if (fs.existsSync(src)) {
-          if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
-          fs.copyFileSync(src, dest);
-          console.log('[droptrack-live] copied notifications.wav to', dest);
-        } else {
-          console.warn('[droptrack-live] sound source missing:', src);
+        const srcSound = path.join(mod.modRequest.projectRoot, 'assets', 'sounds', 'notifications.wav');
+        const destDirRaw = path.join(mod.modRequest.platformProjectRoot, 'app', 'src', 'main', 'res', 'raw');
+        const destSound = path.join(destDirRaw, 'notifications.wav');
+        if (fs.existsSync(srcSound)) {
+          if (!fs.existsSync(destDirRaw)) fs.mkdirSync(destDirRaw, { recursive: true });
+          fs.copyFileSync(srcSound, destSound);
+          console.log('[droptrack-live] copied notifications.wav to', destSound);
         }
       } catch (e) {
         console.warn('[droptrack-live] sound copy failed:', e?.message);
+      }
+      try {
+        const srcTracker = path.join(mod.modRequest.projectRoot, 'modules', 'droptrack-live', 'android', 'ic_tracker_keke.xml');
+        const destDirDr = path.join(mod.modRequest.platformProjectRoot, 'app', 'src', 'main', 'res', 'drawable');
+        const destTracker = path.join(destDirDr, 'ic_tracker_keke.xml');
+        if (fs.existsSync(srcTracker)) {
+          if (!fs.existsSync(destDirDr)) fs.mkdirSync(destDirDr, { recursive: true });
+          fs.copyFileSync(srcTracker, destTracker);
+          console.log('[droptrack-live] copied ic_tracker_keke.xml to', destTracker);
+        }
+      } catch (e) {
+        console.warn('[droptrack-live] tracker copy failed:', e?.message);
       }
       return mod;
     },

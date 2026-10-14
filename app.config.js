@@ -8,7 +8,7 @@ module.exports = ({ config }) => {
     ...config,
     name: 'Charter Keke',
     slug: 'charter-keke-mobile',
-    version: '2.2.3',
+    version: '2.2.4',
     runtimeVersion: '2',
     orientation: 'portrait',
     icon: './assets/charter keke.png',
@@ -105,7 +105,7 @@ module.exports = ({ config }) => {
       },
       package: 'com.charterkeke.mobile',
       googleServicesFile: './google-services.json',
-      versionCode: 231,
+      versionCode: 232,
       permissions: [
         'android.permission.ACCESS_FINE_LOCATION',
         'android.permission.ACCESS_COARSE_LOCATION',
