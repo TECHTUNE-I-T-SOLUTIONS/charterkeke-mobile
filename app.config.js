@@ -8,8 +8,12 @@ module.exports = ({ config }) => {
     ...config,
     name: 'Charter Keke',
     slug: 'charter-keke-mobile',
-    version: '2.2.4',
-    runtimeVersion: '2',
+    version: '2.2.5',
+    // Bare workflow: runtimeVersion must be a string. Set it to the app
+    // version so every version bump forces EAS to do a fresh native build
+    // (and the native version field updates) instead of reusing the cached
+    // native bundle from the previous build.
+    runtimeVersion: '2.2.5',
     orientation: 'portrait',
     icon: './assets/charter keke.png',
     userInterfaceStyle: 'automatic',
@@ -74,7 +78,7 @@ module.exports = ({ config }) => {
     ios: {
       icon: './assets/ios-app-icon-1024.png',
       bundleIdentifier: 'com.charterkeke.mobile',
-      buildNumber: '231',
+      buildNumber: '234',
       googleServicesFile: './GoogleService-Info.plist',
       config: { usesNonExemptEncryption: false },
       infoPlist: {
@@ -105,7 +109,7 @@ module.exports = ({ config }) => {
       },
       package: 'com.charterkeke.mobile',
       googleServicesFile: './google-services.json',
-      versionCode: 232,
+      versionCode: 233,
       permissions: [
         'android.permission.ACCESS_FINE_LOCATION',
         'android.permission.ACCESS_COARSE_LOCATION',

@@ -121,7 +121,10 @@ export async function sendLiveTrackingNotification({
       trigger: null,
     });
 
-    console.log('✅ [LiveTracking] Notification sent with banner');
+    // The native live-update widget (Android Live Update / iOS Live Activity)
+    // is rendered by the droptrack-live module in dev/production builds. This
+    // local notification is the Expo Go / fallback heads-up only.
+    console.log(`✅ [LiveTracking] Local heads-up sent${imageUrl ? ' (with image)' : ''}. Native widget: ${IS_EXPO_GO ? 'unavailable in Expo Go' : 'requested'}.`);
   } catch (error) {
     console.error('❌ [LiveTracking] Failed to send notification:', error);
   }

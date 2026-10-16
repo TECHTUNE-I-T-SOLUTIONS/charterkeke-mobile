@@ -117,6 +117,9 @@ export default function LoginScreen() {
     if (!validateForm()) return;
     try {
       const loggedInUser = await login(phone, password);
+      if (!loggedInUser) {
+        throw new Error('Login response did not include a user. Please try again.');
+      }
       if (loggedInUser?.role === 'driver') {
         if ((loggedInUser as any)?.isVerified === false || (loggedInUser as any)?.verificationStatus === 'pending') {
           router.replace('/driver/awaiting-verification');
@@ -125,6 +128,9 @@ export default function LoginScreen() {
         }
       }
       else if (loggedInUser?.role === 'rider') router.replace('/rider/booking');
+      else {
+        setErrors({ submit: 'Unknown account type. Please contact support.' });
+      }
     } catch (error: any) {
       setErrors({ submit: error?.message || 'Invalid credentials. Please try again.' });
     }

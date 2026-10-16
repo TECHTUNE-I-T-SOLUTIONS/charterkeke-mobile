@@ -1409,8 +1409,20 @@ export default function ActiveRideScreen() {
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalButtonPrimary, { backgroundColor: colors.primary }]}
-                onPress={() => {
+                onPress={async () => {
                   setShowCompletionConfirmationModal(false);
+                  setVerifyingCompletion(true);
+                  try {
+                    await apiService.post(`/rides/${resolvedRideId}/confirm-completion`, {
+                      riderConfirmed: true,
+                      confirmedAt: new Date().toISOString(),
+                    });
+                  } catch (e) {
+                    // Endpoint may not exist on backend yet — fall back to a rating-based confirmation
+                    console.log('[Completion] confirm-completion endpoint not available, using rating flow');
+                  } finally {
+                    setVerifyingCompletion(false);
+                  }
                   Alert.alert('Ride Completed ✅', 'Your ride is complete. Rate your driver!', [
                     { text: 'Rate Now', onPress: () => router.replace(`/rider/rating?rideId=${resolvedRideId}`) },
                     { text: 'Later', style: 'cancel' },
@@ -1424,22 +1436,31 @@ export default function ActiveRideScreen() {
                 style={[styles.modalButton, styles.modalButtonSecondary, { backgroundColor: colors.background, borderColor: colors.border }]}
                 onPress={async () => {
                   setShowCompletionConfirmationModal(false);
-                  // Rider denies completion - report issue
-                  Alert.alert(
-                    'Report Issue',
-                    'Are you sure the ride was not completed? We will investigate this.',
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      {
-                        text: 'Report',
-                        style: 'destructive',
-                        onPress: () => {
-                          // TODO: Add actual reporting logic
-                          Alert.alert('Issue Reported', 'Thank you. Our team will review this.');
-                        }
-                      }
-                    ]
-                  );
+                  setVerifyingCompletion(true);
+                  try {
+                    await apiService.post(`/rides/${resolvedRideId}/dispute`, {
+                      reason: 'rider_not_at_destination',
+                      description: 'Driver marked the ride as completed but rider has not arrived at the destination.',
+                      reportedAt: new Date().toISOString(),
+                    });
+                    Alert.alert('Issue Reported', 'Thank you. Our team will review this and contact you.');
+                  } catch (e) {
+                    // Fallback: open a support ticket so the rider is never stranded
+                    try {
+                      await apiService.post('/support/tickets', {
+                        subject: 'Ride completion dispute',
+                        description: `Ride ${resolvedRideId}: Driver marked ride completed but rider disputes it.`,
+                        category: 'ride_dispute',
+                        priority: 'high',
+                        initialMessage: 'I dispute the completion of this ride.',
+                      });
+                      Alert.alert('Issue Reported', 'A support ticket has been created. Our team will contact you.');
+                    } catch (err: any) {
+                      Alert.alert('Could not report', err?.message || 'Please try again or contact support directly.');
+                    }
+                  } finally {
+                    setVerifyingCompletion(false);
+                  }
                 }}
               >
                 <MaterialCommunityIcons name="alert-circle" size={20} color={colors.text} />

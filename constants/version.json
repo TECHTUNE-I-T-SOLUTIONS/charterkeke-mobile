@@ -1,6 +1,6 @@
 {
-  "version": "2.2.4",
-  "buildNumber": 234,
-  "releaseDate": "2026-10-14",
-  "changelog": "Redesigned Live Update with ProgressStyle segmented bar, dynamic tracker icon, status chips (shortCritical/ETA) and lock-screen + notification-drawer promotion per Android docs"
+  "version": "2.2.5",
+  "buildNumber": 235,
+  "releaseDate": "2026-10-16",
+  "changelog": "iOS Live Activities: added DroptrackWidget extension target via config plugin (WidgetKit + ActivityKit + SwiftUI), bumped main app + widget deployment target to 16.2, NSSupportsLiveActivitiesFrequentUpdates enabled"
 }
