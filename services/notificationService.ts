@@ -100,13 +100,13 @@ export const setupAndroidChannels = async () => {
 
   if (Platform.OS !== 'android') return;
   try {
-    const customSound = 'notifications.wav';
+    const customSound = null;
     await Notifications.setNotificationChannelAsync(ANDROID_CHANNELS.default, {
       name: 'General',
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#1a1a1a',
-      sound: customSound,
+      sound: null,
     });
 
     // High-urgency channel for drivers receiving new ride requests.
@@ -115,7 +115,7 @@ export const setupAndroidChannels = async () => {
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 400, 250, 400],
       lightColor: '#00C853',
-      sound: customSound,
+      sound: null,
       bypassDnd: false,
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
       enableVibrate: true,
@@ -127,7 +127,7 @@ export const setupAndroidChannels = async () => {
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#1a1a1a',
-      sound: customSound,
+      sound: null,
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     });
 
@@ -137,7 +137,7 @@ export const setupAndroidChannels = async () => {
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 200, 100, 200],
       lightColor: '#34D399',
-      sound: customSound,
+      sound: null,
       bypassDnd: false,
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
       enableVibrate: true,
@@ -148,7 +148,7 @@ export const setupAndroidChannels = async () => {
       name: 'Messages',
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 200, 150, 200],
-      sound: customSound,
+      sound: null,
     });
 
     console.log('✅ [NOTIFICATIONS] Android notification channels configured');

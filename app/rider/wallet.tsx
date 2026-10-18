@@ -8,6 +8,7 @@ import {
   RefreshControl,
   StyleSheet,
   StatusBar,
+  Alert,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -39,6 +40,8 @@ export default function WalletScreen() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [cashlessEnabled, setCashlessEnabled] = useState(false);
+  const [checkingFlag, setCheckingFlag] = useState(true);
   const renderedOnce = useRef(false);
   const [hasCached, setHasCached] = useState(false);
 
@@ -48,10 +51,22 @@ export default function WalletScreen() {
     React.useCallback(() => {
       if (!renderedOnce.current) {
         renderedOnce.current = true;
+        checkCashlessFlag();
         loadWalletData();
       }
     }, [])
   );
+
+  const checkCashlessFlag = async () => {
+    try {
+      const res = await apiService.getCashlessEnabled();
+      setCashlessEnabled(Boolean(res?.enabled));
+    } catch {
+      setCashlessEnabled(false);
+    } finally {
+      setCheckingFlag(false);
+    }
+  };
 
   const loadWalletData = async () => {
     const cached = await cacheService.get<any>(STORAGE_KEYS.RIDER_WALLET);
@@ -129,15 +144,49 @@ export default function WalletScreen() {
             </LinearGradient>
           </View>
 
+          {/* Dormant / Coming Soon Notice Banner */}
+          {!cashlessEnabled && !checkingFlag && (
+            <View style={[styles.paddingH, { marginTop: 16 }]}>
+              <View style={[styles.dormantBanner, { backgroundColor: theme.colors.card, borderColor: '#F5820B40' }]}>
+                <MaterialCommunityIcons name="information-outline" size={20} color="#F5820B" />
+                <View style={{ flex: 1, marginLeft: 8 }}>
+                  <Text style={[styles.dormantTitle, { color: theme.colors.textPrimary }]}>
+                    Cashless Wallet: Coming Soon
+                  </Text>
+                  <Text style={[styles.dormantSub, { color: theme.colors.textSecondary }]}>
+                    In-app digital payments are currently dormant. Rides are completed using cash directly with your driver.
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )}
+
           {/* Quick Actions */}
           <View style={[styles.actionRow, styles.paddingH]}>
-            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+            <TouchableOpacity
+              onPress={() => {
+                if (!cashlessEnabled) {
+                  Alert.alert("Coming Soon", "Cashless top-up is coming soon! Rides are currently paid in cash.");
+                  return;
+                }
+                Alert.alert("Add Funds", "Enter amount to add funds via Paystack.");
+              }}
+              style={[styles.actionBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
+            >
                <View style={[styles.iconBox, { backgroundColor: '#10B98120' }]}>
                  <MaterialCommunityIcons name="plus" size={24} color="#10B981" />
                </View>
                <Text style={[styles.actionText, { color: theme.colors.textPrimary }]}>Top Up</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+            <TouchableOpacity
+              onPress={() => {
+                if (!cashlessEnabled) {
+                  Alert.alert("Coming Soon", "Wallet withdrawals are inactive while cash mode is active.");
+                  return;
+                }
+              }}
+              style={[styles.actionBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border, opacity: cashlessEnabled ? 1 : 0.6 }]}
+            >
                <View style={[styles.iconBox, { backgroundColor: '#EF444420' }]}>
                  <MaterialCommunityIcons name="bank-transfer" size={24} color="#EF4444" />
                </View>
@@ -201,4 +250,7 @@ const styles = StyleSheet.create({
   txDate: { fontSize: 12 },
   txAmount: { fontSize: 16, fontWeight: '700' },
   emptyState: { padding: 20, alignItems: 'center' },
+  dormantBanner: { flexDirection: 'row', alignItems: 'flex-start', padding: 14, borderRadius: 12, borderWidth: 1 },
+  dormantTitle: { fontSize: 13, fontWeight: '700' },
+  dormantSub: { fontSize: 11, marginTop: 2, lineHeight: 16 },
 });

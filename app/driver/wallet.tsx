@@ -56,6 +56,10 @@ export default function WalletScreen() {
   const [showPaystackModal, setShowPaystackModal] = useState(false);
   const [paystackAuthUrl, setPaystackAuthUrl] = useState<string>('');
   const [paystackAmount, setPaystackAmount] = useState(0);
+  const [cashlessEnabled, setCashlessEnabled] = useState(false);
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [withdrawing, setWithdrawing] = useState(false);
   const verifyingPaymentRef = useRef(false);
 
   const isLight = theme.mode === 'light';
@@ -161,6 +165,7 @@ export default function WalletScreen() {
         renderedOnce.current = true;
         loadWallet();
       }
+      apiService.getCashlessEnabled().then(res => setCashlessEnabled(Boolean(res?.enabled))).catch(() => setCashlessEnabled(false));
       // Check for pending payment verification when screen comes to focus
       checkPendingPayment();
     }, [])
@@ -785,15 +790,71 @@ export default function WalletScreen() {
             </View>
           </View>
 
-          {/* Quick Actions - Withdraw removed (not offered) */}
+          {/* Quick Actions */}
           <View style={[styles.actionRow, styles.paddingH]}>
-            <View style={{ flex: 1 }} />
+            {cashlessEnabled ? (
+              <TouchableOpacity
+                onPress={() => {
+                  Alert.prompt
+                    ? Alert.prompt(
+                        'Request Withdrawal',
+                        'Enter amount to withdraw to your registered bank account:',
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: 'Submit',
+                            onPress: async (amountText?: string) => {
+                              const val = Number(amountText);
+                              if (!val || val <= 0) {
+                                Alert.alert('Invalid Amount', 'Please provide a valid withdrawal amount.');
+                                return;
+                              }
+                              try {
+                                await apiService.requestDriverWithdrawal({
+                                  amount: val,
+                                  bank_name: 'Primary Registered Account',
+                                  account_number: 'N/A',
+                                  account_name: 'Driver Profile',
+                                });
+                                Alert.alert('Request Submitted', 'Your withdrawal request has been sent to admin for approval.');
+                                onRefresh();
+                              } catch (e: any) {
+                                Alert.alert('Request Failed', e.message || 'Could not submit withdrawal request.');
+                              }
+                            },
+                          },
+                        ],
+                        'plain-text',
+                        '',
+                        'numeric'
+                      )
+                    : Alert.alert('Withdrawal', 'Withdrawal requests will be processed to your verified bank account.');
+                }}
+                style={[styles.actionBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
+              >
+                <View style={[styles.iconBox, { backgroundColor: '#FF910120' }]}>
+                  <MaterialCommunityIcons name="bank-transfer-out" size={24} color="#FF9101" />
+                </View>
+                <Text style={[styles.actionText, { color: theme.colors.textPrimary }]}>Withdraw</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                onPress={() => Alert.alert('Cashless Mode Inactive', 'Digital wallet withdrawals will become available once cashless mode is activated by admin.')}
+                style={[styles.actionBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border, opacity: 0.6 }]}
+              >
+                <View style={[styles.iconBox, { backgroundColor: '#6b728020' }]}>
+                  <MaterialCommunityIcons name="clock-outline" size={24} color="#6b7280" />
+                </View>
+                <Text style={[styles.actionText, { color: theme.colors.textSecondary }]}>Withdraw (Soon)</Text>
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity
               onPress={() => router.push('/driver/payment-history')}
               style={[styles.actionBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
             >
                <View style={[styles.iconBox, { backgroundColor: '#10B98120' }]}>
-                 <MaterialCommunityIcons name="history" size={24} color="#FFFDFB" />
+                 <MaterialCommunityIcons name="history" size={24} color="#10B981" />
                </View>
                <Text style={[styles.actionText, { color: theme.colors.textPrimary }]}>History</Text>
             </TouchableOpacity>

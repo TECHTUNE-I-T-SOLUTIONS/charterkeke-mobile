@@ -600,6 +600,35 @@ class APIService {
       await SecureStore.setItemAsync('refreshToken', refreshToken);
     }
   }
+
+  // ================= Cashless / Wallet Ecosystem =================
+  async getCashlessEnabled(): Promise<{ enabled: boolean }> {
+    try {
+      return await this.get('/settings/cashless-enabled', { skipAuth: true });
+    } catch {
+      return { enabled: false };
+    }
+  }
+
+  async getCashlessWalletBalance(): Promise<{ enabled: boolean; balance: number; currency: string }> {
+    return this.get('/wallet/balance');
+  }
+
+  async initiateWalletTopup(amount: number): Promise<{ success: boolean; authUrl: string; reference: string; accessCode?: string }> {
+    return this.post('/wallet/topup', { amount });
+  }
+
+  async verifyWalletTopup(reference: string): Promise<{ success: boolean; balance: number; credited: number }> {
+    return this.post('/wallet/paystack-callback', { reference });
+  }
+
+  async requestDriverWithdrawal(data: { amount: number; bank_name: string; account_number: string; account_name: string; bank_account_id?: string }): Promise<any> {
+    return this.post('/driver/withdraw', data);
+  }
+
+  async getDriverWithdrawals(): Promise<{ success: boolean; withdrawals: any[] }> {
+    return this.get('/driver/withdrawals');
+  }
 }
 
 export const apiService = new APIService();

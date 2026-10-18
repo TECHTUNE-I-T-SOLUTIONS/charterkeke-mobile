@@ -66,7 +66,7 @@ export async function sendLiveTrackingNotification({
       }
     } catch {}
   }
-  const customSound = 'notifications.wav';
+  const customSound = null;
   try {
     if (Platform.OS === 'android' && Notifications.setNotificationChannelAsync) {
       try {
@@ -75,7 +75,7 @@ export async function sendLiveTrackingNotification({
           importance: Notifications.AndroidImportance.MAX,
           vibrationPattern: [0, 200, 100, 200],
           lightColor: '#F5820B',
-          sound: customSound,
+          sound: null,
           lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
           enableVibrate: true,
           showBadge: true,
@@ -107,13 +107,13 @@ export async function sendLiveTrackingNotification({
           categoryId: 'live_tracking',
         };
 
-    const iosNotification: any = { sound: customSound, badge: 1, interruptionLevel: 'timeSensitive' as const };
+    const iosNotification: any = { sound: null, badge: 1, interruptionLevel: 'timeSensitive' as const };
 
     await Notifications.scheduleNotificationAsync({
       content: {
         title,
         body,
-        sound: customSound,
+        sound: null,
         data: data || {},
         ...(imageUrl && { imageUrl }),
         ...(Platform.OS === 'android' ? androidNotification : iosNotification),
@@ -149,7 +149,7 @@ export async function sendMessageNotification({
         title,
         body,
         data: { ...(data || {}), type: 'message' },
-        sound: 'notifications.wav',
+        sound: null,
         badge: 1,
       },
       trigger: null,
@@ -179,7 +179,7 @@ export async function sendSupportNotification({
         title,
         body,
         data: { ...(data || {}), type: 'support_message' },
-        sound: 'notifications.wav',
+        sound: null,
         badge: 1,
       },
       trigger: null,
