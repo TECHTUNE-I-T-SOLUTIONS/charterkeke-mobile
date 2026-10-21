@@ -852,39 +852,43 @@ export default function BookingScreen() {
           }
 
           // Try native live activity / live update if available
-          // Robust error handling to prevent crashes on both iOS and Android
-          try {
-            const dl: any = await import('@/modules/droptrack-live/src/index').catch((err) => {
-              console.warn('[Booking] Failed to import droptrack-live module:', err);
-              return null;
-            });
+          // Bypass on Android to prevent crashes - only enable on iOS
+          if (Platform.OS === 'ios') {
+            try {
+              const dl: any = await import('@/modules/droptrack-live/src/index').catch((err) => {
+                console.warn('[Booking] Failed to import droptrack-live module:', err);
+                return null;
+              });
 
-            const mod = dl?.default ?? dl;
+              const mod = dl?.default ?? dl;
 
-            if (mod?.isSupported?.() && rideId) {
-              try {
-                await mod.startDelivery(
-                  { orderId: String(rideId) },
-                  {
-                    status: 'Broadcasting',
-                    progress: 0.08,
-                    etaEpochMillis: Date.now() + 8 * 60 * 1000,
-                    stopsRemaining: 2,
-                    courierName: 'Searching…',
-                    riderReassigned: false,
-                  }
-                );
-                console.log('[Booking] Native live tracking started successfully');
-              } catch (startError) {
-                console.warn('[Booking] Failed to start native live tracking:', startError);
-                // Don't throw - this is non-blocking
+              if (mod?.isSupported?.() && rideId) {
+                try {
+                  await mod.startDelivery(
+                    { orderId: String(rideId) },
+                    {
+                      status: 'Broadcasting',
+                      progress: 0.08,
+                      etaEpochMillis: Date.now() + 8 * 60 * 1000,
+                      stopsRemaining: 2,
+                      courierName: 'Searching…',
+                      riderReassigned: false,
+                    }
+                  );
+                  console.log('[Booking] Native live tracking started successfully');
+                } catch (startError) {
+                  console.warn('[Booking] Failed to start native live tracking:', startError);
+                  // Don't throw - this is non-blocking
+                }
+              } else {
+                console.log('[Booking] Native live tracking not supported on this device');
               }
-            } else {
-              console.log('[Booking] Native live tracking not supported on this device');
+            } catch (e) {
+              console.warn('[Booking] Native live tracking error (caught):', e);
+              // Don't throw - this is non-blocking and shouldn't crash the app
             }
-          } catch (e) {
-            console.warn('[Booking] Native live tracking error (caught):', e);
-            // Don't throw - this is non-blocking and shouldn't crash the app
+          } else {
+            console.log('[Booking] Native live tracking bypassed on Android to prevent crashes');
           }
         })();
 
@@ -2253,6 +2257,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     marginTop: 16,
+    marginBottom: 26,
   },
   confirmButtonText: {
     color: '#000',
