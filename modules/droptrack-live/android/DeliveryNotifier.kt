@@ -134,10 +134,17 @@ object DeliveryNotifier {
             .setOnlyAlertOnce(true) // don't re-buzz on every progress tick
             .setAutoCancel(!ongoing) // keep until ride ends
             .setColor(BRAND_ORANGE) // not colorized (setColorized false is default)
-            .setRequestPromotedOngoing(ongoing) // REQUIRED — EXTRA_REQUEST_PROMOTED_ONGOING
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
 
-        if (shortCritical != null) builder.setShortCriticalText(shortCritical)
+        try {
+            builder.setRequestPromotedOngoing(ongoing)
+        } catch (_: Throwable) {}
+
+        if (shortCritical != null) {
+            try {
+                builder.setShortCriticalText(shortCritical)
+            } catch (_: Throwable) {}
+        }
         // "when" drives the chip countdown (Figure 6/7). Only set if ≥2 min in future per docs, else chip shows icon only.
         if (etaEpochMillis > System.currentTimeMillis() + 90_000 && !isRerouting) {
             builder.setWhen(etaEpochMillis.toLong()).setShowWhen(true)

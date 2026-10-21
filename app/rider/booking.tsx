@@ -804,6 +804,12 @@ export default function BookingScreen() {
   };
 
   const handleConfirmBooking = async () => {
+    // Prevent multiple simultaneous bookings
+    if (isLoading) {
+      console.log('[Booking] Already booking, ignoring duplicate request');
+      return;
+    }
+
     setIsLoading(true);
     try {
       const bookingData = {
@@ -833,32 +839,44 @@ export default function BookingScreen() {
       if (response) {
         setShowReviewModal(false);
         const rideId = response.ride?.id || response.id;
-        // Immediate live-update: "Looking for driver..." so user sees activity even before active-ride mounts
-        try {
-          await sendLiveTrackingNotification({
-            title: 'Looking for a driver… 🛺',
-            body: `Searching nearby drivers • ${bookingData.pickup.address} → ${bookingData.dropoff.address}`,
-            data: { type: 'live_tracking', rideId, status: 'dispatched', pickup: bookingData.pickup.address, destination: bookingData.dropoff.address },
-          });
-        } catch {}
-        try {
-          // Try native live activity / live update if available (dev build, not Expo Go)
-          const dl: any = await import('@/modules/droptrack-live/src/index').catch(() => null);
-          const mod = dl?.default ?? dl;
-          if (mod?.isSupported?.() && rideId) {
-            await mod.startDelivery(
-              { orderId: String(rideId) },
-              {
-                status: 'Broadcasting',
-                progress: 0.08,
-                etaEpochMillis: Date.now() + 8 * 60 * 1000,
-                stopsRemaining: 2,
-                courierName: 'Searching…',
-                riderReassigned: false,
-              }
-            ).catch(() => {});
+        // Non-blocking live-update: "Looking for driver..." so user sees activity without delaying ride navigation or risking crash
+        void (async () => {
+          try {
+            await sendLiveTrackingNotification({
+              title: 'Looking for a driver… 🛺',
+              body: `Searching nearby drivers • ${bookingData.pickup.address} → ${bookingData.dropoff.address}`,
+              data: { type: 'live_tracking', rideId, status: 'dispatched', pickup: bookingData.pickup.address, destination: bookingData.dropoff.address },
+            });
+          } catch (e) {
+            console.warn('[Booking] sendLiveTrackingNotification error:', e);
           }
-        } catch {}
+
+          // Skip native live tracking on Android to prevent crashes
+          // Only enable on iOS where it's properly supported
+          if (Platform.OS === 'ios') {
+            try {
+              // Try native live activity / live update if available
+              const dl: any = await import('@/modules/droptrack-live/src/index').catch(() => null);
+              const mod = dl?.default ?? dl;
+              if (mod?.isSupported?.() && rideId) {
+                await mod.startDelivery(
+                  { orderId: String(rideId) },
+                  {
+                    status: 'Broadcasting',
+                    progress: 0.08,
+                    etaEpochMillis: Date.now() + 8 * 60 * 1000,
+                    stopsRemaining: 2,
+                    courierName: 'Searching…',
+                    riderReassigned: false,
+                  }
+                ).catch(() => {});
+              }
+            } catch (e) {
+              console.warn('[Booking] Native live tracking error:', e);
+            }
+          }
+        })();
+
         router.push({
           pathname: '/rider/active-ride',
           params: { rideId },
@@ -866,7 +884,22 @@ export default function BookingScreen() {
       }
     } catch (error: any) {
       console.error('Error booking ride:', error);
-      const errorMessage = error.message || 'Failed to book ride. Please try again.';
+      let errorMessage = error.message || 'Failed to book ride. Please try again.';
+
+      // Handle duplicate ride booking error
+      if (error.status === 409 || (error.error && error.error.includes('pending ride'))) {
+        errorMessage = 'You already have a pending ride request. Please wait for it to be processed.';
+        if (error.existingRideId) {
+          // Navigate to the existing ride
+          router.push({
+            pathname: '/rider/active-ride',
+            params: { rideId: error.existingRideId },
+          });
+          setIsLoading(false);
+          return;
+        }
+      }
+
       setErrorMessage(errorMessage);
       setShowErrorDialog(true);
       setToast({

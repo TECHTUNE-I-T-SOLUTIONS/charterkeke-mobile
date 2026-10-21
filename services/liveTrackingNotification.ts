@@ -34,7 +34,7 @@ export async function sendLiveTrackingNotification({
     console.log('[LiveTracking] Expo Go detected — attempting local notification (may be limited)');
   }
 
-  // Ensure permission — Android 13+ and iOS need it explicitly, otherwise schedule is silent
+  // Ensure notification permission — standard Expo/React Native check
   try {
     const perms = await Notifications.getPermissionsAsync?.();
     if (perms && perms.status !== 'granted') {
@@ -42,30 +42,6 @@ export async function sendLiveTrackingNotification({
       console.log('[LiveTracking] permission request result:', req?.status || req);
     }
   } catch {}
-  // Android 16 promoted-live-update gate: POST_PROMOTED_NOTIFICATIONS.
-  // Regular POST_NOTIFICATIONS is not enough — promoted chips/lock-screen elevation is a separate toggle.
-  // In a dev/production build (not Expo Go) we explicitly request/open it here so the live chip is not silently downgraded.
-  if (Platform.OS === 'android' && !IS_EXPO_GO) {
-    try {
-      const { PermissionsAndroid } = require('react-native');
-      const promotedPerm = 'android.permission.POST_PROMOTED_NOTIFICATIONS' as any;
-      if (PermissionsAndroid && promotedPerm) {
-        const already = await PermissionsAndroid.check?.(promotedPerm);
-        if (!already) {
-          const res = await PermissionsAndroid.request(promotedPerm as any);
-          console.log('[LiveTracking] POST_PROMOTED_NOTIFICATIONS request:', res);
-        }
-      }
-    } catch {}
-    try {
-      const mod: any = await import('droptrack-live').catch(() => null);
-      const dl = mod?.default ?? mod;
-      if (dl?.areActivitiesEnabled && !dl.areActivitiesEnabled()) {
-        console.log('[LiveTracking] promoted live-update toggle off — opening system settings');
-        await dl.requestPromotedPermission?.().catch(() => {});
-      }
-    } catch {}
-  }
   const customSound = null;
   try {
     if (Platform.OS === 'android' && Notifications.setNotificationChannelAsync) {

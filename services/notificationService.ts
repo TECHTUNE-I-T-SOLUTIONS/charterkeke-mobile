@@ -370,9 +370,17 @@ export const configureNotifications = async () => {
       }),
     });
 
-    // Request permissions automatically on app startup
-    console.log('🔔 [NOTIFICATIONS] Requesting notification permissions on app startup...');
-    await requestNotificationPermissions();
+    // Check permissions on app startup without blocking UI or throwing unhandled errors
+    console.log('🔔 [NOTIFICATIONS] Checking notification permissions on app startup...');
+    try {
+      const perms = await Notifications.getPermissionsAsync?.();
+      if (perms?.status === 'granted') {
+        // Only fetch push token asynchronously if permission was already granted
+        void requestNotificationPermissions().catch(() => null);
+      }
+    } catch (permErr) {
+      console.warn('⚠️ [NOTIFICATIONS] Initial permission check notice:', permErr);
+    }
 
     // Handle notification when app is in foreground
     Notifications.addNotificationReceivedListener((notification: any) => {
