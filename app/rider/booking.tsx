@@ -851,14 +851,18 @@ export default function BookingScreen() {
             console.warn('[Booking] sendLiveTrackingNotification error:', e);
           }
 
-          // Skip native live tracking on Android to prevent crashes
-          // Only enable on iOS where it's properly supported
-          if (Platform.OS === 'ios') {
-            try {
-              // Try native live activity / live update if available
-              const dl: any = await import('@/modules/droptrack-live/src/index').catch(() => null);
-              const mod = dl?.default ?? dl;
-              if (mod?.isSupported?.() && rideId) {
+          // Try native live activity / live update if available
+          // Robust error handling to prevent crashes on both iOS and Android
+          try {
+            const dl: any = await import('@/modules/droptrack-live/src/index').catch((err) => {
+              console.warn('[Booking] Failed to import droptrack-live module:', err);
+              return null;
+            });
+
+            const mod = dl?.default ?? dl;
+
+            if (mod?.isSupported?.() && rideId) {
+              try {
                 await mod.startDelivery(
                   { orderId: String(rideId) },
                   {
@@ -869,11 +873,18 @@ export default function BookingScreen() {
                     courierName: 'Searching…',
                     riderReassigned: false,
                   }
-                ).catch(() => {});
+                );
+                console.log('[Booking] Native live tracking started successfully');
+              } catch (startError) {
+                console.warn('[Booking] Failed to start native live tracking:', startError);
+                // Don't throw - this is non-blocking
               }
-            } catch (e) {
-              console.warn('[Booking] Native live tracking error:', e);
+            } else {
+              console.log('[Booking] Native live tracking not supported on this device');
             }
+          } catch (e) {
+            console.warn('[Booking] Native live tracking error (caught):', e);
+            // Don't throw - this is non-blocking and shouldn't crash the app
           }
         })();
 
