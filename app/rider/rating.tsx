@@ -16,6 +16,7 @@ import { useTheme } from '@/context/ThemeContext';
 import { apiService } from '@/services/api';
 import { moderateScale, scale, verticalScale } from 'react-native-size-matters';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import RatingSuccessModal from '@/components/RatingSuccessModal';
 
 interface RideData {
   id: string;
@@ -84,6 +85,7 @@ export default function RatingScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [rideData, setRideData] = useState<RideData | null>(null);
   const [driverProfile, setDriverProfile] = useState<DriverProfile | null>(null);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   // Theme colors - Orange (#FFA500), White (#FFFFFF), Black (#000000)
   const isLight = theme?.mode === 'light';
@@ -264,12 +266,7 @@ export default function RatingScreen() {
           // Don't block the user if this fails, just log it
         }
 
-        Alert.alert('Success', 'Thank you for your review!', [
-          {
-            text: 'OK',
-            onPress: () => router.replace('/rider/booking'),
-          },
-        ]);
+        setShowSuccessModal(true);
       } else {
         Alert.alert('Error', result.message || 'Failed to submit review');
       }
@@ -991,6 +988,22 @@ export default function RatingScreen() {
           </>
         )}
       </ScrollView>
+
+      {/* Rating Success Modal */}
+      <RatingSuccessModal
+        visible={showSuccessModal}
+        onClose={() => {
+          setShowSuccessModal(false);
+          router.back();
+        }}
+        onHome={() => {
+          setShowSuccessModal(false);
+          router.replace('/rider/booking');
+        }}
+        rating={rating}
+        driverName={driverName}
+        reviewText={review.trim()}
+      />
     </SafeAreaView>
   );
 }
