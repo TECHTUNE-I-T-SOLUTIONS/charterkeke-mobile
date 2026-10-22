@@ -32,6 +32,7 @@ import { exportRideReceipt, saveCapturedRideReceiptImage, shareReceiptFile, shar
 import { RideReceiptExportModal } from '@/components/RideReceiptExportModal';
 import { RideReceiptTemplate } from '@/components/RideReceiptTemplate';
 import { captureRef } from 'react-native-view-shot';
+import CancelRideModal from '@/components/CancelRideModal';
 
 // ─── Cancellation policy ──────────────────────────────────────────────────────
 // Free-cancel window: Always free if no driver accepted, OR 5 min after driver accepts
@@ -146,6 +147,7 @@ export default function RideDetailsScreen() {
   const [driverAcceptedAt, setDriverAcceptedAt] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [now, setNow] = useState(Date.now());
+  const [showCancelModal, setShowCancelModal] = useState(false);
 
   // Update current time every second for countdown
   useEffect(() => {
@@ -210,26 +212,12 @@ export default function RideDetailsScreen() {
 
   const handleCancelRide = () => {
     if (!rideDetails) return;
+    setShowCancelModal(true);
+  };
 
-    const isFree = cancelStatus === 'free';
-    const penaltyPercent = cancellationPenaltyPercent;
-    const penaltyAmount = (rideDetails.fare_amount || 0) * CANCELLATION_PENALTY_PERCENT;
-    const penaltyText = `A ${penaltyPercent}% cancellation fee (₦${penaltyAmount.toLocaleString()}) will be charged.`;
-
-    Alert.alert(
-      isFree ? 'Cancel Ride' : 'Cancel Ride — Penalty Applies',
-      isFree
-        ? 'Are you sure you want to cancel this ride? You are still within the free cancellation window.'
-        : `The free cancellation window has closed.\n\n${penaltyText}\n\nDo you still want to cancel?`,
-      [
-        { text: 'Keep Ride', style: 'cancel' },
-        {
-          text: isFree ? 'Cancel Ride' : 'Cancel & Accept Penalty',
-          style: 'destructive',
-          onPress: () => confirmCancel(isFree),
-        },
-      ]
-    );
+  const handleCancelConfirm = async (waiveFee: boolean) => {
+    setShowCancelModal(false);
+    await confirmCancel(waiveFee);
   };
 
   const confirmCancel = async (isFree: boolean) => {
@@ -1101,6 +1089,18 @@ export default function RideDetailsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Cancel Ride Modal */}
+      <CancelRideModal
+        visible={showCancelModal}
+        onClose={() => setShowCancelModal(false)}
+        onConfirm={handleCancelConfirm}
+        isLoading={cancelling}
+        isFreeCancellation={cancelStatus === 'free'}
+        fareAmount={rideDetails?.fare_amount || 0}
+        cancellationPenaltyPercent={CANCELLATION_PENALTY_PERCENT}
+        hasDriverAccepted={String(rideDetails?.status || '').toLowerCase() === 'accepted'}
+      />
 
       <RideMapFullscreenModal
         visible={showFullMap}

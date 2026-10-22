@@ -21,6 +21,10 @@ import { apiService } from '@/services/api';
 import { supabaseService } from '@/services/supabase';
 import { ListScreenSkeleton } from '@/components/ListScreenSkeleton';
 import { useRideHistory } from '@/hooks/useLocationCache';
+import CancelRideModal from '@/components/CancelRideModal';
+
+// Cancellation policy constants
+const CANCELLATION_PENALTY_PERCENT = 0.30; // 30% of fare
 
 const RIDER_RIDE_FILTERS = ['all', 'pending', 'dispatched', 'in_progress', 'accepted', 'completed', 'cancelled'] as const;
 type RiderRideFilter = typeof RIDER_RIDE_FILTERS[number];
@@ -32,6 +36,8 @@ export default function RidesHistoryScreen() {
   const { showConfirm, showError, showSuccess } = useAlert();
   const [filterStatus, setFilterStatus] = useState<RiderRideFilter>('all');
   const [cancellingRideId, setCancellingRideId] = useState<string | null>(null);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [selectedRide, setSelectedRide] = useState<any>(null);
 
   const { data: rides = [], isLoading: loading, isRefetching: refreshing, refetch } = useRideHistory();
 
@@ -88,26 +94,34 @@ export default function RidesHistoryScreen() {
 
   const onRefresh = async () => { await refetch(); };
 
-  const handleCancelRide = async (rideId: string) => {
-    showConfirm(
-      'Cancel Ride',
-      'Are you sure you want to cancel this ride?',
-      async () => {
-        try {
-          setCancellingRideId(rideId);
-          await apiService.post(`/rides/${rideId}/cancel`, {
-            reason: 'User initiated',
-          });
-          await refetch();
-          showSuccess('Cancelled', 'Ride has been cancelled successfully');
-        } catch (e) {
-          console.error('[RIDES_HISTORY] Cancel failed:', e);
-          showError('Error', 'Failed to cancel ride. Please try again.');
-        } finally {
-          setCancellingRideId(null);
-        }
-      }
-    );
+  const handleCancelRide = (ride: any) => {
+    setSelectedRide(ride);
+    setShowCancelModal(true);
+  };
+
+  const handleCancelConfirm = async (waiveFee: boolean) => {
+    if (!selectedRide) return;
+    setShowCancelModal(false);
+    setCancellingRideId(selectedRide.id);
+
+    try {
+      // For pending/dispatched rides, always waive the fee
+      const currentStatus = String(selectedRide.status || '').toLowerCase();
+      const shouldWaive = currentStatus === 'pending' || currentStatus === 'dispatched' || waiveFee;
+
+      await apiService.post(`/rides/${selectedRide.id}/cancel`, {
+        reason: 'User initiated',
+        waiver: shouldWaive,
+      });
+      await refetch();
+      showSuccess('Cancelled', 'Ride has been cancelled successfully');
+    } catch (e) {
+      console.error('[RIDES_HISTORY] Cancel failed:', e);
+      showError('Error', 'Failed to cancel ride. Please try again.');
+    } finally {
+      setCancellingRideId(null);
+      setSelectedRide(null);
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -191,7 +205,7 @@ export default function RidesHistoryScreen() {
                     {new Date(ride.created_at).toLocaleDateString()} • {new Date(ride.created_at).toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' })}
                   </Text>
                   {(ride.status === 'pending' || ride.status === 'dispatched') && (
-                    <TouchableOpacity onPress={() => handleCancelRide(ride.id)} disabled={cancellingRideId === ride.id}>
+                    <TouchableOpacity onPress={() => handleCancelRide(ride)} disabled={cancellingRideId === ride.id}>
                       <Text style={{ color: '#EF4444', fontWeight: '600', fontSize: 12 }}>
                         {cancellingRideId === ride.id ? 'Cancelling...' : 'Cancel'}
                       </Text>
@@ -225,6 +239,18 @@ export default function RidesHistoryScreen() {
         </ScrollView>
         </View>
       </SafeAreaView>
+
+      {/* Cancel Ride Modal */}
+      <CancelRideModal
+        visible={showCancelModal}
+        onClose={() => setShowCancelModal(false)}
+        onConfirm={handleCancelConfirm}
+        isLoading={cancellingRideId !== null}
+        isFreeCancellation={true}
+        fareAmount={selectedRide?.fare_amount || 0}
+        cancellationPenaltyPercent={0.30}
+        hasDriverAccepted={false}
+      />
     </View>
   );
 }

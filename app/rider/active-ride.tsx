@@ -19,6 +19,7 @@ import { MapboxMap, MapboxMarker } from '@/components/MapboxMap';
 import { DriverLocationMarker } from '@/components/DriverLocationMarker';
 import { RideMapFullscreenModal } from '@/components/RideMapFullscreenModal';
 import { RideRoadProgressCard } from '@/components/RideRoadProgressCard';
+import CancelRideModal from '@/components/CancelRideModal';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useAuth } from '@/context/AuthContext';
 import { useLocation } from '@/context/LocationContext';
@@ -93,6 +94,7 @@ export default function ActiveRideScreen() {
   const [showCompletionConfirmationModal, setShowCompletionConfirmationModal] = useState(false);
   const [verifyingCompletion, setVerifyingCompletion] = useState(false);
   const [trackingProgress, setTrackingProgress] = useState<'just-started' | 'started' | 'half-way' | 'very-close' | 'very-close-to-finish' | 'almost-finished' | 'ride-completed' | null>(null);
+  const [showCancelModal, setShowCancelModal] = useState(false);
 
   // Hosted tracking banner URLs
   const trackingBannerUrls = {
@@ -634,26 +636,12 @@ export default function ActiveRideScreen() {
   // ─── Cancellation ───────────────────────────────────────────────────────────
   const handleCancelRide = () => {
     if (!activeRide) return;
+    setShowCancelModal(true);
+  };
 
-    const isFree = cancelStatus === 'free';
-    const penaltyPercent = cancellationPenaltyPercent;
-    const penaltyAmount = activeRide.fare_amount * CANCELLATION_PENALTY_PERCENT;
-    const penaltyText = `A ${penaltyPercent}% cancellation fee (₦${penaltyAmount.toLocaleString()}) will be charged.`;
-
-    Alert.alert(
-      isFree ? 'Cancel Ride' : 'Cancel Ride — Penalty Applies',
-      isFree
-        ? 'Are you sure you want to cancel this ride? You are still within the free cancellation window.'
-        : `The free cancellation window has closed.\n\n${penaltyText}\n\nDo you still want to cancel?`,
-      [
-        { text: 'Keep Ride', style: 'cancel' },
-        {
-          text: isFree ? 'Cancel Ride' : 'Cancel & Accept Penalty',
-          style: 'destructive',
-          onPress: () => confirmCancel(isFree),
-        },
-      ]
-    );
+  const handleCancelConfirm = async (waiveFee: boolean) => {
+    setShowCancelModal(false);
+    await confirmCancel(waiveFee);
   };
 
   const confirmCancel = async (isFree: boolean) => {
@@ -1522,6 +1510,18 @@ export default function ActiveRideScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Cancel Ride Modal */}
+      <CancelRideModal
+        visible={showCancelModal}
+        onClose={() => setShowCancelModal(false)}
+        onConfirm={handleCancelConfirm}
+        isLoading={cancelling}
+        isFreeCancellation={cancelStatus === 'free'}
+        fareAmount={activeRide?.fare_amount || 0}
+        cancellationPenaltyPercent={CANCELLATION_PENALTY_PERCENT}
+        hasDriverAccepted={isAccepted}
+      />
 
       <RideMapFullscreenModal
         visible={showFullMap}
