@@ -657,19 +657,65 @@ export default function ActiveRideScreen() {
   };
 
   const confirmCancel = async (isFree: boolean) => {
-    if (!activeRide) return;
+    if (!activeRide) {
+      console.error('[CANCEL_RIDE] No active ride to cancel');
+      Alert.alert('No Active Ride', 'There is no active ride to cancel.');
+      return;
+    }
+    
+    if (!activeRide.id) {
+      console.error('[CANCEL_RIDE] Active ride has no ID');
+      Alert.alert('Error', 'Invalid ride ID. Please refresh and try again.');
+      return;
+    }
+    
     setCancelling(true);
     try {
       const penaltyAmount = isFree ? 0 : activeRide.fare_amount * CANCELLATION_PENALTY_PERCENT;
       const waiveFee = isPending || isFree; // Waive fee if no driver accepted or within free window
+      
+      console.log('[CANCEL_RIDE] Attempting to cancel ride:', {
+        rideId: activeRide.id,
+        isFree,
+        penaltyAmount,
+        waiveFee,
+        rideStatus: activeRide.status,
+      });
+      
       await apiService.post(`/rides/${activeRide.id}/cancel`, {
         reason: 'User cancelled',
         penalty_amount: penaltyAmount,
         waiver: waiveFee,
       });
+      
+      // Success - navigate away
       router.replace('/rider/booking');
     } catch (err: any) {
-      Alert.alert('Cancellation Failed', err?.message || 'Please try again.');
+      console.error('[CANCEL_RIDE] Cancellation failed:', err);
+      
+      // If ride not found, try to refresh and get the correct ride
+      if (err?.message?.includes('not found') || err?.status === 404) {
+        console.log('[CANCEL_RIDE] Ride not found, refreshing to get correct ride...');
+        await fetchActiveRide();
+        
+        if (activeRide && activeRide.id) {
+          Alert.alert(
+            'Ride Updated',
+            'Your ride information has been updated. Please try cancelling again.',
+            [{ text: 'OK' }]
+          );
+        } else {
+          Alert.alert(
+            'Ride Not Found',
+            'This ride may have already been cancelled or completed. You will be redirected to the booking screen.',
+            [
+              { text: 'OK', onPress: () => router.replace('/rider/booking') }
+            ]
+          );
+        }
+      } else {
+        Alert.alert('Cancellation Failed', err?.message || 'Please try again.');
+      }
     } finally {
       setCancelling(false);
     }

@@ -295,9 +295,8 @@ class APIService {
   }
 
   async cancelRide(rideId: string, reason?: string): Promise<any> {
-    return this.put(`/rides/${rideId}`, {
-      status: 'cancelled',
-      cancellationReason: reason,
+    return this.post(`/rides/${rideId}/cancel`, {
+      reason: reason || 'User cancelled',
     });
   }
 
