@@ -67,7 +67,11 @@ export default function RidesHistoryScreen() {
 
     const supabase = supabaseService.getClient();
     const channel = supabase
-      .channel(`rider-rides-list-${user.id}`)
+      .channel(`rider-rides-list-${user.id}`, {
+        config: {
+          broadcast: { self: true },
+        },
+      })
       .on(
         'postgres_changes',
         {
@@ -80,7 +84,13 @@ export default function RidesHistoryScreen() {
           refetch();
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('[RIDES_HISTORY] Realtime subscription active');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('[RIDES_HISTORY] Realtime subscription error');
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);
