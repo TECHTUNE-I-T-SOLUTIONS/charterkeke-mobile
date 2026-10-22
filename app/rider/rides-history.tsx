@@ -95,10 +95,13 @@ export default function RidesHistoryScreen() {
       async () => {
         try {
           setCancellingRideId(rideId);
-          await apiService.cancelRide(rideId, 'User initiated');
+          await apiService.post(`/rides/${rideId}/cancel`, {
+            reason: 'User initiated',
+          });
           await refetch();
           showSuccess('Cancelled', 'Ride has been cancelled successfully');
         } catch (e) {
+          console.error('[RIDES_HISTORY] Cancel failed:', e);
           showError('Error', 'Failed to cancel ride. Please try again.');
         } finally {
           setCancellingRideId(null);
