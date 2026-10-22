@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { View } from 'react-native';
 import { useTheme } from '@/context/ThemeContext';
+import { useAuth } from '@/context/AuthContext';
 import RiderBottomNavigation from '@/components/RiderBottomNavigation';
 import { COLORS } from '@utils/colors';
 
@@ -9,8 +10,31 @@ export default function DriverLayout() {
   const router = useRouter();
   const segments = useSegments();
   const { mode } = useTheme();
+  const { user, userRole, isLoading } = useAuth();
   const isDark = mode === 'dark';
   const colors = isDark ? COLORS.dark : COLORS.light;
+
+  // Role-based access control
+  useEffect(() => {
+    if (isLoading) return;
+
+    // If not authenticated, redirect to login
+    if (!user || !userRole) {
+      router.replace('/(auth)/login');
+      return;
+    }
+
+    // If user is not a driver, redirect to rider side
+    if (userRole !== 'driver') {
+      console.log(`[DriverLayout] User role ${userRole} not allowed. Redirecting to rider side.`);
+      router.replace('/rider/booking');
+    }
+  }, [user, userRole, isLoading, router]);
+
+  // Don't render if loading or role doesn't match
+  if (isLoading) return null;
+  if (!user || !userRole) return null;
+  if (userRole !== 'driver') return null;
 
   // Hide bottom nav on screens where it would cover content
   const hideBottomNav = [

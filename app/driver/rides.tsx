@@ -24,6 +24,7 @@ import { WidgetStorage, WIDGET_STORAGE_KEYS } from '@/services/widgetStorage';
 import { formatCurrency } from '@/utils/formatting';
 import { BRAND, COLORS } from '@/utils/colors';
 import { ListScreenSkeleton } from '@/components/ListScreenSkeleton';
+import DriverRideAcceptedModal from '@/components/DriverRideAcceptedModal';
 
 const { width } = Dimensions.get('window');
 const DRIVER_RIDE_TABS = ['available', 'active', 'history'] as const;
@@ -52,6 +53,8 @@ export default function RidesListScreen() {
   const [activeTab, setActiveTab] = useState<DriverRideTab>('available');
   const [hasCached, setHasCached] = useState(false);
   const [acceptingRideId, setAcceptingRideId] = useState<string | null>(null);
+  const [showAcceptedModal, setShowAcceptedModal] = useState(false);
+  const [acceptedRideId, setAcceptedRideId] = useState<string | null>(null);
 
   const isLight = theme.mode === 'light';
   const swipeResponder = useMemo(
@@ -160,18 +163,27 @@ export default function RidesListScreen() {
   const handleAcceptRide = async (ride: RideItem) => {
     if (acceptingRideId) return;
 
-    const previousRides = rides;
     try {
       setAcceptingRideId(ride.id);
-      setRides((current) => current.filter((item) => item.id !== ride.id));
       await apiService.acceptRide(ride.id);
-      showSuccess('Ride accepted', 'The ride has been assigned to you. You can now start the trip from your active rides.');
+      setAcceptedRideId(ride.id);
+      setShowAcceptedModal(true);
       await fetchRides(false, `driver_rides_${activeTab}`);
     } catch (error: any) {
-      setRides(previousRides);
       showError('Could not accept ride', error?.message || 'This ride may already have been accepted by another driver.');
     } finally {
       setAcceptingRideId(null);
+    }
+  };
+
+  const handleViewRideDetails = () => {
+    setShowAcceptedModal(false);
+    if (acceptedRideId) {
+      router.push({
+        pathname: '/driver/ride-details',
+        params: { rideId: acceptedRideId }
+      } as any);
+      setAcceptedRideId(null);
     }
   };
 
@@ -263,6 +275,16 @@ export default function RidesListScreen() {
             </TouchableOpacity>
           </View>
         )}
+
+        {/* Accepting overlay */}
+        {isAccepting && (
+          <View style={[styles.acceptingOverlay, { backgroundColor: theme.colors.card + 'CC' }]}>
+            <ActivityIndicator size="large" color={BRAND.primary} />
+            <Text style={[styles.acceptingOverlayText, { color: theme.colors.textPrimary }]}>
+              Accepting ride...
+            </Text>
+          </View>
+        )}
       </TouchableOpacity>
     );
   };
@@ -312,6 +334,17 @@ export default function RidesListScreen() {
             />
           )}
         </View>
+
+        {/* Ride Accepted Modal */}
+        <DriverRideAcceptedModal
+          visible={showAcceptedModal}
+          onClose={() => {
+            setShowAcceptedModal(false);
+            setAcceptedRideId(null);
+          }}
+          onViewDetails={handleViewRideDetails}
+          rideId={acceptedRideId || undefined}
+        />
       </SafeAreaView>
     </View>
   );
@@ -358,4 +391,19 @@ const styles = StyleSheet.create({
   actionText: { fontSize: 14, fontWeight: '600' },
   emptyState: { alignItems: 'center', padding: 40 },
   emptyText: { marginTop: 12 },
+  acceptingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  acceptingOverlayText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
 });
