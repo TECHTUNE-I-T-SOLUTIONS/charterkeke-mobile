@@ -129,7 +129,7 @@ export default function RatingScreen() {
     const fetchData = async () => {
       try {
         setLoading(!parsedRideData?.id);
-        console.log('[RatingScreen] Fetching ride data for:', rideId);
+        // console.log('[RatingScreen] Fetching ride data for:', rideId);
 
         // Fetch ride details
         const rideResponse = await apiService.getRideDetails(rideId);
@@ -139,7 +139,7 @@ export default function RatingScreen() {
           return;
         }
 
-        console.log('[RatingScreen] Full rideResponse:', JSON.stringify(rideResponse, null, 2));
+        // console.log('[RatingScreen] Full rideResponse:', JSON.stringify(rideResponse, null, 2));
 
         // Extract the ride from the wrapper - API returns { ride: {...} }
         const ride = rideResponse.ride || rideResponse;
@@ -149,7 +149,7 @@ export default function RatingScreen() {
           return;
         }
 
-        console.log('[RatingScreen] Extracted ride data:', JSON.stringify(ride, null, 2));
+        // console.log('[RatingScreen] Extracted ride data:', JSON.stringify(ride, null, 2));
         setRideData(ride);
 
         if (user?.id) {
@@ -181,14 +181,14 @@ export default function RatingScreen() {
 
         // Extract driver ID from ride data
         const driverId = ride.driver_id;
-        console.log('[RatingScreen] Extracted driver ID:', driverId);
+        // console.log('[RatingScreen] Extracted driver ID:', driverId);
 
         if (driverId) {
           try {
-            console.log('[RatingScreen] Fetching driver profile for:', driverId);
+            // console.log('[RatingScreen] Fetching driver profile for:', driverId);
             // Call the new dedicated driver endpoint
             const driverData = await apiService.get(`/drivers/${driverId}`) as DriverProfile;
-            console.log('[RatingScreen] Driver profile fetched successfully:', JSON.stringify(driverData, null, 2));
+            // console.log('[RatingScreen] Driver profile fetched successfully:', JSON.stringify(driverData, null, 2));
             setDriverProfile(driverData);
           } catch (driverError) {
             console.warn('[RatingScreen] Could not fetch driver profile:', driverError);
@@ -252,7 +252,7 @@ export default function RatingScreen() {
         categories: { tags },
       };
 
-      console.log('[RatingScreen] Submitting review:', JSON.stringify(reviewData, null, 2));
+      // console.log('[RatingScreen] Submitting review:', JSON.stringify(reviewData, null, 2));
 
       const result = await apiService.submitRideReview(reviewData);
 
@@ -939,7 +939,7 @@ export default function RatingScreen() {
             </View>
 
             {/* Action Buttons */}
-            <View style={{ paddingHorizontal: scale(20), marginTop: verticalScale(24), gap: verticalScale(12) }}>
+            <View style={{ paddingHorizontal: scale(20), marginTop: verticalScale(24), gap: verticalScale(12), marginBottom: verticalScale(48) }}>
               <TouchableOpacity
                 onPress={handleSubmitRating}
                 disabled={submitting}

@@ -25,7 +25,7 @@ export default function RoleGuard({ allowedRoles, redirectTo, children }: RoleGu
     // If user's role is not in allowed roles, redirect to appropriate screen
     if (!allowedRoles.includes(userRole)) {
       const redirectPath = redirectTo || (userRole === 'driver' ? '/driver/dashboard' : '/rider/booking');
-      console.log(`[RoleGuard] User role ${userRole} not allowed. Redirecting to ${redirectPath}`);
+      // console.log(`[RoleGuard] User role ${userRole} not allowed. Redirecting to ${redirectPath}`);
       router.replace(redirectPath);
     }
   }, [user, userRole, isLoading, allowedRoles, redirectTo, router]);
