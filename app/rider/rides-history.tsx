@@ -66,26 +66,38 @@ export default function RidesHistoryScreen() {
     if (!user?.id) return;
 
     const supabase = supabaseService.getClient();
-    const channel = supabase
-      .channel(`rider-rides-list-${user.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'rides',
-          filter: `rider_id=eq.${user.id}`,
-        },
-        () => {
-          refetch();
-        }
-      )
-      .subscribe();
+    const channelName = `rider-rides-list-${user.id}`;
+
+    // Always create a new channel to avoid conflicts
+    const channel = supabase.channel(channelName);
+
+    // Add callback before subscribe
+    channel.on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'rides',
+        filter: `rider_id=eq.${user.id}`,
+      },
+      () => {
+        refetch();
+      }
+    );
+
+    // Subscribe after callback is added
+    channel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        console.log('[RIDES_HISTORY] Realtime subscription active');
+      } else if (status === 'CHANNEL_ERROR') {
+        console.error('[RIDES_HISTORY] Realtime subscription error');
+      }
+    });
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.id, refetch]);
+  }, [user?.id]); // Only depend on user ID, not refetch
 
   const filteredRides = useMemo(() => {
     if (filterStatus === 'all') return rides;
