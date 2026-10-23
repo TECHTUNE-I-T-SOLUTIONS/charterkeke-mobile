@@ -55,6 +55,8 @@ export default function RidesListScreen() {
   const [acceptingRideId, setAcceptingRideId] = useState<string | null>(null);
   const [showAcceptedModal, setShowAcceptedModal] = useState(false);
   const [acceptedRideId, setAcceptedRideId] = useState<string | null>(null);
+  const [driverStatus, setDriverStatus] = useState<'online' | 'offline' | 'busy'>('offline');
+  const [loadingStatus, setLoadingStatus] = useState(true);
 
   const isLight = theme.mode === 'light';
   const swipeResponder = useMemo(
@@ -77,8 +79,22 @@ export default function RidesListScreen() {
   useFocusEffect(
     React.useCallback(() => {
       loadRides();
+      fetchDriverStatus();
     }, [activeTab])
   );
+
+  const fetchDriverStatus = async () => {
+    try {
+      setLoadingStatus(true);
+      const response = await apiService.get('/driver/status') as any;
+      setDriverStatus(response?.status || 'offline');
+    } catch (error) {
+      console.error('Failed to fetch driver status:', error);
+      setDriverStatus('offline');
+    } finally {
+      setLoadingStatus(false);
+    }
+  };
 
   const loadRides = async () => {
     const cacheKey = `driver_rides_${activeTab}`;
@@ -100,6 +116,11 @@ export default function RidesListScreen() {
         const response = (await apiService.getActiveRides()) as any;
         data = response?.rides || [];
       } else if (activeTab === 'available') {
+        // Don't fetch available rides if driver is offline
+        if (driverStatus !== 'online') {
+          setRides([]);
+          return;
+        }
         const response = (await apiService.get('/driver/available-rides?radiusKm=10').catch(() => ({ rides: [] }))) as any;
         data = response?.rides || [];
       } else {
@@ -327,8 +348,24 @@ export default function RidesListScreen() {
               onRefresh={handleRefresh}
               ListEmptyComponent={
                 <View style={styles.emptyState}>
-                   <MaterialCommunityIcons name="clipboard-text-outline" size={48} color={theme.colors.textTertiary} />
-                   <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>No rides found</Text>
+                   <MaterialCommunityIcons
+                     name={activeTab === 'available' && driverStatus !== 'online' ? 'account-off-outline' : 'clipboard-text-outline'}
+                     size={48}
+                     color={theme.colors.textTertiary}
+                   />
+                   <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
+                     {activeTab === 'available' && driverStatus !== 'online'
+                       ? 'You are offline. Go online to see available rides.'
+                       : 'No rides found'}
+                   </Text>
+                   {activeTab === 'available' && driverStatus !== 'online' && (
+                     <TouchableOpacity
+                       style={[styles.goOnlineBtn, { backgroundColor: BRAND.primary }]}
+                       onPress={() => router.push('/driver/home')}
+                     >
+                       <Text style={[styles.goOnlineBtnText, { color: '#000' }]}>Go Online</Text>
+                     </TouchableOpacity>
+                   )}
                 </View>
               }
             />
@@ -405,5 +442,15 @@ const styles = StyleSheet.create({
   acceptingOverlayText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  goOnlineBtn: {
+    marginTop: 16,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  goOnlineBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

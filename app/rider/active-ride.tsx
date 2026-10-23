@@ -297,6 +297,8 @@ export default function ActiveRideScreen() {
   const resolvedRideId = activeRide?.id || rideId;
   useEffect(() => {
     if (!resolvedRideId) return;
+    // Don't subscribe if ride is cancelled or completed
+    if (activeRideStatus === 'cancelled' || activeRideStatus === 'completed') return;
 
     let channel: any = null;
     let active = true;
@@ -328,7 +330,7 @@ export default function ActiveRideScreen() {
       active = false;
       supabaseService.unsubscribeRideLocation(resolvedRideId).catch(() => {});
     };
-  }, [resolvedRideId]);
+  }, [resolvedRideId, activeRideStatus]);
 
   // Occasional location polling (every 30s) to reduce server load
   useEffect(() => {
@@ -459,6 +461,9 @@ export default function ActiveRideScreen() {
   // Postgres Realtime — instant status updates from rides table
   useEffect(() => {
     if (!resolvedRideId) return;
+    // Don't subscribe if ride is already cancelled or completed
+    if (activeRideStatus === 'cancelled' || activeRideStatus === 'completed') return;
+
     let active = true;
 
     supabaseService.subscribeToRideUpdates(resolvedRideId, (updatedRide: any) => {
@@ -480,6 +485,7 @@ export default function ActiveRideScreen() {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             setShowCompletionConfirmationModal(true);
           } else if (newStatus === 'cancelled') {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
             Alert.alert('Ride Cancelled', 'This ride has been cancelled.', [
               { text: 'Book Again', onPress: () => router.replace('/rider/booking') },
             ]);
@@ -493,7 +499,7 @@ export default function ActiveRideScreen() {
       active = false;
       supabaseService.unsubscribeRideUpdates(resolvedRideId).catch(() => {});
     };
-  }, [resolvedRideId]);
+  }, [resolvedRideId, activeRideStatus]);
 
   // Poll ride status every 15 s (fallback in case realtime misses an event)
   useEffect(() => {
