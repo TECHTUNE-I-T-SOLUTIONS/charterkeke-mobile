@@ -139,14 +139,15 @@ export default function RidesListScreen() {
         if (response?.error) {
           console.error('[DRIVER_RIDES] API returned error:', response.error);
           data = [];
+        } else if (!response) {
+          console.error('[DRIVER_RIDES] Response is null/undefined');
+          data = [];
         } else {
           data = response?.rides || [];
         }
-        console.log('[DRIVER_RIDES] Available rides response:', JSON.stringify(data?.[0], null, 2));
       } else {
         const response = (await apiService.getTransactions()) as any; // Assuming this returns history
         data = response?.rides || [];
-        console.log('[DRIVER_RIDES] History rides response:', JSON.stringify(data?.[0], null, 2));
       }
       const nextRides = Array.isArray(data) ? data : [];
       setRides(nextRides);
