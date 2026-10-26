@@ -19,7 +19,6 @@ import { useTheme } from '@/context/ThemeContext';
 import { useAlert } from '@/context/AlertContext';
 import { apiService } from '@/services/api';
 import { supabaseService } from '@/services/supabase';
-import { cacheService } from '@/services/cache';
 import { WidgetStorage, WIDGET_STORAGE_KEYS } from '@/services/widgetStorage';
 import { formatCurrency } from '@/utils/formatting';
 import { BRAND, COLORS } from '@/utils/colors';
@@ -53,7 +52,6 @@ export default function RidesListScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<DriverRideTab>('available');
-  const [hasCached, setHasCached] = useState(false);
   const [acceptingRideId, setAcceptingRideId] = useState<string | null>(null);
   const [showAcceptedModal, setShowAcceptedModal] = useState(false);
   const [acceptedRideId, setAcceptedRideId] = useState<string | null>(null);
@@ -106,15 +104,7 @@ export default function RidesListScreen() {
   };
 
   const loadRides = async (currentStatus?: 'online' | 'offline' | 'busy') => {
-    const cacheKey = `driver_rides_${activeTab}`;
-    const cached = await cacheService.get<RideItem[]>(cacheKey);
-    if (cached) {
-      setRides(cached);
-      setHasCached(true);
-      setLoading(false);
-    }
-
-    await fetchRides(!cached, cacheKey, currentStatus);
+    await fetchRides(true, undefined, currentStatus);
   };
 
   const fetchRides = async (showLoader: boolean = true, cacheKey?: string, statusArg?: 'online' | 'offline' | 'busy') => {
@@ -151,11 +141,9 @@ export default function RidesListScreen() {
       }
       const nextRides = Array.isArray(data) ? data : [];
       setRides(nextRides);
-      if (cacheKey) {
-        await cacheService.set(cacheKey, nextRides);
-      }
-      if (activeTab === 'available') {
-        await WidgetStorage.setItem(WIDGET_STORAGE_KEYS.driver, {
+      // Update widget storage for available rides (non-blocking)
+      if (activeTab === 'available' && nextRides.length > 0) {
+        WidgetStorage.setItem(WIDGET_STORAGE_KEYS.driver, {
           primaryAction: 'View Available Rides',
           screen: '/driver/available-rides',
           availableRides: nextRides.slice(0, 5).map((ride) => ({
@@ -179,7 +167,7 @@ export default function RidesListScreen() {
   const handleRefresh = async () => {
     setRefreshing(true);
     const status = await fetchDriverStatus();
-    await fetchRides(!hasCached, `driver_rides_${activeTab}`, status);
+    await fetchRides(false, undefined, status);
     setRefreshing(false);
   };
 
