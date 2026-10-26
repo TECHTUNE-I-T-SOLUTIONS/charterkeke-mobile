@@ -483,12 +483,6 @@ export default function DriverProfileScreen() {
               onPress={handleCheckUpdates}
               theme={theme}
             />
-            <MenuItem
-              icon="cloud-download-outline"
-              label="Check for Updates"
-              onPress={handleCheckUpdates}
-              theme={theme}
-            />
 
             {/* HIERARCHY 4: ACCOUNT MANAGEMENT */}
             <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary, marginTop: 18 }]}>

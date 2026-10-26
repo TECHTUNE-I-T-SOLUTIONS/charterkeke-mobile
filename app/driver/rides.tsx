@@ -17,6 +17,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '@/context/ThemeContext';
 import { useAlert } from '@/context/AlertContext';
+import { useAuth } from '@/context/AuthContext';
+import { useLocation } from '@/context/LocationContext';
 import { apiService } from '@/services/api';
 import { supabaseService } from '@/services/supabase';
 import { WidgetStorage, WIDGET_STORAGE_KEYS } from '@/services/widgetStorage';
@@ -48,6 +50,8 @@ export default function RidesListScreen() {
   const router = useRouter();
   const { theme } = useTheme();
   const { showError, showSuccess } = useAlert();
+  const { user } = useAuth();
+  const { currentLocation } = useLocation();
   const [rides, setRides] = useState<RideItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -57,6 +61,7 @@ export default function RidesListScreen() {
   const [acceptedRideId, setAcceptedRideId] = useState<string | null>(null);
   const [driverStatus, setDriverStatus] = useState<'online' | 'offline' | 'busy' | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
+  const [driverId, setDriverId] = useState<string | null>(null);
 
   const isLight = theme.mode === 'light';
   const swipeResponder = useMemo(
@@ -85,9 +90,12 @@ export default function RidesListScreen() {
   const fetchDriverStatus = async (force: boolean = false): Promise<'online' | 'offline' | 'busy'> => {
     try {
       setLoadingStatus(true);
-      const response = await apiService.get('/driver/status') as any;
-      const status: 'online' | 'offline' | 'busy' = response?.status || 'offline';
+      if (!user?.id) return 'offline';
+      
+      const driverData = await supabaseService.getDriverStatus(user.id);
+      const status: 'online' | 'offline' | 'busy' = driverData?.availability_status || 'offline';
       setDriverStatus(status);
+      setDriverId(driverData?.id || null);
       return status;
     } catch (error) {
       console.error('Failed to fetch driver status:', error);
@@ -112,7 +120,9 @@ export default function RidesListScreen() {
     try {
       if (showLoader) setLoading(true);
       let data;
+      
       if (activeTab === 'active') {
+        // Keep using API for active rides (may have business logic)
         const response = (await apiService.getActiveRides()) as any;
         data = response?.rides || [];
       } else if (activeTab === 'available') {
@@ -121,26 +131,30 @@ export default function RidesListScreen() {
           setRides([]);
           return;
         }
-        const response = (await apiService.get('/driver/available-rides?radiusKm=10').catch((err) => {
-          console.error('[DRIVER_RIDES] Available rides fetch error:', err);
-          return { rides: [] };
-        })) as any;
-        // Check if response has an error field
-        if (response?.error) {
-          console.error('[DRIVER_RIDES] API returned error:', response.error);
-          data = [];
-        } else if (!response) {
-          console.error('[DRIVER_RIDES] Response is null/undefined');
-          data = [];
-        } else {
-          data = response?.rides || [];
+        // Use Supabase directly for faster loading
+        if (!currentLocation?.latitude || !currentLocation?.longitude) {
+          console.warn('[DRIVER_RIDES] No location available for available rides');
+          setRides([]);
+          return;
         }
+        data = await supabaseService.getAvailableRides(
+          currentLocation.latitude,
+          currentLocation.longitude,
+          10
+        );
       } else {
-        const response = (await apiService.getTransactions()) as any; // Assuming this returns history
-        data = response?.rides || [];
+        // Use Supabase directly for history (faster than API)
+        if (!driverId) {
+          console.warn('[DRIVER_RIDES] No driver ID for history');
+          setRides([]);
+          return;
+        }
+        data = await supabaseService.getDriverRideHistory(driverId, 1, 20);
       }
+      
       const nextRides = Array.isArray(data) ? data : [];
       setRides(nextRides);
+      
       // Update widget storage for available rides (non-blocking)
       if (activeTab === 'available' && nextRides.length > 0) {
         WidgetStorage.setItem(WIDGET_STORAGE_KEYS.driver, {

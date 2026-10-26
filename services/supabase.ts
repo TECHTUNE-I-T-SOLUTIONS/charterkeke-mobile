@@ -268,6 +268,152 @@ class SupabaseService {
   getClient() {
     return this.supabase;
   }
+
+  // ─── Direct Supabase Queries (faster than API calls) ─────────────────────
+  
+  async getDriverStatus(userId: string) {
+    // Try to select with manual_availability_off first (if column exists)
+    const withManualOff = await this.supabase
+      .from('drivers')
+      .select('id, user_id, availability_status, verified, updated_at, manual_availability_off')
+      .eq('user_id', userId)
+      .single();
+
+    // If the column doesn't exist, fall back to selecting without it
+    if (withManualOff.error && withManualOff.error.code === '42703') {
+      const { data, error } = await this.supabase
+        .from('drivers')
+        .select('id, user_id, availability_status, verified, updated_at')
+        .eq('user_id', userId)
+        .single();
+      
+      if (error) throw error;
+      return data;
+    }
+
+    if (withManualOff.error) throw withManualOff.error;
+    return withManualOff.data;
+  }
+
+  async getAvailableRides(driverLatitude: number, driverLongitude: number, radiusKm: number = 10) {
+    // For now, get all pending/dispatched rides
+    // In production, you can add PostGIS geospatial queries or simple bounding box filtering
+    const { data, error } = await this.supabase
+      .from('rides')
+      .select(`
+        id,
+        rider_id,
+        pickup_zone,
+        destination_zone,
+        pickup_description,
+        destination_description,
+        fare_amount,
+        driver_earnings,
+        platform_fee,
+        distance_km,
+        duration_minutes,
+        status,
+        pickup_time,
+        created_at
+      `)
+      .in('status', ['pending', 'dispatched'])
+      .is('driver_id', null)
+      .gte('pickup_time', new Date(new Date().setHours(0, 0, 0, 0)).toISOString())
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    if (error) throw error;
+    
+    // Fetch user data for each ride
+    const ridesWithUsers = await Promise.all(
+      (data || []).map(async (ride: any) => {
+        const { data: user } = await this.supabase
+          .from('users')
+          .select('id, first_name, last_name, phone_number, profile_picture_url')
+          .eq('id', ride.rider_id)
+          .single();
+        
+        return {
+          ...ride,
+          users: user || {},
+        };
+      })
+    );
+
+    return ridesWithUsers;
+  }
+
+  async getDriverRideHistory(driverId: string, page: number = 1, limit: number = 10) {
+    const offset = (page - 1) * limit;
+    
+    const { data, error } = await this.supabase
+      .from('rides')
+      .select(`
+        id,
+        pickup_zone,
+        destination_zone,
+        fare_amount,
+        driver_earnings,
+        platform_fee,
+        distance_km,
+        completed_at,
+        created_at,
+        status,
+        rating,
+        users:rider_id (first_name, last_name)
+      `)
+      .eq('driver_id', driverId)
+      .in('status', ['completed', 'accepted', 'in_progress'])
+      .order('completed_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) throw error;
+    return data || [];
+  }
+
+  async getDriverActiveRides(driverId: string) {
+    const { data, error } = await this.supabase
+      .from('rides')
+      .select(`
+        id,
+        rider_id,
+        pickup_zone,
+        pickup_description,
+        destination_zone,
+        destination_description,
+        fare_amount,
+        driver_earnings,
+        platform_fee,
+        seats_booked,
+        distance_km,
+        status,
+        pickup_time,
+        created_at
+      `)
+      .eq('driver_id', driverId)
+      .in('status', ['accepted', 'in_progress'])
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    
+    // Fetch user data for each ride
+    const ridesWithUsers = await Promise.all(
+      (data || []).map(async (ride: any) => {
+        const { data: user } = await this.supabase
+          .from('users')
+          .select('id, first_name, last_name, phone_number, profile_picture_url')
+          .eq('id', ride.rider_id)
+          .single();
+        
+        return {
+          ...ride,
+          users: user || {},
+        };
+      })
+    );
+
+    return ridesWithUsers;
+  }
 }
 
 export const supabaseService = new SupabaseService();
