@@ -41,6 +41,7 @@ interface RideItem {
   duration_minutes?: number;
   status?: string;
   created_at?: string;
+  completed_at?: string;
   pickup_time?: string;
 }
 
@@ -132,9 +133,11 @@ export default function RidesListScreen() {
         }
         const response = (await apiService.get('/driver/available-rides?radiusKm=10').catch(() => ({ rides: [] }))) as any;
         data = response?.rides || [];
+        console.log('[DRIVER_RIDES] Available rides response:', JSON.stringify(data?.[0], null, 2));
       } else {
         const response = (await apiService.getTransactions()) as any; // Assuming this returns history
         data = response?.rides || [];
+        console.log('[DRIVER_RIDES] History rides response:', JSON.stringify(data?.[0], null, 2));
       }
       const nextRides = Array.isArray(data) ? data : [];
       setRides(nextRides);
@@ -282,7 +285,8 @@ export default function RidesListScreen() {
            <MaterialCommunityIcons name="calendar-clock" size={14} color={theme.colors.textSecondary} />
            <Text style={[styles.dateText, { color: theme.colors.textSecondary }]}>
               {(() => {
-                const dateToUse = item.created_at || item.pickup_time;
+                // Try completed_at first (for history), then created_at, then pickup_time
+                const dateToUse = item.completed_at || item.created_at || item.pickup_time;
                 if (!dateToUse) return 'N/A';
                 try {
                   const date = new Date(dateToUse);
