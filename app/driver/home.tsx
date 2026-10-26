@@ -30,6 +30,7 @@ import { useLocation } from '@/context/LocationContext';
 import { useTheme } from '@/context/ThemeContext';
 import { useNotificationBadge } from '@/context/NotificationContext';
 import { apiService } from '@/services/api';
+import { supabaseService } from '@/services/supabase';
 import { cacheService } from '@/services/cache';
 import { setNotificationCallbacks } from '@/services/notificationService';
 import { setNavigationRef } from '@/services/navigationService';
@@ -68,10 +69,21 @@ const DRIVER_HOME_TOUR_STEPS: TourStep[] = [
 ];
 
 interface DriverData {
+  id?: string;
   total_earnings?: number;
   total_rides_completed?: number;
   average_rating?: number;
   is_online?: boolean;
+  first_name?: string;
+  last_name?: string;
+  phone_number?: string;
+  email?: string;
+  profile_picture_url?: string;
+  vehicle_type?: string;
+  plate_number?: string;
+  vehicle_color?: string;
+  verified?: boolean;
+  availability_status?: string;
 }
 
 function formatRemittanceCountdown(ms: number) {
@@ -319,27 +331,40 @@ export default function DriverHomeScreen() {
 
       console.log('[DRIVER-HOME] Fetching critical dashboard data (details, status, active rides)...');
 
-      // Phase 1: Critical data - load these first and show the screen
-      const [details, status, rides] = await Promise.all([
-        apiService.getDriverDetails().catch((err) => {
+      // Phase 1: Critical data - load these first and show the screen using Supabase for speed
+      const driverId = user?.id;
+      if (!driverId) {
+        console.warn('[DRIVER-HOME] No user ID, skipping dashboard load');
+        setLoading(false);
+        return;
+      }
+
+      const [details, status] = await Promise.all([
+        supabaseService.getDriverDetails(driverId).catch((err) => {
           console.warn('[DRIVER-HOME] getDriverDetails failed:', err?.message || err);
-          return {};
+          return { driver: {} };
         }),
-        apiService.getDriverStatus().catch((err) => {
+        supabaseService.getDriverStatus(driverId).catch((err) => {
           console.warn('[DRIVER-HOME] getDriverStatus failed:', err?.message || err);
-          return { status: 'offline' };
-        }),
-        apiService.getActiveRides().catch((err) => {
-          console.warn('[DRIVER-HOME] getActiveRides failed:', err?.message || err);
-          return { rides: [] };
+          return { availability_status: 'offline' };
         }),
       ]);
 
       if (!isMountedRef.current) return;
 
-      const nextDriverData = details.driver || details;
-      const nextIsOnline = status.status === 'online' || status.is_online === true;
-      const nextActiveRides = rides.rides || [];
+      const nextDriverData: DriverData = details.driver || details;
+      const nextIsOnline = status?.availability_status === 'online';
+      const actualDriverId = nextDriverData?.id || '';
+
+      // Load active rides after getting driver ID
+      const rides = await supabaseService.getDriverActiveRides(actualDriverId).catch((err) => {
+        console.warn('[DRIVER-HOME] getActiveRides failed:', err?.message || err);
+        return [];
+      });
+
+      if (!isMountedRef.current) return;
+
+      const nextActiveRides = rides || [];
       const nextActiveRidesCount = nextActiveRides.length;
 
       console.log('[DRIVER-HOME] Critical data loaded:', {
@@ -377,41 +402,49 @@ export default function DriverHomeScreen() {
       // Phase 2: Load remaining data in background
       console.log('[DRIVER-HOME] Loading background data (available rides, history, settlement, earnings)...');
 
-      // Load available rides
+      // Load available rides using Supabase
       setLoadingAvailableRides(true);
-      apiService.getAvailableRides(currentLocation?.latitude, currentLocation?.longitude, 10)
-        .then((available) => {
-          if (isMountedRef.current) {
-            const nextAvailableRides = available.rides?.slice(0, 3) || [];
-            setAvailableRides(nextAvailableRides);
-            console.log('[DRIVER-HOME] Available rides loaded');
-          }
-        })
-        .catch((err) => {
-          console.warn('[DRIVER-HOME] getAvailableRides failed:', err?.message || err);
-        })
-        .finally(() => {
-          if (isMountedRef.current) setLoadingAvailableRides(false);
-        });
+      if (currentLocation?.latitude && currentLocation?.longitude) {
+        supabaseService.getAvailableRides(currentLocation.latitude, currentLocation.longitude, 10)
+          .then((available) => {
+            if (isMountedRef.current) {
+              const nextAvailableRides = available?.slice(0, 3) || [];
+              setAvailableRides(nextAvailableRides);
+              console.log('[DRIVER-HOME] Available rides loaded');
+            }
+          })
+          .catch((err) => {
+            console.warn('[DRIVER-HOME] getAvailableRides failed:', err?.message || err);
+          })
+          .finally(() => {
+            if (isMountedRef.current) setLoadingAvailableRides(false);
+          });
+      } else {
+        setLoadingAvailableRides(false);
+      }
 
-      // Load recent ride history
+      // Load recent ride history using Supabase
       setLoadingRecentRides(true);
-      apiService.get('/user/ride-history?limit=5')
-        .then((history) => {
-          if (isMountedRef.current) {
-            const nextRecentRides = ((history as any)?.rides || (history as any)?.data || []).slice(0, 5);
-            setRecentRides(nextRecentRides);
-            console.log('[DRIVER-HOME] Recent rides loaded');
-          }
-        })
-        .catch((err) => {
-          console.warn('[DRIVER-HOME] getRideHistory failed:', err?.message || err);
-        })
-        .finally(() => {
-          if (isMountedRef.current) setLoadingRecentRides(false);
-        });
+      if (actualDriverId) {
+        supabaseService.getDriverRideHistory(actualDriverId, 1, 5)
+          .then((history) => {
+            if (isMountedRef.current) {
+              const nextRecentRides = history?.slice(0, 5) || [];
+              setRecentRides(nextRecentRides);
+              console.log('[DRIVER-HOME] Recent rides loaded');
+            }
+          })
+          .catch((err) => {
+            console.warn('[DRIVER-HOME] getRideHistory failed:', err?.message || err);
+          })
+          .finally(() => {
+            if (isMountedRef.current) setLoadingRecentRides(false);
+          });
+      } else {
+        setLoadingRecentRides(false);
+      }
 
-      // Load settlement data
+      // Load settlement data (keep using API - has business logic)
       setLoadingSettlement(true);
       Promise.all([
         apiService.getDriverSettlementStatus().catch((err) => {
@@ -457,25 +490,29 @@ export default function DriverHomeScreen() {
           if (isMountedRef.current) setLoadingSettlement(false);
         });
 
-      // Load earnings stats
+      // Load earnings stats using Supabase
       setLoadingEarnings(true);
-      apiService.getDriverEarningsStats()
-        .then((earningsStats) => {
-          if (isMountedRef.current) {
-            const nextStats = {
-              completedTrips: Number(earningsStats?.stats?.totalRides || nextDriverData?.total_rides_completed || 0),
-              averageRating: Number(earningsStats?.stats?.averageRating || nextDriverData?.average_rating || 0),
-            };
-            setDriverStats(nextStats);
-            console.log('[DRIVER-HOME] Earnings stats loaded');
-          }
-        })
-        .catch((err) => {
-          console.warn('[DRIVER-HOME] getDriverEarningsStats failed:', err?.message || err);
-        })
-        .finally(() => {
-          if (isMountedRef.current) setLoadingEarnings(false);
-        });
+      if (actualDriverId) {
+        supabaseService.getDriverEarningsStats(actualDriverId)
+          .then((earningsStats) => {
+            if (isMountedRef.current) {
+              const nextStats = {
+                completedTrips: Number(earningsStats?.stats?.totalRides || nextDriverData?.total_rides_completed || 0),
+                averageRating: Number(earningsStats?.stats?.averageRating || nextDriverData?.average_rating || 0),
+              };
+              setDriverStats(nextStats);
+              console.log('[DRIVER-HOME] Earnings stats loaded');
+            }
+          })
+          .catch((err) => {
+            console.warn('[DRIVER-HOME] getDriverEarningsStats failed:', err?.message || err);
+          })
+          .finally(() => {
+            if (isMountedRef.current) setLoadingEarnings(false);
+          });
+      } else {
+        setLoadingEarnings(false);
+      }
 
     } catch (error) {
       console.error('[DRIVER-HOME] fetchDashboardData error:', error);

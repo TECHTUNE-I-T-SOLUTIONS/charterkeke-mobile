@@ -414,6 +414,90 @@ class SupabaseService {
 
     return ridesWithUsers;
   }
+
+  async getDriverDetails(userId: string) {
+    const { data, error } = await this.supabase
+      .from('drivers')
+      .select(`
+        id,
+        user_id,
+        first_name,
+        last_name,
+        phone_number,
+        email,
+        profile_picture_url,
+        vehicle_type,
+        plate_number,
+        vehicle_color,
+        average_rating,
+        total_rides_completed,
+        total_earnings,
+        verified,
+        availability_status,
+        manual_availability_off
+      `)
+      .eq('user_id', userId)
+      .single();
+
+    if (error) {
+      // Fallback if manual_availability_off doesn't exist
+      if (error.code === '42703') {
+        const { data: fallbackData, error: fallbackError } = await this.supabase
+          .from('drivers')
+          .select(`
+            id,
+            user_id,
+            first_name,
+            last_name,
+            phone_number,
+            email,
+            profile_picture_url,
+            vehicle_type,
+            plate_number,
+            vehicle_color,
+            average_rating,
+            total_rides_completed,
+            total_earnings,
+            verified,
+            availability_status
+          `)
+          .eq('user_id', userId)
+          .single();
+        
+        if (fallbackError) throw fallbackError;
+        return { driver: fallbackData };
+      }
+      throw error;
+    }
+
+    return { driver: data };
+  }
+
+  async getDriverEarningsStats(driverId: string) {
+    // Get completed rides count and average rating
+    const { data: rides, error } = await this.supabase
+      .from('rides')
+      .select('fare_amount, driver_earnings, rating')
+      .eq('driver_id', driverId)
+      .eq('status', 'completed');
+
+    if (error) throw error;
+
+    const totalRides = rides?.length || 0;
+    const totalEarnings = rides?.reduce((sum, ride) => sum + Number(ride.driver_earnings || 0), 0) || 0;
+    const ratings = rides?.map(r => r.rating).filter(r => r != null) || [];
+    const averageRating = ratings.length > 0 
+      ? ratings.reduce((sum, r) => sum + r, 0) / ratings.length 
+      : 0;
+
+    return {
+      stats: {
+        totalRides,
+        totalEarnings,
+        averageRating,
+      }
+    };
+  }
 }
 
 export const supabaseService = new SupabaseService();
