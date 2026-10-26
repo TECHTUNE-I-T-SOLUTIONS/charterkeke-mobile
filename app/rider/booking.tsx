@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -145,7 +145,8 @@ export default function BookingScreen() {
   const pickupBlurTimer = useRef<number | null>(null);
   const destinationBlurTimer = useRef<number | null>(null);
   const locationCardRef = useRef<View>(null);
-  const [suggestionsTop, setSuggestionsTop] = useState(300);
+  const [locationSectionTop, setLocationSectionTop] = useState(40);
+  const [locationCardHeight, setLocationCardHeight] = useState(135);
   // Google Places session token (reset per session to save API costs)
   const placesSessionToken = useRef<string>(`session-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const resetSessionToken = () => {
@@ -1177,15 +1178,16 @@ export default function BookingScreen() {
             )}
 
             {/* Location Inputs */}
-            <View style={styles.locationSection}>
+            <View
+              style={styles.locationSection}
+              onLayout={(e) => setLocationSectionTop(e.nativeEvent.layout.y)}
+            >
               <View
                 ref={locationCardRef}
                 style={[styles.locationInputCard, { backgroundColor: cardBg, borderColor }]}
-                onLayout={() => {
-                  // Measure absolute screen position to float suggestions below this card
-                  locationCardRef.current?.measure((_x, _y, _w, h, _px, py) => {
-                    setSuggestionsTop(py + h + 6);
-                  });
+                onLayout={(e) => {
+                  const h = e.nativeEvent.layout.height;
+                  if (h > 0) setLocationCardHeight(h);
                 }}
               >
                 {/* Pickup Input */}
@@ -1283,7 +1285,7 @@ export default function BookingScreen() {
 
               {/* Suggestions are rendered as a floating dropdown outside topCard – see below */}
 
-              {/* Recent Locations */}
+              {/*               {/* Recent Locations */}
               {recentLocations.length > 0 && activeLocationPicker && (
                 <View style={styles.recentSection}>
                   <Text style={[styles.recentTitle, { color: textColor }]}>Recent Locations</Text>
@@ -1313,6 +1315,34 @@ export default function BookingScreen() {
               )}
             </View>
 
+            {/* Floating suggestions dropdown — positioned with high z-index overlay right under the inputs without extending sheet height */}
+            {!showInlineMapPicker && (
+              (showDestinationSuggestions && destinationSuggestions.length > 0) ||
+              (showPickupSuggestions && pickupSuggestions.length > 0)
+            ) && (
+              <View
+                style={[
+                  styles.suggestionsDropdown,
+                  {
+                    top: locationSectionTop + locationCardHeight + 20,
+                    backgroundColor: isLight ? '#ffffff' : '#1e1e1e',
+                    borderColor,
+                  },
+                ]}
+              >
+                <ScrollView
+                  keyboardShouldPersistTaps="always"
+                  showsVerticalScrollIndicator={false}
+                  style={{ maxHeight: 220 }}
+                >
+                  {showDestinationSuggestions &&
+                    destinationSuggestions.map((s) => renderSuggestionItem(s, () => handleDestinationSelect(s)))}
+                  {showPickupSuggestions &&
+                    pickupSuggestions.map((s) => renderSuggestionItem(s, () => handlePickupSelect(s)))}
+                </ScrollView>
+              </View>
+            )}
+
             {/* Book Button */}
             <TouchableOpacity
               style={[styles.bookButton, { backgroundColor: BRAND.primary, opacity: (!pickupLocation || !destinationLocation) ? 0.5 : 1 }]}
@@ -1331,37 +1361,6 @@ export default function BookingScreen() {
             {/* Drag handle at the bottom of the top card */}
             <View style={styles.topCardHandle} />
           </View>
-        </View>
-      )}
-
-      {/* Floating suggestions dropdown – absolute, outside topCard, has its own ScrollView */}
-      {!showInlineMapPicker && showPickupSuggestions && pickupSuggestions.length > 0 && (
-        <View style={[
-          styles.suggestionsFloat,
-          { top: suggestionsTop, backgroundColor: isLight ? '#fff' : '#1e1e1e', borderColor }
-        ]}>
-          <ScrollView
-            keyboardShouldPersistTaps="always"
-            showsVerticalScrollIndicator={false}
-            style={{ maxHeight: 260 }}
-          >
-            {pickupSuggestions.map((s) => renderSuggestionItem(s, () => handlePickupSelect(s)))}
-          </ScrollView>
-        </View>
-      )}
-
-      {!showInlineMapPicker && showDestinationSuggestions && destinationSuggestions.length > 0 && (
-        <View style={[
-          styles.suggestionsFloat,
-          { top: suggestionsTop, backgroundColor: isLight ? '#fff' : '#1e1e1e', borderColor }
-        ]}>
-          <ScrollView
-            keyboardShouldPersistTaps="always"
-            showsVerticalScrollIndicator={false}
-            style={{ maxHeight: 260 }}
-          >
-            {destinationSuggestions.map((s) => renderSuggestionItem(s, () => handleDestinationSelect(s)))}
-          </ScrollView>
         </View>
       )}
 
@@ -1700,6 +1699,7 @@ const styles = StyleSheet.create({
   topCardContent: {
     padding: 6,
     paddingBottom: 20,
+    position: 'relative',
   },
   mapContainer: {
     ...StyleSheet.absoluteFillObject,
@@ -1750,10 +1750,14 @@ const styles = StyleSheet.create({
   weatherCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
-    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    minHeight: 36,
+    maxHeight: 40,
+    borderRadius: 10,
     borderWidth: 1,
-    marginBottom: 16,
+    marginHorizontal: 16,
+    marginBottom: 4,
   },
   weatherInfo: {
     marginLeft: 12,
@@ -1831,19 +1835,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   // Floating suggestions dropdown (outside topCard to avoid nested ScrollView)
-  suggestionsFloat: {
+  suggestionsDropdown: {
     position: 'absolute',
-    left: 16,
-    right: 16,
-    zIndex: 200,
+    left: 22,
+    right: 22,
+    zIndex: 99999,
+    elevation: 35,
     borderRadius: 14,
     borderWidth: 1,
     overflow: 'hidden',
-    elevation: 24,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.22,
-    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
   },
   suggestionsCard: {
     borderRadius: 12,

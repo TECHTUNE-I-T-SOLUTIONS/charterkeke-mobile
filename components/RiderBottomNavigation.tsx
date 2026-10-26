@@ -122,7 +122,7 @@ export default function RiderBottomNavigation() {
   };
 
   useEffect(() => {
-    if (!isDriverArea) return;
+    if (!isDriverArea || pathname === '/driver/home' || pathname.includes('/driver/rides') || pathname.includes('/driver/available-rides')) return;
 
     let mounted = true;
     const seenKey = 'driver_rides_seen_available_count';

@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
   View,
@@ -163,6 +163,7 @@ export default function DriverHomeScreen() {
   // Refs to prevent state updates on unmounted component
   const isMountedRef = useRef(true);
   const isLoadingRef = useRef(false);
+  const lastLoadedAtRef = useRef<number>(0);
   
   // Animations
   const onlineAnim = useRef(new Animated.Value(0)).current;
@@ -195,20 +196,25 @@ export default function DriverHomeScreen() {
   useFocusEffect(
     React.useCallback(() => {
       if (!isAuthenticated) {
-        console.log('❌ [DRIVER-HOME] Not authenticated, redirecting to login');
+        console.log('[DRIVER-HOME] Not authenticated, redirecting to login');
         return router.replace('/auth/welcome');
       }
       // Ensure auth is fully initialized before loading dashboard
       if (!user?.id) {
-        console.warn('⚠️  [DRIVER-HOME] User ID not available, skipping dashboard load');
+        console.warn('[DRIVER-HOME] User ID not available, skipping dashboard load');
         if (isMountedRef.current) {
           setLoading(false);
         }
         return;
       }
-      console.log('🔄 [DRIVER-HOME] Loading dashboard for user:', user.id);
+      // Throttle focus reload - do not refetch if already fetched recently (within 60s)
+      const now = Date.now();
+      if (now - lastLoadedAtRef.current < 60000 && lastLoadedAtRef.current > 0) {
+        return;
+      }
+      console.log('[DRIVER-HOME] Loading dashboard for user:', user.id);
       if (!isLoadingRef.current) {
-        cacheService.remove('driver_home_dashboard').finally(() => loadDashboard());
+        loadDashboard();
       }
     }, [isAuthenticated, user?.id])
   );
@@ -262,19 +268,20 @@ export default function DriverHomeScreen() {
     };
 
     ensureLocationEnabled().catch(() => undefined);
-  }, [isAuthenticated, currentLocation, hasLocationPermission, requestLocationPermission]);
+  }, [isAuthenticated]);
 
   const loadDashboard = async () => {
     if (!isMountedRef.current || isLoadingRef.current) return;
     
     try {
       isLoadingRef.current = true;
+      lastLoadedAtRef.current = Date.now();
       const cached = await cacheService.get<any>('driver_home_dashboard');
       
       if (!isMountedRef.current) return;
       
       if (cached) {
-        console.log('📦 [DRIVER-HOME] Using cached dashboard data');
+        console.log('[DRIVER-HOME] Using cached dashboard data');
         setDriverData(cached.driverData || null);
         setTodayEarnings(cached.todayEarnings || 0);
         setIsOnline(!!cached.isOnline);
@@ -295,7 +302,7 @@ export default function DriverHomeScreen() {
         await fetchDashboardData(!cached);
       }
     } catch (error) {
-      console.error('❌ [DRIVER-HOME] loadDashboard error:', error);
+      console.error('[DRIVER-HOME] loadDashboard error:', error);
       if (isMountedRef.current) {
         setLoading(false);
       }
@@ -310,20 +317,20 @@ export default function DriverHomeScreen() {
     try {
       if (showLoader) setLoading(true);
 
-      console.log('📊 [DRIVER-HOME] Fetching critical dashboard data (details, status, active rides)...');
+      console.log('[DRIVER-HOME] Fetching critical dashboard data (details, status, active rides)...');
 
       // Phase 1: Critical data - load these first and show the screen
       const [details, status, rides] = await Promise.all([
         apiService.getDriverDetails().catch((err) => {
-          console.warn('⚠️  [DRIVER-HOME] getDriverDetails failed:', err?.message || err);
+          console.warn('[DRIVER-HOME] getDriverDetails failed:', err?.message || err);
           return {};
         }),
         apiService.getDriverStatus().catch((err) => {
-          console.warn('⚠️  [DRIVER-HOME] getDriverStatus failed:', err?.message || err);
+          console.warn('[DRIVER-HOME] getDriverStatus failed:', err?.message || err);
           return { status: 'offline' };
         }),
         apiService.getActiveRides().catch((err) => {
-          console.warn('⚠️  [DRIVER-HOME] getActiveRides failed:', err?.message || err);
+          console.warn('[DRIVER-HOME] getActiveRides failed:', err?.message || err);
           return { rides: [] };
         }),
       ]);
@@ -335,7 +342,7 @@ export default function DriverHomeScreen() {
       const nextActiveRides = rides.rides || [];
       const nextActiveRidesCount = nextActiveRides.length;
 
-      console.log('✅ [DRIVER-HOME] Critical data loaded:', {
+      console.log('[DRIVER-HOME] Critical data loaded:', {
         hasDriverData: !!nextDriverData,
         isOnline: nextIsOnline,
         activeRides: nextActiveRidesCount,
@@ -351,8 +358,24 @@ export default function DriverHomeScreen() {
         setLoading(false);
       }
 
+      // Save Phase 1 data to cache immediately (background phases will update state, re-reading from state on next open)
+      cacheService.set('driver_home_dashboard', {
+        driverData: nextDriverData,
+        isOnline: nextIsOnline,
+        activeRides: nextActiveRides,
+        activeRidesCount: nextActiveRidesCount,
+        availableRides: [],
+        recentRides: [],
+        settlementBlocked: false,
+        settlementOutstanding: 0,
+        todayRemittanceDue: 0,
+        remittanceDueAt: null,
+        driverStats: { completedTrips: 0, averageRating: 0 },
+        todayEarnings: 0,
+      }, 5 * 60).catch(() => undefined);
+
       // Phase 2: Load remaining data in background
-      console.log('📊 [DRIVER-HOME] Loading background data (available rides, history, settlement, earnings)...');
+      console.log('[DRIVER-HOME] Loading background data (available rides, history, settlement, earnings)...');
 
       // Load available rides
       setLoadingAvailableRides(true);
@@ -361,11 +384,11 @@ export default function DriverHomeScreen() {
           if (isMountedRef.current) {
             const nextAvailableRides = available.rides?.slice(0, 3) || [];
             setAvailableRides(nextAvailableRides);
-            console.log('✅ [DRIVER-HOME] Available rides loaded');
+            console.log('[DRIVER-HOME] Available rides loaded');
           }
         })
         .catch((err) => {
-          console.warn('⚠️  [DRIVER-HOME] getAvailableRides failed:', err?.message || err);
+          console.warn('[DRIVER-HOME] getAvailableRides failed:', err?.message || err);
         })
         .finally(() => {
           if (isMountedRef.current) setLoadingAvailableRides(false);
@@ -378,11 +401,11 @@ export default function DriverHomeScreen() {
           if (isMountedRef.current) {
             const nextRecentRides = ((history as any)?.rides || (history as any)?.data || []).slice(0, 5);
             setRecentRides(nextRecentRides);
-            console.log('✅ [DRIVER-HOME] Recent rides loaded');
+            console.log('[DRIVER-HOME] Recent rides loaded');
           }
         })
         .catch((err) => {
-          console.warn('⚠️  [DRIVER-HOME] getRideHistory failed:', err?.message || err);
+          console.warn('[DRIVER-HOME] getRideHistory failed:', err?.message || err);
         })
         .finally(() => {
           if (isMountedRef.current) setLoadingRecentRides(false);
@@ -392,11 +415,11 @@ export default function DriverHomeScreen() {
       setLoadingSettlement(true);
       Promise.all([
         apiService.getDriverSettlementStatus().catch((err) => {
-          console.warn('⚠️  [DRIVER-HOME] getDriverSettlementStatus failed:', err?.message || err);
+          console.warn('[DRIVER-HOME] getDriverSettlementStatus failed:', err?.message || err);
           return { blocked: false, totalOutstanding: 0 };
         }),
         apiService.getDriverDailySettlement().catch((err) => {
-          console.warn('⚠️  [DRIVER-HOME] getDriverDailySettlement failed:', err?.message || err);
+          console.warn('[DRIVER-HOME] getDriverDailySettlement failed:', err?.message || err);
           return { total_ride_earnings: 0 };
         }),
       ])
@@ -424,11 +447,11 @@ export default function DriverHomeScreen() {
             setSettlementOutstanding(nextGrandTotal);
             setTodayRemittanceDue(nextTodayRemittanceDue);
             setRemittanceDueAt(nextRemittanceDueAt);
-            console.log('✅ [DRIVER-HOME] Settlement data loaded');
+            console.log('[DRIVER-HOME] Settlement data loaded');
           }
         })
         .catch((err) => {
-          console.warn('⚠️  [DRIVER-HOME] Settlement data failed:', err?.message || err);
+          console.warn('[DRIVER-HOME] Settlement data failed:', err?.message || err);
         })
         .finally(() => {
           if (isMountedRef.current) setLoadingSettlement(false);
@@ -444,18 +467,18 @@ export default function DriverHomeScreen() {
               averageRating: Number(earningsStats?.stats?.averageRating || nextDriverData?.average_rating || 0),
             };
             setDriverStats(nextStats);
-            console.log('✅ [DRIVER-HOME] Earnings stats loaded');
+            console.log('[DRIVER-HOME] Earnings stats loaded');
           }
         })
         .catch((err) => {
-          console.warn('⚠️  [DRIVER-HOME] getDriverEarningsStats failed:', err?.message || err);
+          console.warn('[DRIVER-HOME] getDriverEarningsStats failed:', err?.message || err);
         })
         .finally(() => {
           if (isMountedRef.current) setLoadingEarnings(false);
         });
 
     } catch (error) {
-      console.error('❌ [DRIVER-HOME] fetchDashboardData error:', error);
+      console.error('[DRIVER-HOME] fetchDashboardData error:', error);
       if (isMountedRef.current) {
         setLoading(false);
       }
@@ -580,7 +603,7 @@ export default function DriverHomeScreen() {
           <View>
             <Text style={[styles.greeting, { color: theme.colors.textSecondary }]}>Ready to earn?</Text>
             <Text style={[styles.name, { color: theme.colors.textPrimary }]}>
-              {user?.firstName || (user as any)?.first_name || (driverData as any)?.first_name || 'Driver'} 👋
+              {user?.firstName || (user as any)?.first_name || (driverData as any)?.first_name || 'Driver'}
             </Text>
           </View>
           <View style={styles.headerButtons}>

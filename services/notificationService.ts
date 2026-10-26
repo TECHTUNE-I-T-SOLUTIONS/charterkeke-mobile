@@ -532,11 +532,11 @@ export const sendWelcomeNotification = async () => {
     await Notifications.scheduleNotificationAsync({
       content: {
         title: '🎉 Welcome to Charter Keke!',
-        body: 'Get N100 off your first ride when you refer people and they use your code to signup',
+        body: 'Get 10% off your second ride when you book a ride successfully for the first time',
         data: {
           type: 'welcome',
-          code: 'KEKE100',
-          discount: '100',
+          code: 'KEKE10',
+          discount: '10',
           action: 'open_booking',
         },
         badge: 1,

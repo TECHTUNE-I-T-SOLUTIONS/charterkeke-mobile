@@ -1,4 +1,4 @@
-
+﻿
 import React, { useMemo, useState, useEffect } from 'react';
 import {
   View,
@@ -41,6 +41,7 @@ interface RideItem {
   duration_minutes?: number;
   status?: string;
   created_at?: string;
+  pickup_time?: string;
 }
 
 export default function RidesListScreen() {
@@ -55,7 +56,7 @@ export default function RidesListScreen() {
   const [acceptingRideId, setAcceptingRideId] = useState<string | null>(null);
   const [showAcceptedModal, setShowAcceptedModal] = useState(false);
   const [acceptedRideId, setAcceptedRideId] = useState<string | null>(null);
-  const [driverStatus, setDriverStatus] = useState<'online' | 'offline' | 'busy'>('offline');
+  const [driverStatus, setDriverStatus] = useState<'online' | 'offline' | 'busy' | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
 
   const isLight = theme.mode === 'light';
@@ -78,25 +79,32 @@ export default function RidesListScreen() {
 
   useFocusEffect(
     React.useCallback(() => {
-      loadRides();
-      fetchDriverStatus();
+      fetchStatusThenRides();
     }, [activeTab])
   );
 
-  const fetchDriverStatus = async () => {
+  const fetchDriverStatus = async (force: boolean = false): Promise<'online' | 'offline' | 'busy'> => {
     try {
       setLoadingStatus(true);
       const response = await apiService.get('/driver/status') as any;
-      setDriverStatus(response?.status || 'offline');
+      const status: 'online' | 'offline' | 'busy' = response?.status || 'offline';
+      setDriverStatus(status);
+      return status;
     } catch (error) {
       console.error('Failed to fetch driver status:', error);
       setDriverStatus('offline');
+      return 'offline';
     } finally {
       setLoadingStatus(false);
     }
   };
 
-  const loadRides = async () => {
+  const fetchStatusThenRides = async () => {
+    const status = await fetchDriverStatus(false);
+    await loadRides(status);
+  };
+
+  const loadRides = async (currentStatus?: 'online' | 'offline' | 'busy') => {
     const cacheKey = `driver_rides_${activeTab}`;
     const cached = await cacheService.get<RideItem[]>(cacheKey);
     if (cached) {
@@ -105,10 +113,11 @@ export default function RidesListScreen() {
       setLoading(false);
     }
 
-    await fetchRides(!cached, cacheKey);
+    await fetchRides(!cached, cacheKey, currentStatus);
   };
 
-  const fetchRides = async (showLoader: boolean = true, cacheKey?: string) => {
+  const fetchRides = async (showLoader: boolean = true, cacheKey?: string, statusArg?: 'online' | 'offline' | 'busy') => {
+    const resolvedStatus = statusArg ?? driverStatus;
     try {
       if (showLoader) setLoading(true);
       let data;
@@ -117,14 +126,14 @@ export default function RidesListScreen() {
         data = response?.rides || [];
       } else if (activeTab === 'available') {
         // Don't fetch available rides if driver is offline
-        if (driverStatus !== 'online') {
+        if (resolvedStatus !== 'online') {
           setRides([]);
           return;
         }
         const response = (await apiService.get('/driver/available-rides?radiusKm=10').catch(() => ({ rides: [] }))) as any;
         data = response?.rides || [];
       } else {
-        const response = (await apiService.getTransactions(1)) as any; // Assuming this returns history
+        const response = (await apiService.getTransactions()) as any; // Assuming this returns history
         data = response?.rides || [];
       }
       const nextRides = Array.isArray(data) ? data : [];
@@ -154,7 +163,8 @@ export default function RidesListScreen() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await fetchRides(!hasCached, `driver_rides_${activeTab}`);
+    const status = await fetchDriverStatus();
+    await fetchRides(!hasCached, `driver_rides_${activeTab}`, status);
     setRefreshing(false);
   };
 
@@ -222,7 +232,7 @@ export default function RidesListScreen() {
         <View style={styles.cardHeader}>
           <View style={styles.riderInfo}>
             <View style={[styles.avatar, { backgroundColor: theme.colors.inputBackground }]}>
-               <Text style={{fontSize: 16}}>👤</Text>
+               <Text style={{fontSize: 16}}></Text>
             </View>
             <View>
                <Text style={[styles.riderName, { color: theme.colors.textPrimary }]}>{item.users?.first_name || 'Rider'}</Text>
@@ -271,7 +281,17 @@ export default function RidesListScreen() {
         <View style={[styles.dateRow, { backgroundColor: theme.colors.inputBackground }]}>
            <MaterialCommunityIcons name="calendar-clock" size={14} color={theme.colors.textSecondary} />
            <Text style={[styles.dateText, { color: theme.colors.textSecondary }]}>
-              {item.created_at ? new Date(item.created_at).toLocaleDateString() : 'N/A'} • {item.created_at ? new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' }) : 'N/A'}
+              {(() => {
+                const dateToUse = item.created_at || item.pickup_time;
+                if (!dateToUse) return 'N/A';
+                try {
+                  const date = new Date(dateToUse);
+                  if (isNaN(date.getTime())) return 'Invalid date';
+                  return `${date.toLocaleDateString()} • ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+                } catch {
+                  return 'Invalid date';
+                }
+              })()}
            </Text>
         </View>
 
@@ -349,16 +369,16 @@ export default function RidesListScreen() {
               ListEmptyComponent={
                 <View style={styles.emptyState}>
                    <MaterialCommunityIcons
-                     name={activeTab === 'available' && driverStatus !== 'online' ? 'account-off-outline' : 'clipboard-text-outline'}
+                     name={activeTab === 'available' && driverStatus === 'offline' ? 'account-off-outline' : 'clipboard-text-outline'}
                      size={48}
                      color={theme.colors.textTertiary}
                    />
                    <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
-                     {activeTab === 'available' && driverStatus !== 'online'
+                     {activeTab === 'available' && driverStatus === 'offline'
                        ? 'You are offline. Go online to see available rides.'
                        : 'No rides found'}
                    </Text>
-                   {activeTab === 'available' && driverStatus !== 'online' && (
+                   {activeTab === 'available' && driverStatus === 'offline' && (
                      <TouchableOpacity
                        style={[styles.goOnlineBtn, { backgroundColor: BRAND.primary }]}
                        onPress={() => router.push('/driver/home')}
@@ -401,6 +421,7 @@ const styles = StyleSheet.create({
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   riderInfo: { flexDirection: 'row', gap: 12 },
   avatar: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
+  avatarImage: { width: 40, height: 40, borderRadius: 20 },
   riderName: { fontWeight: '700', fontSize: 14 },
   ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   ratingText: { fontSize: 12 },

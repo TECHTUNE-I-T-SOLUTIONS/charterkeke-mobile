@@ -87,7 +87,7 @@ export default function SupportFloatingWidget({ route, bottom = 110, tourId }: S
 const styles = StyleSheet.create({
   wrap: {
     position: 'absolute',
-    right: -26,
+    right: -36,
     zIndex: 20,
   },
   button: {
@@ -103,6 +103,6 @@ const styles = StyleSheet.create({
   },
   image: {
     width: 200,
-    height: 160,
+    height: 100,
   },
 });
