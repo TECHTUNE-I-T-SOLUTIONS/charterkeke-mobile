@@ -131,8 +131,17 @@ export default function RidesListScreen() {
           setRides([]);
           return;
         }
-        const response = (await apiService.get('/driver/available-rides?radiusKm=10').catch(() => ({ rides: [] }))) as any;
-        data = response?.rides || [];
+        const response = (await apiService.get('/driver/available-rides?radiusKm=10').catch((err) => {
+          console.error('[DRIVER_RIDES] Available rides fetch error:', err);
+          return { rides: [] };
+        })) as any;
+        // Check if response has an error field
+        if (response?.error) {
+          console.error('[DRIVER_RIDES] API returned error:', response.error);
+          data = [];
+        } else {
+          data = response?.rides || [];
+        }
         console.log('[DRIVER_RIDES] Available rides response:', JSON.stringify(data?.[0], null, 2));
       } else {
         const response = (await apiService.getTransactions()) as any; // Assuming this returns history
@@ -158,7 +167,9 @@ export default function RidesListScreen() {
         }).catch(() => undefined);
       }
     } catch (error) {
-      setRides([]);
+      console.error('[DRIVER_RIDES] Fetch rides error:', error);
+      // Don't clear rides on error - keep what we have
+      if (showLoader) setLoading(false);
     } finally {
       if (showLoader) setLoading(false);
     }
