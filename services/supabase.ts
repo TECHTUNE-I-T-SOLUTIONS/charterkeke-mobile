@@ -611,6 +611,21 @@ class SupabaseService {
       }
     };
   }
+
+  async updateRideEta(rideId: string, etaMinutes: number) {
+    const { data, error } = await this.supabase
+      .from('rides')
+      .update({ 
+        eta_minutes: etaMinutes,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', rideId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  }
 }
 
 export const supabaseService = new SupabaseService();

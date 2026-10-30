@@ -11,7 +11,6 @@ import {
   Dimensions,
   Image,
   Modal,
-  Alert,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -400,6 +399,31 @@ export default function RideDetailsScreen() {
       if (!targetRideId) {
         showError('Ride unavailable', 'We could not identify this ride yet. Please reopen the ride and try again.');
         return;
+      }
+
+      // If starting trip, check proximity to pickup location first
+      if (status === 'in_progress' && !bypassModal) {
+        if (!currentLocation || !pickupCoordinate) {
+          setProximityAlert({ visible: true, distanceKm: 0, type: 'pickup' });
+          setUpdating(false);
+          setActionLabel(null);
+          return;
+        }
+
+        const distance = calculateDistance(
+          currentLocation.latitude,
+          currentLocation.longitude,
+          pickupCoordinate[1],
+          pickupCoordinate[0]
+        );
+
+        // If driver is more than 200m away from pickup, show alert
+        if (distance > 0.2) {
+          setProximityAlert({ visible: true, distanceKm: distance, type: 'pickup' });
+          setUpdating(false);
+          setActionLabel(null);
+          return;
+        }
       }
 
       // If completing, show verification modal first (unless explicitly confirmed from modal)
@@ -814,7 +838,7 @@ export default function RideDetailsScreen() {
                   // 1. Check if driver has location available
                   if (!driverLat || !driverLng) {
                     setVerifyingLocation(false);
-                    Alert.alert('GPS Unavailable', 'Unable to detect your current GPS location. Please check your location settings and try again.');
+                    setProximityAlert({ visible: true, distanceKm: 0, type: 'dropoff' });
                     return;
                   }
 
@@ -833,21 +857,14 @@ export default function RideDetailsScreen() {
 
                   if (distToDropoffKm > DROPOFF_THRESHOLD_KM) {
                     setVerifyingLocation(false);
-                    const metersAway = Math.round(distToDropoffKm * 1000);
-                    Alert.alert(
-                      'Not at Destination',
-                      `You are currently ${metersAway >= 1000 ? distToDropoffKm.toFixed(1) + "km" : metersAway + "m"} away from the destination. Please reach the dropoff point to complete this ride.`
-                    );
+                    setProximityAlert({ visible: true, distanceKm: distToDropoffKm, type: 'dropoff' });
                     return;
                   }
 
                   // If rider's live location is known and they are more than 600m away from the driver, warn
                   if (distToRiderKm !== null && distToRiderKm > RIDER_PROXIMITY_THRESHOLD_KM) {
                     setVerifyingLocation(false);
-                    Alert.alert(
-                      'Passenger Not Nearby',
-                      'The passenger is not near your current vehicle location. Both driver and passenger must be together at the dropoff destination.'
-                    );
+                    setProximityAlert({ visible: true, distanceKm: distToRiderKm, type: 'dropoff' });
                     return;
                   }
 
@@ -865,7 +882,7 @@ export default function RideDetailsScreen() {
                 style={[styles.completeBtn, { backgroundColor: locationVerified ? BRAND.primary : theme.colors.border }]}
                 onPress={async () => {
                   if (!locationVerified) {
-                    Alert.alert('Location Not Verified', 'Please verify your location first before completing the trip.');
+                    setProximityAlert({ visible: true, distanceKm: 0, type: 'dropoff' });
                     return;
                   }
                   setShowCompletionModal(false);
@@ -895,7 +912,8 @@ export default function RideDetailsScreen() {
       <View pointerEvents="none" style={styles.hiddenReceipt}>
         <View ref={receiptRef} collapsable={false}>
           <RideReceiptTemplate ride={ride} audience="driver" />
-        </View>
+        </View>
+
       <ProximityAlertModal
         visible={proximityAlert.visible}
         distanceKm={proximityAlert.distanceKm}

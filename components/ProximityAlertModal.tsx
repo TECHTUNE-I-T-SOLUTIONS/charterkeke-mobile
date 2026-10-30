@@ -25,6 +25,7 @@ export const ProximityAlertModal: React.FC<ProximityAlertModalProps> = ({
   onClose,
 }) => {
   const isPickup = type === 'pickup';
+  const isGpsUnavailable = distanceKm === 0;
 
   return (
     <Modal
@@ -39,7 +40,7 @@ export const ProximityAlertModal: React.FC<ProximityAlertModalProps> = ({
           {/* Icon */}
           <View style={styles.iconWrap}>
             <MaterialCommunityIcons
-              name={isPickup ? 'map-marker-alert' : 'map-marker-check'}
+              name={isGpsUnavailable ? 'crosshairs-question' : (isPickup ? 'map-marker-alert' : 'map-marker-check')}
               size={38}
               color={BRAND_ORANGE}
             />
@@ -47,20 +48,24 @@ export const ProximityAlertModal: React.FC<ProximityAlertModalProps> = ({
 
           {/* Title */}
           <Text style={styles.title}>
-            {isPickup ? 'Not at Pickup Location' : 'Not at Dropoff Location'}
+            {isGpsUnavailable ? 'GPS Unavailable' : (isPickup ? 'Not at Pickup Location' : 'Not at Dropoff Location')}
           </Text>
 
-          {/* Distance badge */}
-          <View style={styles.distanceBadge}>
-            <MaterialCommunityIcons name="map-marker-distance" size={14} color={BRAND_ORANGE} />
-            <Text style={styles.distanceText}>{distanceKm.toFixed(2)} km away</Text>
-          </View>
+          {/* Distance badge - only show if not GPS unavailable */}
+          {!isGpsUnavailable && (
+            <View style={styles.distanceBadge}>
+              <MaterialCommunityIcons name="map-marker-distance" size={14} color={BRAND_ORANGE} />
+              <Text style={styles.distanceText}>{distanceKm.toFixed(2)} km away</Text>
+            </View>
+          )}
 
           {/* Message */}
           <Text style={styles.message}>
-            {isPickup
-              ? `You are still ${distanceKm.toFixed(1)} km from the passenger's pickup point. Please drive closer before notifying the rider.`
-              : `You are still ${distanceKm.toFixed(1)} km from the dropoff location. Make sure you and the rider have reached the destination before completing the trip.`}
+            {isGpsUnavailable
+              ? 'Unable to detect your current GPS location. Please check your location settings and try again.'
+              : (isPickup
+                  ? `You are still ${distanceKm.toFixed(1)} km from the passenger's pickup point. Please drive closer before notifying the rider.`
+                  : `You are still ${distanceKm.toFixed(1)} km from the dropoff location. Make sure you and the rider have reached the destination before completing the trip.`)}
           </Text>
 
           {/* Dismiss */}

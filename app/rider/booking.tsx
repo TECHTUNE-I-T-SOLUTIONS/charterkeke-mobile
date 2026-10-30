@@ -840,6 +840,17 @@ export default function BookingScreen() {
       if (response) {
         setShowReviewModal(false);
         const rideId = response.ride?.id || response.id;
+        
+        // Refresh cashback rewards to remove the used one
+        try {
+          const cashbackResponse = await apiService.get('/user/cashback');
+          if (cashbackResponse && (cashbackResponse as any).availableRewards) {
+            setCashbackRewards((cashbackResponse as any).availableRewards);
+          }
+        } catch (err) {
+          console.warn('[Booking] Failed to refresh cashback rewards:', err);
+        }
+        
         // Non-blocking live-update: "Looking for driver..." so user sees activity without delaying ride navigation or risking crash
         void (async () => {
           try {
