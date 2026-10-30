@@ -1,11 +1,16 @@
 {
-  "key": "ota-2026-10-30-v1",
-  "title": "Fresh Update Just Landed! 🎉",
-  "subtitle": "Here is what we've fixed and improved for you:",
+  "key": "ota-2026-10-30-v2",
+  "title": "Faster, Smoother, Safer Rides! 🚀",
+  "subtitle": "Here's what's new in this update:",
   "highlights": [
-    "Fixed driver remittance calculation so your outstanding balance is always accurate and up to date",
-    "Enhanced ride acceptance to prevent duplicate requests or false 'ride no longer available' alerts",
-    "Added smart arrival proximity checks to confirm pickup and dropoff locations accurately",
-    "Smoother live ride tracking, instant route updates, and faster direct connectivity"
+    "🚀 Much faster loading - driver home and rides screens now load instantly with direct database access",
+    "🐛 Fixed rider app crash after ride cancellation - app stays stable even when rides are cancelled",
+    "🛡️ Drivers must be near pickup location before starting trips - prevents false starts",
+    "🚫 Drivers with active rides can't accept new ones - focus on one ride at a time",
+    "💰 Fixed cashback rewards - used rewards won't show again in booking sheet",
+    "📍 Fixed driver date/time display - now shows correct dates for all rides",
+    "📱 Removed heavy caching - tabs load fresh data every time, no more stale content",
+    "🎨 Branded alert modals - consistent, beautiful error messages throughout the app",
+    "🔒 Automatic driver status - goes 'busy' during rides, 'online' when completed (if remittance is clear)"
   ]
 }
