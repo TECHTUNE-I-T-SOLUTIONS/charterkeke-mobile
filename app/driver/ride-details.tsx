@@ -4,7 +4,7 @@ import {
   Text,
   ScrollView,
   TouchableOpacity,
-   ActivityIndicator,
+  ActivityIndicator,
   Linking,
   StyleSheet,
   StatusBar,
@@ -34,6 +34,8 @@ import { RideReceiptExportModal } from '@/components/RideReceiptExportModal';
 import { RideReceiptTemplate } from '@/components/RideReceiptTemplate';
 import { captureRef } from 'react-native-view-shot';
 import { useDriverLocationTracking } from '@/hooks/useDriverLocationTracking';
+import { calculateDistance } from '@/utils/geofencing';
+import { ProximityAlertModal } from '@/components/ProximityAlertModal';
 
 const { width } = Dimensions.get('window');
 const PLATFORM_FEE_PERCENTAGE = 0.15;
@@ -48,8 +50,9 @@ export default function RideDetailsScreen() {
   const isLight = mode === 'light';
   const [ride, setRide] = useState<any>(null);
   const [updating, setUpdating] = useState(false);
+  const [proximityAlert, setProximityAlert] = useState<{ visible: boolean; distanceKm: number; type: 'pickup' | 'dropoff' }>({ visible: false, distanceKm: 0, type: 'pickup' });
   const [actionLabel, setActionLabel] = useState<string | null>(null);
-   const [routeCoordinates, setRouteCoordinates] = useState<[number, number][] | undefined>(undefined);
+  const [routeCoordinates, setRouteCoordinates] = useState<[number, number][] | undefined>(undefined);
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeDistanceKm, setRouteDistanceKm] = useState(0);
   const [routeDurationMin, setRouteDurationMin] = useState(0);
@@ -140,85 +143,85 @@ export default function RideDetailsScreen() {
 
     return () => {
       active = false;
-      supabaseService.unsubscribeRideUpdates(String(activeRideId)).catch(() => {});
+      supabaseService.unsubscribeRideUpdates(String(activeRideId)).catch(() => { });
     };
   }, [activeRideId]);
 
-   useEffect(() => {
-      let cancelled = false;
+  useEffect(() => {
+    let cancelled = false;
 
-      const loadRoute = async () => {
-         if (!ride) {
-            return;
-         }
+    const loadRoute = async () => {
+      if (!ride) {
+        return;
+      }
 
-         setRouteLoading(true);
+      setRouteLoading(true);
 
-         try {
-            const explicitPickup =
-              parseDescriptionCoordinate(ride.pickup_description) ||
-              extractCoordinate(ride, ['pickup_latitude', 'pickupLat', 'pickup_lat'], ['pickup_longitude', 'pickupLng', 'pickup_lon']);
-            const explicitDestination =
-              parseDescriptionCoordinate(ride.destination_description) ||
-              extractCoordinate(ride, ['dropoff_latitude', 'dropoffLat', 'dropoff_lat'], ['dropoff_longitude', 'dropoffLng', 'dropoff_lon']);
-            const pickupQuery = ride.pickup_zone || ride.pickup_description || '';
-            const destinationQuery = ride.destination_zone || ride.destination_description || '';
+      try {
+        const explicitPickup =
+          parseDescriptionCoordinate(ride.pickup_description) ||
+          extractCoordinate(ride, ['pickup_latitude', 'pickupLat', 'pickup_lat'], ['pickup_longitude', 'pickupLng', 'pickup_lon']);
+        const explicitDestination =
+          parseDescriptionCoordinate(ride.destination_description) ||
+          extractCoordinate(ride, ['dropoff_latitude', 'dropoffLat', 'dropoff_lat'], ['dropoff_longitude', 'dropoffLng', 'dropoff_lon']);
+        const pickupQuery = ride.pickup_zone || ride.pickup_description || '';
+        const destinationQuery = ride.destination_zone || ride.destination_description || '';
 
-            const [pickupResult, destinationResult] = await Promise.all([
-               explicitPickup ? Promise.resolve({ coordinate: explicitPickup }) : pickupQuery ? geocodeMapboxLocation(pickupQuery) : null,
-               explicitDestination ? Promise.resolve({ coordinate: explicitDestination }) : destinationQuery ? geocodeMapboxLocation(destinationQuery) : null,
-            ]);
+        const [pickupResult, destinationResult] = await Promise.all([
+          explicitPickup ? Promise.resolve({ coordinate: explicitPickup }) : pickupQuery ? geocodeMapboxLocation(pickupQuery) : null,
+          explicitDestination ? Promise.resolve({ coordinate: explicitDestination }) : destinationQuery ? geocodeMapboxLocation(destinationQuery) : null,
+        ]);
 
-            if (cancelled || !pickupResult || !destinationResult) {
-               return;
-            }
+        if (cancelled || !pickupResult || !destinationResult) {
+          return;
+        }
 
-            const route = await fetchMapboxRoute(pickupResult.coordinate, destinationResult.coordinate, {
-               profile: 'driving-traffic',
-            });
+        const route = await fetchMapboxRoute(pickupResult.coordinate, destinationResult.coordinate, {
+          profile: 'driving-traffic',
+        });
 
-            if (cancelled) {
-               return;
-            }
+        if (cancelled) {
+          return;
+        }
 
-            if (route) {
-               setRouteCoordinates(route.coordinates);
-               setRouteDistanceKm(parseFloat(route.distanceKm.toFixed(2)));
-               setRouteDurationMin(Math.max(1, Math.round(route.durationMin)));
-               return;
-            }
+        if (route) {
+          setRouteCoordinates(route.coordinates);
+          setRouteDistanceKm(parseFloat(route.distanceKm.toFixed(2)));
+          setRouteDurationMin(Math.max(1, Math.round(route.durationMin)));
+          return;
+        }
 
-            setRouteCoordinates([pickupResult.coordinate, destinationResult.coordinate]);
-            setRouteDistanceKm(Number(ride.distance_km || 0));
-            setRouteDurationMin(Number(ride.duration_minutes || 0));
-         } catch (error) {
-            console.log('Failed to load Mapbox route for driver ride details:', error);
-            if (!cancelled) {
-              const fallbackPickup =
-                parseDescriptionCoordinate(ride.pickup_description) ||
-                extractCoordinate(ride, ['pickup_latitude', 'pickupLat', 'pickup_lat'], ['pickup_longitude', 'pickupLng', 'pickup_lon']);
-              const fallbackDestination =
-                parseDescriptionCoordinate(ride.destination_description) ||
-                extractCoordinate(ride, ['dropoff_latitude', 'dropoffLat', 'dropoff_lat'], ['dropoff_longitude', 'dropoffLng', 'dropoff_lon']);
-              if (fallbackPickup && fallbackDestination) {
-                setRouteCoordinates([fallbackPickup, fallbackDestination]);
-              }
-              setRouteDistanceKm(Number(ride.distance_km || 0));
-              setRouteDurationMin(Number(ride.duration_minutes || 0));
-            }
-         } finally {
-            if (!cancelled) {
-               setRouteLoading(false);
-            }
-         }
-      };
+        setRouteCoordinates([pickupResult.coordinate, destinationResult.coordinate]);
+        setRouteDistanceKm(Number(ride.distance_km || 0));
+        setRouteDurationMin(Number(ride.duration_minutes || 0));
+      } catch (error) {
+        console.log('Failed to load Mapbox route for driver ride details:', error);
+        if (!cancelled) {
+          const fallbackPickup =
+            parseDescriptionCoordinate(ride.pickup_description) ||
+            extractCoordinate(ride, ['pickup_latitude', 'pickupLat', 'pickup_lat'], ['pickup_longitude', 'pickupLng', 'pickup_lon']);
+          const fallbackDestination =
+            parseDescriptionCoordinate(ride.destination_description) ||
+            extractCoordinate(ride, ['dropoff_latitude', 'dropoffLat', 'dropoff_lat'], ['dropoff_longitude', 'dropoffLng', 'dropoff_lon']);
+          if (fallbackPickup && fallbackDestination) {
+            setRouteCoordinates([fallbackPickup, fallbackDestination]);
+          }
+          setRouteDistanceKm(Number(ride.distance_km || 0));
+          setRouteDurationMin(Number(ride.duration_minutes || 0));
+        }
+      } finally {
+        if (!cancelled) {
+          setRouteLoading(false);
+        }
+      }
+    };
 
-      loadRoute();
+    loadRoute();
 
-      return () => {
-         cancelled = true;
-      };
-   }, [ride]);
+    return () => {
+      cancelled = true;
+    };
+  }, [ride]);
 
   useEffect(() => {
     const targetRideId = String(rideId || ride?.id || '');
@@ -307,6 +310,12 @@ export default function RideDetailsScreen() {
     }
   };
 
+  const pickupCoordinate =
+    extractCoordinate(ride, ['pickup_latitude', 'pickupLat', 'pickup_lat'], ['pickup_longitude', 'pickupLng', 'pickup_lon']) ||
+    parseDescriptionCoordinate(ride?.pickup_description) ||
+    routeCoordinates?.[0] ||
+    [3.3792, 6.5244];
+
   const handleNotifyArrival = async () => {
     if (updating) return;
     const targetRideId = String(rideId || ride?.id || '');
@@ -314,6 +323,22 @@ export default function RideDetailsScreen() {
       showError('Ride unavailable', 'We could not identify this ride yet. Please reopen the ride and try again.');
       return;
     }
+
+    // Location guard: Verify driver is within 450 meters of the pickup point
+    const driverLat = liveDriverLocation?.[1] ?? currentLocation?.latitude;
+    const driverLng = liveDriverLocation?.[0] ?? currentLocation?.longitude;
+    const pickupLat = pickupCoordinate?.[1];
+    const pickupLng = pickupCoordinate?.[0];
+
+    if (driverLat != null && driverLng != null && pickupLat != null && pickupLng != null) {
+      const distToPickupKm = calculateDistance(driverLat, driverLng, pickupLat, pickupLng);
+      // 0.45 km = 450 meters tolerance for GPS drift & street parking
+      if (distToPickupKm > 0.45) {
+        setProximityAlert({ visible: true, distanceKm: distToPickupKm, type: 'pickup' });
+        return;
+      }
+    }
+
     try {
       setUpdating(true);
       setActionLabel('Notifying rider...');
@@ -329,12 +354,6 @@ export default function RideDetailsScreen() {
       setUpdating(false);
     }
   };
-
-  const pickupCoordinate =
-    extractCoordinate(ride, ['pickup_latitude', 'pickupLat', 'pickup_lat'], ['pickup_longitude', 'pickupLng', 'pickup_lon']) ||
-    parseDescriptionCoordinate(ride?.pickup_description) ||
-    routeCoordinates?.[0] ||
-    [3.3792, 6.5244];
   const dropoffCoordinate =
     extractCoordinate(ride, ['dropoff_latitude', 'dropoffLat', 'dropoff_lat'], ['dropoff_longitude', 'dropoffLng', 'dropoff_lon']) ||
     parseDescriptionCoordinate(ride?.destination_description) ||
@@ -370,7 +389,7 @@ export default function RideDetailsScreen() {
   const primaryActionLabel = isAwaitingAcceptance ? 'Accept Ride' : rideStatus === 'accepted' ? 'Start Trip' : 'Complete Trip';
 
   // Move handleUpdate here so it's accessible from modal
-  const handleUpdate = async (status: string) => {
+  const handleUpdate = async (status: string, bypassModal: boolean = false) => {
     if (updating) return;
 
     const previousRide = ride;
@@ -383,8 +402,8 @@ export default function RideDetailsScreen() {
         return;
       }
 
-      // If completing, show verification modal first
-      if (status === 'completed') {
+      // If completing, show verification modal first (unless explicitly confirmed from modal)
+      if (status === 'completed' && !bypassModal) {
         setShowCompletionModal(true);
         setUpdating(false);
         setActionLabel(null);
@@ -395,8 +414,13 @@ export default function RideDetailsScreen() {
       const response = await apiService.updateRideStatus(targetRideId, status as 'in_progress' | 'completed', displayEtaMin);
 
       if (response) {
-        // Update local state with the response data
-        setRide(response);
+        // Merge response data with previous ride so passenger, route details, and earnings breakdown are never lost!
+        const updatedRideData = response?.ride || response;
+        setRide((current: any) => ({
+          ...(current || previousRide || {}),
+          ...(updatedRideData || {}),
+          status,
+        }));
 
         if (status === 'completed') {
           showSuccess('Ride completed', 'The trip has been completed successfully.');
@@ -434,11 +458,9 @@ export default function RideDetailsScreen() {
     if (lastPersistedEtaRef.current !== null && Math.abs(lastPersistedEtaRef.current - etaMinutes) < 1) return;
     lastPersistedEtaRef.current = etaMinutes;
     try {
-      await apiService.updateRide(targetRideId, {
-        eta_minutes: Math.round(etaMinutes),
-      });
-    } catch (error) {
-      console.log('Failed to persist live ETA for driver ride details:', error);
+      await supabaseService.updateRideEta(targetRideId, Math.round(etaMinutes));
+    } catch {
+      // ETA persist is non-critical, ignore silently
     }
   };
   const handleMapTap = () => {
@@ -529,195 +551,195 @@ export default function RideDetailsScreen() {
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
-      
+
       {/* Header Overlay on Map */}
       <View style={styles.mapWrapper}>
-           <MapboxMap
-           style={StyleSheet.absoluteFill}
-           latitude={6.5244}
-           longitude={3.3792}
-           zoom={12}
-                mapStyle={isLight ? 'light' : 'dark'}
-                showCompass
-                showScaleBar
-                fitCoordinates={routeFitCoordinates}
-                routeCoordinates={routeCoordinates}
-           autoCenter={Boolean(routeFitCoordinates?.length)}
-           onPressCoordinate={handleMapTap}
-         >
-                  <MapboxMarker
-                     id="pickup"
-                     coordinate={pickupCoordinate}
-                     title="Pickup"
-                     color={BRAND.primary}
-                  />
-                  <MapboxMarker
-                     id="dropoff"
-                     coordinate={dropoffCoordinate}
-                     title="Dropoff"
-                     color="black"
-                  />
-                  {riderCoordinate ? (
-                    <MapboxMarker id="rider-current" coordinate={riderCoordinate} title="Rider current location" color="#2563EB" />
-                  ) : null}
-                  {driverCoordinate ? (
-                    <MapboxMarker id="driver-current" coordinate={driverCoordinate} title="Tricycle current location" color="#10B981" />
-                  ) : null}
-         </MapboxMap>
-         <TouchableOpacity onPress={() => setShowFullMap(true)} style={styles.fullMapBtn}>
-            <MaterialCommunityIcons name="fullscreen" size={18} color="#000" />
-            <Text style={styles.fullMapBtnText}>Full Map</Text>
-         </TouchableOpacity>
-         <SafeAreaView pointerEvents="box-none" style={[styles.headerSafe, { paddingTop: Math.max(0, verticalScale(8)) }]}>
-            <View pointerEvents="box-none" style={[styles.headerRow, { paddingHorizontal: scale(16), paddingVertical: verticalScale(8) }]}>
-               <TouchableOpacity onPress={() => router.back()} style={[styles.backCircle, { backgroundColor: theme.colors.surface }]}>
-                  <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.textPrimary} />
-               </TouchableOpacity>
-               <View style={[styles.statusPill, { backgroundColor: BRAND.primary }]}>
-                  <Text style={[styles.statusText, { color: '#000' }]}>{safeRideStatus}</Text>
-               </View>
+        <MapboxMap
+          style={StyleSheet.absoluteFill}
+          latitude={6.5244}
+          longitude={3.3792}
+          zoom={12}
+          mapStyle={isLight ? 'light' : 'dark'}
+          showCompass
+          showScaleBar
+          fitCoordinates={routeFitCoordinates}
+          routeCoordinates={routeCoordinates}
+          autoCenter={Boolean(routeFitCoordinates?.length)}
+          onPressCoordinate={handleMapTap}
+        >
+          <MapboxMarker
+            id="pickup"
+            coordinate={pickupCoordinate}
+            title="Pickup"
+            color={BRAND.primary}
+          />
+          <MapboxMarker
+            id="dropoff"
+            coordinate={dropoffCoordinate}
+            title="Dropoff"
+            color="black"
+          />
+          {riderCoordinate ? (
+            <MapboxMarker id="rider-current" coordinate={riderCoordinate} title="Rider current location" color="#2563EB" />
+          ) : null}
+          {driverCoordinate ? (
+            <MapboxMarker id="driver-current" coordinate={driverCoordinate} title="Tricycle current location" color="#10B981" />
+          ) : null}
+        </MapboxMap>
+        <TouchableOpacity onPress={() => setShowFullMap(true)} style={styles.fullMapBtn}>
+          <MaterialCommunityIcons name="fullscreen" size={18} color="#000" />
+          <Text style={styles.fullMapBtnText}>Full Map</Text>
+        </TouchableOpacity>
+        <SafeAreaView pointerEvents="box-none" style={[styles.headerSafe, { paddingTop: Math.max(0, verticalScale(8)) }]}>
+          <View pointerEvents="box-none" style={[styles.headerRow, { paddingHorizontal: scale(16), paddingVertical: verticalScale(8) }]}>
+            <TouchableOpacity onPress={() => router.back()} style={[styles.backCircle, { backgroundColor: theme.colors.surface }]}>
+              <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.textPrimary} />
+            </TouchableOpacity>
+            <View style={[styles.statusPill, { backgroundColor: BRAND.primary }]}>
+              <Text style={[styles.statusText, { color: '#000' }]}>{safeRideStatus}</Text>
             </View>
-         </SafeAreaView>
+          </View>
+        </SafeAreaView>
       </View>
 
       <ScrollView style={styles.contentContainer} showsVerticalScrollIndicator={false}>
-         <View style={styles.receiptActions}>
-            <TouchableOpacity onPress={() => openReceiptModal('share')} style={[styles.receiptBtn, { backgroundColor: BRAND.primary }]}>
-               <MaterialCommunityIcons name="share-variant" size={18} color="#000" />
-               <Text style={styles.receiptBtnText}>Share</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => openReceiptModal('download')} style={[styles.receiptBtn, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderWidth: 1 }]}>
-               <MaterialCommunityIcons name="download" size={18} color={theme.colors.textPrimary} />
-               <Text style={[styles.receiptBtnText, { color: theme.colors.textPrimary }]}>Download</Text>
-            </TouchableOpacity>
-         </View>
-         
-         {/* Rider Info */}
-         <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-            <Text style={[styles.sectionHeader, { color: theme.colors.textSecondary }]}>PASSENGER</Text>
-            <View style={styles.riderRow}>
-               {ride.users?.profile_picture_url ? (
-                  <Image
-                     source={{ uri: ride.users.profile_picture_url }}
-                     style={styles.avatarImage}
-                  />
-               ) : (
-                  <View style={styles.avatarPlaceholder}><Text style={{fontSize:20}}>👤</Text></View>
-               )}
-               <View style={{flex:1}}>
-                  <Text style={[styles.riderName, { color: theme.colors.textPrimary }]}>{ride.users?.first_name || 'Passenger Name'}</Text>
-                  <Text style={[styles.riderSub, { color: theme.colors.textSecondary }]}>Rating: {ride.users?.rating || '5.0'} ★</Text>
-               </View>
-               <View style={styles.actionButtons}>
-                  <TouchableOpacity
-                    onPress={() => {
-                      const phoneNumber = String(ride.users?.phone_number || '').trim();
-                      if (!phoneNumber) return;
-                      Linking.openURL(`tel:${phoneNumber.replace(/[\s\-\(\)]/g, '')}`).catch(() => undefined);
-                    }}
-                    style={[styles.callBtn, { backgroundColor: theme.colors.inputBackground }]}
-                  >
-                     <MaterialCommunityIcons name="phone" size={20} color={BRAND.primary} />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                     onPress={() => router.push(`/driver/chat?rideId=${rideId}`)}
-                     style={[styles.chatBtn, { backgroundColor: theme.colors.primary }]}
-                  >
-                     <MaterialCommunityIcons name="message" size={20} color="#FFF" />
-                  </TouchableOpacity>
-               </View>
-            </View>
-         </View>
+        <View style={styles.receiptActions}>
+          <TouchableOpacity onPress={() => openReceiptModal('share')} style={[styles.receiptBtn, { backgroundColor: BRAND.primary }]}>
+            <MaterialCommunityIcons name="share-variant" size={18} color="#000" />
+            <Text style={styles.receiptBtnText}>Share</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => openReceiptModal('download')} style={[styles.receiptBtn, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderWidth: 1 }]}>
+            <MaterialCommunityIcons name="download" size={18} color={theme.colors.textPrimary} />
+            <Text style={[styles.receiptBtnText, { color: theme.colors.textPrimary }]}>Download</Text>
+          </TouchableOpacity>
+        </View>
 
-         {/* Route Info */}
-         <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-            <Text style={[styles.sectionHeader, { color: theme.colors.textSecondary }]}>ROUTE</Text>
-            <View style={styles.routeRow}>
-                <View style={{ alignItems: 'center', marginRight: 12 }}>
-                   <View style={[styles.dot, { backgroundColor: BRAND.primary }]} />
-                   <View style={[styles.line, { backgroundColor: theme.colors.border }]} />
-                   <View style={[styles.square, { borderColor: theme.colors.textPrimary }]} />
-                </View>
-                <View style={{ flex: 1 }}>
-                   <View style={{ height: 40, justifyContent: 'center' }}>
-                                 <Text style={[styles.address, { color: theme.colors.textPrimary }]}>{ride.pickup_zone}</Text>
-                   </View>
-                   <View style={{ height: 20 }} />
-                   <View style={{ height: 40, justifyContent: 'center' }}>
-                      <Text style={[styles.address, { color: theme.colors.textPrimary }]}>{ride.destination_zone}</Text>
-                   </View>
-                </View>
+        {/* Rider Info */}
+        <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+          <Text style={[styles.sectionHeader, { color: theme.colors.textSecondary }]}>PASSENGER</Text>
+          <View style={styles.riderRow}>
+            {ride.users?.profile_picture_url ? (
+              <Image
+                source={{ uri: ride.users.profile_picture_url }}
+                style={styles.avatarImage}
+              />
+            ) : (
+              <View style={styles.avatarPlaceholder}><Text style={{ fontSize: 20 }}>👤</Text></View>
+            )}
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.riderName, { color: theme.colors.textPrimary }]}>{ride.users?.first_name || 'Passenger Name'}</Text>
+              <Text style={[styles.riderSub, { color: theme.colors.textSecondary }]}>Rating: {ride.users?.rating || '5.0'} ★</Text>
             </View>
-                  <View style={[styles.routeSummary, { borderTopColor: theme.colors.border }]}>
-                     <View>
-                        <Text style={[styles.routeSummaryLabel, { color: theme.colors.textSecondary }]}>Distance</Text>
-                        <Text style={[styles.routeSummaryValue, { color: theme.colors.textPrimary }]}>{routeLoading ? 'Calculating...' : `${displayDistanceKm || 0} km`}</Text>
-                     </View>
-                     <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={[styles.routeSummaryLabel, { color: theme.colors.textSecondary }]}>{shouldShowEta ? 'ETA' : 'Duration'}</Text>
-                        <Text style={[styles.routeSummaryValue, { color: theme.colors.textPrimary }]}>
-                          {routeLoading ? 'Calculating...' : `${shouldShowEta ? displayEtaMin || 0 : displayDurationMin || 0} min`}
-                        </Text>
-                     </View>
-                  </View>
-         </View>
+            <View style={styles.actionButtons}>
+              <TouchableOpacity
+                onPress={() => {
+                  const phoneNumber = String(ride.users?.phone_number || '').trim();
+                  if (!phoneNumber) return;
+                  Linking.openURL(`tel:${phoneNumber.replace(/[\s\-\(\)]/g, '')}`).catch(() => undefined);
+                }}
+                style={[styles.callBtn, { backgroundColor: theme.colors.inputBackground }]}
+              >
+                <MaterialCommunityIcons name="phone" size={20} color={BRAND.primary} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => router.push(`/driver/chat?rideId=${rideId}`)}
+                style={[styles.chatBtn, { backgroundColor: theme.colors.primary }]}
+              >
+                <MaterialCommunityIcons name="message" size={20} color="#FFF" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
 
-         {/* Financials */}
-         <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-            <Text style={[styles.sectionHeader, { color: theme.colors.textSecondary }]}>EARNINGS BREAKDOWN</Text>
-            <View style={styles.financeRow}>
-               <Text style={[styles.finLabel, { color: theme.colors.textSecondary }]}>Base Fare</Text>
-               <Text style={[styles.finValue, { color: theme.colors.textPrimary }]}>₦{fareAmount.toFixed(0)}</Text>
+        {/* Route Info */}
+        <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+          <Text style={[styles.sectionHeader, { color: theme.colors.textSecondary }]}>ROUTE</Text>
+          <View style={styles.routeRow}>
+            <View style={{ alignItems: 'center', marginRight: 12 }}>
+              <View style={[styles.dot, { backgroundColor: BRAND.primary }]} />
+              <View style={[styles.line, { backgroundColor: theme.colors.border }]} />
+              <View style={[styles.square, { borderColor: theme.colors.textPrimary }]} />
             </View>
-            <View style={styles.financeRow}>
-               <Text style={[styles.finLabel, { color: theme.colors.textSecondary }]}>Platform Fee (15%)</Text>
-               <Text style={[styles.finValue, { color: theme.colors.error }]}>- ₦{platformFee.toFixed(0)}</Text>
+            <View style={{ flex: 1 }}>
+              <View style={{ height: 40, justifyContent: 'center' }}>
+                <Text style={[styles.address, { color: theme.colors.textPrimary }]}>{ride.pickup_zone}</Text>
+              </View>
+              <View style={{ height: 20 }} />
+              <View style={{ height: 40, justifyContent: 'center' }}>
+                <Text style={[styles.address, { color: theme.colors.textPrimary }]}>{ride.destination_zone}</Text>
+              </View>
             </View>
-            <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
-            <View style={styles.financeRow}>
-               <Text style={[styles.totalLabel, { color: theme.colors.textPrimary }]}>Your Earning</Text>
-               <Text style={[styles.totalValue, { color: '#10B981' }]}>₦{driverEarnings.toFixed(0)}</Text>
+          </View>
+          <View style={[styles.routeSummary, { borderTopColor: theme.colors.border }]}>
+            <View>
+              <Text style={[styles.routeSummaryLabel, { color: theme.colors.textSecondary }]}>Distance</Text>
+              <Text style={[styles.routeSummaryValue, { color: theme.colors.textPrimary }]}>{routeLoading ? 'Calculating...' : `${displayDistanceKm || 0} km`}</Text>
             </View>
-         </View>
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={[styles.routeSummaryLabel, { color: theme.colors.textSecondary }]}>{shouldShowEta ? 'ETA' : 'Duration'}</Text>
+              <Text style={[styles.routeSummaryValue, { color: theme.colors.textPrimary }]}>
+                {routeLoading ? 'Calculating...' : `${shouldShowEta ? displayEtaMin || 0 : displayDurationMin || 0} min`}
+              </Text>
+            </View>
+          </View>
+        </View>
 
-         {/* Actions */}
-         {!isCompleted && (
-            <>
+        {/* Financials */}
+        <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+          <Text style={[styles.sectionHeader, { color: theme.colors.textSecondary }]}>EARNINGS BREAKDOWN</Text>
+          <View style={styles.financeRow}>
+            <Text style={[styles.finLabel, { color: theme.colors.textSecondary }]}>Base Fare</Text>
+            <Text style={[styles.finValue, { color: theme.colors.textPrimary }]}>₦{fareAmount.toFixed(0)}</Text>
+          </View>
+          <View style={styles.financeRow}>
+            <Text style={[styles.finLabel, { color: theme.colors.textSecondary }]}>Platform Fee (15%)</Text>
+            <Text style={[styles.finValue, { color: theme.colors.error }]}>- ₦{platformFee.toFixed(0)}</Text>
+          </View>
+          <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
+          <View style={styles.financeRow}>
+            <Text style={[styles.totalLabel, { color: theme.colors.textPrimary }]}>Your Earning</Text>
+            <Text style={[styles.totalValue, { color: '#10B981' }]}>₦{driverEarnings.toFixed(0)}</Text>
+          </View>
+        </View>
+
+        {/* Actions */}
+        {!isCompleted && (
+          <>
             {rideStatus === 'accepted' && (
-               <TouchableOpacity
-                  style={[
-                    styles.mainBtn,
-                    {
-                      backgroundColor: hasNotifiedArrival ? theme.colors.surface : theme.colors.surface,
-                      borderColor: BRAND.primary,
-                      borderWidth: 1.5,
-                      marginBottom: 12,
-                    },
-                  ]}
-                  onPress={handleNotifyArrival}
-                  disabled={updating || hasNotifiedArrival}
-               >
-                  <Text style={[styles.btnText, { color: BRAND.primary }]}>
-                     {hasNotifiedArrival ? '✓ Rider Notified — You’ve Arrived' : "I’ve Arrived"}
-                  </Text>
-               </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.mainBtn,
+                  {
+                    backgroundColor: hasNotifiedArrival ? theme.colors.surface : theme.colors.surface,
+                    borderColor: BRAND.primary,
+                    borderWidth: 1.5,
+                    marginBottom: 12,
+                  },
+                ]}
+                onPress={handleNotifyArrival}
+                disabled={updating || hasNotifiedArrival}
+              >
+                <Text style={[styles.btnText, { color: BRAND.primary }]}>
+                  {hasNotifiedArrival ? '✓ Rider Notified — You’ve Arrived' : "I’ve Arrived"}
+                </Text>
+              </TouchableOpacity>
             )}
             <TouchableOpacity
-               style={[styles.mainBtn, { backgroundColor: BRAND.primary }]}
-               onPress={isAwaitingAcceptance ? handleAcceptRide : () => handleUpdate(nextTripStatus)}
-               disabled={updating}
+              style={[styles.mainBtn, { backgroundColor: BRAND.primary }]}
+              onPress={isAwaitingAcceptance ? handleAcceptRide : () => handleUpdate(nextTripStatus)}
+              disabled={updating}
             >
-               {updating ? (
-                  <View style={styles.busyAction}>
-                     <ActivityIndicator color="#000" />
-                     <Text style={styles.btnText}>{actionLabel || 'Working...'}</Text>
-                  </View>
-               ) : (
-                  <Text style={styles.btnText}>{primaryActionLabel}</Text>
-               )}
+              {updating ? (
+                <View style={styles.busyAction}>
+                  <ActivityIndicator color="#000" />
+                  <Text style={styles.btnText}>{actionLabel || 'Working...'}</Text>
+                </View>
+              ) : (
+                <Text style={styles.btnText}>{primaryActionLabel}</Text>
+              )}
             </TouchableOpacity>
-            </>
-         )}
+          </>
+        )}
 
       </ScrollView>
       <RideMapFullscreenModal
@@ -767,27 +789,70 @@ export default function RideDetailsScreen() {
               </Text>
 
               <View style={[styles.locationCheck, { backgroundColor: theme.colors.inputBackground, borderColor: theme.colors.border }]}>
-                <MaterialCommunityIcons name="map-marker-check" size={32} color={locationVerified ? '#10B981' : theme.colors.textSecondary} />
+                <MaterialCommunityIcons name="map-marker-check" size={32} color={locationVerified ? '#10B981' : verifyingLocation ? BRAND.primary : theme.colors.textSecondary} />
                 <View style={{ flex: 1, marginLeft: 12 }}>
                   <Text style={[styles.checkLabel, { color: theme.colors.textPrimary }]}>
-                    {locationVerified ? 'Location Verified' : 'Verifying Location...'}
+                    {locationVerified ? 'Location Verified' : verifyingLocation ? 'Verifying Location...' : 'Location Verification'}
                   </Text>
                   <Text style={[styles.checkSublabel, { color: theme.colors.textSecondary }]}>
-                    {locationVerified ? 'You are at the destination' : 'Checking GPS coordinates'}
+                    {locationVerified ? 'You are at the destination' : verifyingLocation ? 'Checking GPS coordinates...' : 'Tap Verify Location below to confirm arrival'}
                   </Text>
                 </View>
                 {verifyingLocation && <ActivityIndicator size="small" color={BRAND.primary} />}
               </View>
 
               <TouchableOpacity
-                style={[styles.verifyBtn, { backgroundColor: BRAND.primary }]}
+                style={[styles.verifyBtn, { backgroundColor: locationVerified ? '#10B981' : BRAND.primary }]}
                 onPress={async () => {
                   setVerifyingLocation(true);
-                  // Simulate location verification (in production, check actual GPS)
-                  setTimeout(() => {
+
+                  const driverLat = currentLocation?.latitude ?? driverCoordinate?.[1];
+                  const driverLng = currentLocation?.longitude ?? driverCoordinate?.[0];
+                  const dropoffLat = dropoffCoordinate?.[1];
+                  const dropoffLng = dropoffCoordinate?.[0];
+
+                  // 1. Check if driver has location available
+                  if (!driverLat || !driverLng) {
                     setVerifyingLocation(false);
-                    setLocationVerified(true);
-                  }, 1500);
+                    Alert.alert('GPS Unavailable', 'Unable to detect your current GPS location. Please check your location settings and try again.');
+                    return;
+                  }
+
+                  // 2. Check distance between driver and dropoff destination
+                  const distToDropoffKm = calculateDistance(driverLat, driverLng, dropoffLat, dropoffLng);
+
+                  // 3. Check distance between driver and rider (if rider's live location is available)
+                  let distToRiderKm: number | null = null;
+                  if (riderCoordinate && riderCoordinate[0] && riderCoordinate[1]) {
+                    distToRiderKm = calculateDistance(driverLat, driverLng, riderCoordinate[1], riderCoordinate[0]);
+                  }
+
+                  // Margin of error threshold for urban tricycle GPS (500m to account for multipath & dropoff zone boundaries)
+                  const DROPOFF_THRESHOLD_KM = 0.5;
+                  const RIDER_PROXIMITY_THRESHOLD_KM = 0.6;
+
+                  if (distToDropoffKm > DROPOFF_THRESHOLD_KM) {
+                    setVerifyingLocation(false);
+                    const metersAway = Math.round(distToDropoffKm * 1000);
+                    Alert.alert(
+                      'Not at Destination',
+                      `You are currently ${metersAway >= 1000 ? distToDropoffKm.toFixed(1) + "km" : metersAway + "m"} away from the destination. Please reach the dropoff point to complete this ride.`
+                    );
+                    return;
+                  }
+
+                  // If rider's live location is known and they are more than 600m away from the driver, warn
+                  if (distToRiderKm !== null && distToRiderKm > RIDER_PROXIMITY_THRESHOLD_KM) {
+                    setVerifyingLocation(false);
+                    Alert.alert(
+                      'Passenger Not Nearby',
+                      'The passenger is not near your current vehicle location. Both driver and passenger must be together at the dropoff destination.'
+                    );
+                    return;
+                  }
+
+                  setVerifyingLocation(false);
+                  setLocationVerified(true);
                 }}
                 disabled={verifyingLocation || locationVerified}
               >
@@ -804,8 +869,8 @@ export default function RideDetailsScreen() {
                     return;
                   }
                   setShowCompletionModal(false);
-                  // Proceed with completion using the handleUpdate function
-                  await handleUpdate('completed');
+                  // Proceed with completion bypassing modal check
+                  await handleUpdate('completed', true);
                 }}
                 disabled={!locationVerified}
               >
@@ -830,7 +895,13 @@ export default function RideDetailsScreen() {
       <View pointerEvents="none" style={styles.hiddenReceipt}>
         <View ref={receiptRef} collapsable={false}>
           <RideReceiptTemplate ride={ride} audience="driver" />
-        </View>
+        </View>
+      <ProximityAlertModal
+        visible={proximityAlert.visible}
+        distanceKm={proximityAlert.distanceKm}
+        type={proximityAlert.type}
+        onClose={() => setProximityAlert(prev => ({ ...prev, visible: false }))}
+      />
       </View>
     </View>
   );
@@ -847,7 +918,7 @@ const styles = StyleSheet.create({
   statusText: { fontSize: scale(10), fontWeight: '800' },
   fullMapBtn: { position: 'absolute', right: 16, bottom: 16, zIndex: 20, backgroundColor: '#FFF', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 6, elevation: 4 },
   fullMapBtnText: { fontSize: 12, fontWeight: '800', color: '#000' },
-   contentContainer: { flex: 1, marginTop: -30, borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 20, paddingTop: 30, paddingBottom: 120, overflow: 'hidden', backgroundColor: 'transparent' }, 
+  contentContainer: { flex: 1, marginTop: -30, borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 20, paddingTop: 30, paddingBottom: 120, overflow: 'hidden', backgroundColor: 'transparent' },
   // Simple Hack: Content background is handled by container color, this is to overlap map. Actually simpler to set background on ScrollView but it covers map corners. 
   // Let's rely on View structure.
   card: { padding: 16, borderRadius: 16, borderWidth: 1, marginBottom: 16 },
@@ -859,11 +930,11 @@ const styles = StyleSheet.create({
   riderSub: { fontSize: 12 },
   callBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
   actionButtons: { flexDirection: 'row', gap: 8 },
-  chatBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: {width:0, height:2}, shadowOpacity: 0.2, elevation: 3 },
+  chatBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, elevation: 3 },
   routeRow: { flexDirection: 'row' },
-   routeSummary: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12, paddingTop: 12, borderTopWidth: 1 },
-   routeSummaryLabel: { fontSize: 12, fontWeight: '600' },
-   routeSummaryValue: { fontSize: 16, fontWeight: '700', marginTop: 2 },
+  routeSummary: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12, paddingTop: 12, borderTopWidth: 1 },
+  routeSummaryLabel: { fontSize: 12, fontWeight: '600' },
+  routeSummaryValue: { fontSize: 16, fontWeight: '700', marginTop: 2 },
   dot: { width: 10, height: 10, borderRadius: 5 },
   line: { width: 2, flex: 1, marginVertical: 4 },
   square: { width: 10, height: 10, borderWidth: 2 },
@@ -874,7 +945,7 @@ const styles = StyleSheet.create({
   divider: { height: 1, marginVertical: 8 },
   totalLabel: { fontSize: 14, fontWeight: '700' },
   totalValue: { fontSize: 18, fontWeight: '800' },
-  mainBtn: { height: 56, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginBottom: 40 },
+  mainBtn: { height: 56, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginBottom: 140 },
   busyAction: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
   btnText: { fontSize: 16, fontWeight: '800', color: '#000' },
   receiptActions: { flexDirection: 'row', gap: 12, marginBottom: 16 },

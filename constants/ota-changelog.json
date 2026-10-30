@@ -1,0 +1,11 @@
+{
+  "key": "ota-2026-10-30-v1",
+  "title": "Fresh Update Just Landed! 🎉",
+  "subtitle": "Here is what we've fixed and improved for you:",
+  "highlights": [
+    "Fixed driver remittance calculation so your outstanding balance is always accurate and up to date",
+    "Enhanced ride acceptance to prevent duplicate requests or false 'ride no longer available' alerts",
+    "Added smart arrival proximity checks to confirm pickup and dropoff locations accurately",
+    "Smoother live ride tracking, instant route updates, and faster direct connectivity"
+  ]
+}

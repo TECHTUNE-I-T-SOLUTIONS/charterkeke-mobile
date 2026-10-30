@@ -1,3 +1,4 @@
+import { calculateDistance } from '@/utils/geofencing';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -23,6 +24,7 @@ import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import { ListScreenSkeleton } from '@/components/ListScreenSkeleton';
 import { COLORS } from '@/utils/colors';
+import { ProximityAlertModal } from '@/components/ProximityAlertModal';
 
 const { width, height } = Dimensions.get('window');
 const scale = (size: number) => (width / 375) * size;
@@ -43,7 +45,7 @@ const uiStatusFromRide = (status?: string): 'accepted' | 'arrived' | 'started' |
 export default function DriverActiveRideScreen() {
   const router = useRouter();
   const { currentRide } = useRide();
-  const { watchLocation } = useLocation();
+  const { watchLocation, currentLocation } = useLocation();
   const { rideId: rideIdParam } = useLocalSearchParams<{ rideId: string }>();
   const [isDark] = useState(false);
   const [ride, setRide] = useState<any>(currentRide || null);
@@ -52,6 +54,7 @@ export default function DriverActiveRideScreen() {
   const [odometer, setOdometer] = useState('0.0');
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [proximityAlert, setProximityAlert] = useState<{ visible: boolean; distanceKm: number; type: 'pickup' | 'dropoff' }>({ visible: false, distanceKm: 0, type: 'pickup' });
 
   const colors = isDark ? COLORS.dark : COLORS.light;
 
@@ -157,6 +160,25 @@ export default function DriverActiveRideScreen() {
   // "I've Arrived" — notification-only, does NOT change ride status server-side.
   const handleArrived = useCallback(async () => {
     if (!rideId) return;
+
+    // Location guard: Verify driver is within 450 meters of the pickup point
+    const driverLat = currentLocation?.latitude;
+    const driverLng = currentLocation?.longitude;
+    const pickupLat = Number(ride?.pickup_latitude ?? ride?.pickupLat ?? (currentRide?.pickupLocation as any)?.latitude);
+    const pickupLng = Number(ride?.pickup_longitude ?? ride?.pickupLng ?? (currentRide?.pickupLocation as any)?.longitude);
+
+    if (driverLat != null && driverLng != null && Number.isFinite(pickupLat) && Number.isFinite(pickupLng)) {
+      const distToPickupKm = calculateDistance(driverLat, driverLng, pickupLat, pickupLng);
+      if (distToPickupKm > 0.45) {
+        Alert.alert(
+          'Not at Pickup Location',
+          `You are currently ${distToPickupKm.toFixed(1)} km away from the passenger's pickup location. Please ensure you are near the pickup point before notifying the rider.`,
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+    }
+
     setActionLoading(true);
     try {
       await apiService.notifyArrival(rideId);
@@ -167,7 +189,7 @@ export default function DriverActiveRideScreen() {
     } finally {
       setActionLoading(false);
     }
-  }, [rideId]);
+  }, [rideId, currentLocation?.latitude, currentLocation?.longitude, ride?.pickup_latitude, ride?.pickupLat, currentRide?.pickupLocation]);
 
   // "Start Ride" — transitions the ride to in_progress (fires Trip Started push).
   const handleStartRide = useCallback(async () => {

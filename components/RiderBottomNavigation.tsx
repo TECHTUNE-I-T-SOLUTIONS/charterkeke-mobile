@@ -4,8 +4,10 @@ import { useRouter, usePathname } from 'expo-router';
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '@context/ThemeContext';
+import { useAuth } from '@context/AuthContext';
 import { COLORS } from '@/utils/colors';
 import { apiService } from '@/services/api';
+import { supabaseService } from '@/services/supabase';
 import * as Haptics from 'expo-haptics';
 import Animated, {
   useAnimatedStyle,
@@ -100,6 +102,7 @@ export default function RiderBottomNavigation() {
   const colors = isDark ? COLORS.dark : COLORS.light;
   const insets = useSafeAreaInsets();
   const isDriverArea = pathname.includes('/driver');
+  const { user } = useAuth();
   const [availableRideCount, setAvailableRideCount] = useState(0);
   const [newRideCount, setNewRideCount] = useState(0);
 
@@ -129,8 +132,12 @@ export default function RiderBottomNavigation() {
 
     const refreshRideBadge = async () => {
       try {
-        const statusResponse = (await apiService.get('/driver/status')) as any;
-        const driverStatus = String(statusResponse?.status || statusResponse?.driver?.availability_status || '').toLowerCase();
+        const driverId = user?.id;
+        if (!driverId) return;
+
+        // Direct fast Supabase check instead of slow 27s HTTP server roundtrip
+        const statusResponse = await supabaseService.getDriverStatus(driverId).catch(() => null);
+        const driverStatus = String(statusResponse?.availability_status || '').toLowerCase();
         if (driverStatus !== 'online') {
           if (mounted) {
             setAvailableRideCount(0);
@@ -139,8 +146,8 @@ export default function RiderBottomNavigation() {
           return;
         }
 
-        const response = (await apiService.get('/driver/available-rides?radiusKm=10').catch(() => ({ rides: [] }))) as any;
-        const count = Array.isArray(response?.rides) ? response.rides.length : 0;
+        const rides = await supabaseService.getAvailableRides(0, 0, 50).catch(() => []);
+        const count = Array.isArray(rides) ? rides.length : 0;
         const rawSeen = await AsyncStorage.getItem(seenKey);
         const seenCount = Number(rawSeen || 0);
         const driverIsViewingRides = pathname.includes('/driver/rides') || pathname.includes('/driver/available-rides');

@@ -1,4 +1,4 @@
-﻿
+
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
   View,
@@ -86,6 +86,35 @@ interface DriverData {
   availability_status?: string;
 }
 
+function parseRideCoordinate(ride: any, isDropoff: boolean = false): [number, number] | null {
+  const lngKey = isDropoff ? 'dropoff_longitude' : 'pickup_longitude';
+  const latKey = isDropoff ? 'dropoff_latitude' : 'pickup_latitude';
+  const descKey = isDropoff ? 'destination_description' : 'pickup_description';
+
+  // Direct numeric keys
+  const directLng = parseFloat(String(ride?.[lngKey] ?? ride?.[isDropoff ? 'dropoff_location' : 'pickup_location']?.longitude ?? ride?.[isDropoff ? 'dropoff_location' : 'pickup_location']?.lng));
+  const directLat = parseFloat(String(ride?.[latKey] ?? ride?.[isDropoff ? 'dropoff_location' : 'pickup_location']?.latitude ?? ride?.[isDropoff ? 'dropoff_location' : 'pickup_location']?.lat));
+  if (Number.isFinite(directLat) && Number.isFinite(directLng)) {
+    return [directLng, directLat];
+  }
+
+  // Regex parse from description text e.g. "Lat: 6.5244, Lng: 3.3792"
+  const desc = ride?.[descKey];
+  if (typeof desc === 'string') {
+    const latMatch = desc.match(/Lat:\s*([-\d.]+)/i);
+    const lngMatch = desc.match(/Lng:\s*([-\d.]+)/i);
+    if (latMatch && lngMatch) {
+      const pLat = parseFloat(latMatch[1]);
+      const pLng = parseFloat(lngMatch[1]);
+      if (Number.isFinite(pLat) && Number.isFinite(pLng)) {
+        return [pLng, pLat];
+      }
+    }
+  }
+
+  return null;
+}
+
 function formatRemittanceCountdown(ms: number) {
   const safe = Math.max(Number(ms || 0), 0);
   const hours = Math.floor(safe / 3600000);
@@ -134,10 +163,10 @@ export default function DriverHomeScreen() {
   const { currentLocation, hasLocationPermission, requestLocationPermission } = useLocation();
   const { theme, mode, toggleTheme } = useTheme();
   const { unreadCount, resetUnreadCount, incrementUnreadCount } = useNotificationBadge();
-  
+
   // Auto-check for updates on app startup
   useAutoUpdateCheck(true);
-  
+
   const [refreshing, setRefreshing] = useState(false);
   const [isOnline, setIsOnline] = useState(false);
   const [driverData, setDriverData] = useState<DriverData | null>(null);
@@ -168,15 +197,15 @@ export default function DriverHomeScreen() {
 
   const startDriverHomeTour = useCallback(() => {
     startTour(DRIVER_HOME_TOUR_STEPS, () => {
-      AsyncStorage.setItem(getTourStorageKey('driver'), 'true').catch(() => {});
+      AsyncStorage.setItem(getTourStorageKey('driver'), 'true').catch(() => { });
     });
   }, [startTour]);
-  
+
   // Refs to prevent state updates on unmounted component
   const isMountedRef = useRef(true);
   const isLoadingRef = useRef(false);
   const lastLoadedAtRef = useRef<number>(0);
-  
+
   // Animations
   const onlineAnim = useRef(new Animated.Value(0)).current;
 
@@ -195,7 +224,7 @@ export default function DriverHomeScreen() {
         startDriverHomeTour();
       }
     };
-    if (!loading) maybeShowTour().catch(() => {});
+    if (!loading) maybeShowTour().catch(() => { });
   }, [loading, startDriverHomeTour]);
 
   // Clean up on unmount
@@ -284,14 +313,14 @@ export default function DriverHomeScreen() {
 
   const loadDashboard = async () => {
     if (!isMountedRef.current || isLoadingRef.current) return;
-    
+
     try {
       isLoadingRef.current = true;
       lastLoadedAtRef.current = Date.now();
       const cached = await cacheService.get<any>('driver_home_dashboard');
-      
+
       if (!isMountedRef.current) return;
-      
+
       if (cached) {
         console.log('[DRIVER-HOME] Using cached dashboard data');
         setDriverData(cached.driverData || null);
@@ -384,44 +413,42 @@ export default function DriverHomeScreen() {
       }
 
       // Save Phase 1 data to cache immediately (background phases will update state, re-reading from state on next open)
-      cacheService.set('driver_home_dashboard', {
-        driverData: nextDriverData,
-        isOnline: nextIsOnline,
-        activeRides: nextActiveRides,
-        activeRidesCount: nextActiveRidesCount,
-        availableRides: [],
-        recentRides: [],
-        settlementBlocked: false,
-        settlementOutstanding: 0,
-        todayRemittanceDue: 0,
-        remittanceDueAt: null,
-        driverStats: { completedTrips: 0, averageRating: 0 },
-        todayEarnings: 0,
-      }, 5 * 60).catch(() => undefined);
-
+      // Save Phase 1 data to cache immediately (preserve current settlement & stats state)
+      cacheService.get<any>('driver_home_dashboard').then((prevCached) => {
+        cacheService.set('driver_home_dashboard', {
+          driverData: nextDriverData,
+          isOnline: nextIsOnline,
+          activeRides: nextActiveRides,
+          activeRidesCount: nextActiveRidesCount,
+          availableRides: prevCached?.availableRides || [],
+          recentRides: prevCached?.recentRides || [],
+          settlementBlocked: prevCached?.settlementBlocked ?? false,
+          settlementOutstanding: prevCached?.settlementOutstanding ?? 0,
+          todayRemittanceDue: prevCached?.todayRemittanceDue ?? 0,
+          remittanceDueAt: prevCached?.remittanceDueAt ?? null,
+          driverStats: prevCached?.driverStats || { completedTrips: 0, averageRating: 0 },
+          todayEarnings: prevCached?.todayEarnings ?? 0,
+        }, 5 * 60).catch(() => undefined);
+      }).catch(() => undefined);
       // Phase 2: Load remaining data in background
       console.log('[DRIVER-HOME] Loading background data (available rides, history, settlement, earnings)...');
 
-      // Load available rides using Supabase
+      // Load available rides using Supabase (location optional - no PostGIS filter)
       setLoadingAvailableRides(true);
-      if (currentLocation?.latitude && currentLocation?.longitude) {
-        supabaseService.getAvailableRides(currentLocation.latitude, currentLocation.longitude, 10)
-          .then((available) => {
-            if (isMountedRef.current) {
-              const nextAvailableRides = available?.slice(0, 3) || [];
-              setAvailableRides(nextAvailableRides);
-              console.log('[DRIVER-HOME] Available rides loaded');
-            }
-          })
-          .catch((err) => {
-            console.warn('[DRIVER-HOME] getAvailableRides failed:', err?.message || err);
-          })
-          .finally(() => {
-            if (isMountedRef.current) setLoadingAvailableRides(false);
-          });
-      } else {
-        setLoadingAvailableRides(false);
-      }
+      supabaseService.getAvailableRides(currentLocation?.latitude ?? 0, currentLocation?.longitude ?? 0, 10)
+        .then((available) => {
+          if (isMountedRef.current) {
+            const nextAvailableRides = available?.slice(0, 3) || [];
+            setAvailableRides(nextAvailableRides);
+            console.log('[DRIVER-HOME] Available rides loaded');
+          }
+        })
+        .catch((err) => {
+          console.warn('[DRIVER-HOME] getAvailableRides failed:', err?.message || err);
+        })
+        .finally(() => {
+          if (isMountedRef.current) setLoadingAvailableRides(false);
+        });
 
       // Load recent ride history using Supabase
       setLoadingRecentRides(true);
@@ -444,52 +471,53 @@ export default function DriverHomeScreen() {
         setLoadingRecentRides(false);
       }
 
-      // Load settlement data (keep using API - has business logic)
+      // Load settlement data - direct Supabase (bypasses slow server API route)
       setLoadingSettlement(true);
-      Promise.all([
-        apiService.getDriverSettlementStatus().catch((err) => {
-          console.warn('[DRIVER-HOME] getDriverSettlementStatus failed:', err?.message || err);
-          return { blocked: false, totalOutstanding: 0 };
-        }),
-        apiService.getDriverDailySettlement().catch((err) => {
-          console.warn('[DRIVER-HOME] getDriverDailySettlement failed:', err?.message || err);
-          return { total_ride_earnings: 0 };
-        }),
-      ])
-        .then(([settlement, dailyEarnings]) => {
-          if (isMountedRef.current) {
-            const nextTodayEarnings = Number(dailyEarnings?.settlement?.totalDriverEarnings || dailyEarnings?.totals?.netDriverEarnings || 0);
-            const nextOverdueTotal = getRemittanceOverdueTotal(settlement);
-            const nextTodayRemittanceDue = Number(
-              settlement?.todayRemittance?.totalDue ||
-              settlement?.totalTodayDue ||
-              settlement?.remittanceSummary?.todayTotal ||
-              dailyEarnings?.totals?.unremittedPlatformFee ||
-              dailyEarnings?.settlement?.outstandingPlatformFees ||
-              0
-            );
-            const nextGrandTotal = getRemittanceGrandTotal(settlement, nextOverdueTotal + nextTodayRemittanceDue);
-            const nextRemittanceDueAt = (
-              settlement?.todayRemittance?.dueAt ||
-              dailyEarnings?.due?.dueAt ||
-              null
-            );
+      // Load settlement data - direct Supabase (bypasses slow server API route)
+      setLoadingSettlement(true);
+      if (actualDriverId) {
+        supabaseService.getDriverSettlementSummary(actualDriverId)
+          .then((summary) => {
+            if (isMountedRef.current) {
+              const nextTodayEarnings = Number(summary.todaySettlement?.total_driver_earnings || 0);
+              const nextTodayRemittanceDue = Number(summary.todayTotal || 0);
+              const nextOverdueTotal = Number(summary.overdueTotal || 0);
+              const nextGrandTotal = Number(summary.grandTotal || (nextOverdueTotal + nextTodayRemittanceDue));
+              const nextRemittanceDueAt = summary.todayRemittance?.dueAt || null;
+              const isBlocked = !!summary.blocked || nextOverdueTotal > 0;
 
-            setTodayEarnings(nextTodayEarnings);
-            setSettlementBlocked(!!settlement?.blocked);
-            setSettlementOutstanding(nextGrandTotal);
-            setTodayRemittanceDue(nextTodayRemittanceDue);
-            setRemittanceDueAt(nextRemittanceDueAt);
-            console.log('[DRIVER-HOME] Settlement data loaded');
-          }
-        })
-        .catch((err) => {
-          console.warn('[DRIVER-HOME] Settlement data failed:', err?.message || err);
-        })
-        .finally(() => {
-          if (isMountedRef.current) setLoadingSettlement(false);
-        });
+              if (nextTodayEarnings > 0) setTodayEarnings(nextTodayEarnings);
+              setSettlementBlocked(isBlocked);
+              // Overdue lock must only show the overdue amount, matching the Wallet screen!
+              setSettlementOutstanding(isBlocked ? nextOverdueTotal : nextGrandTotal);
+              setTodayRemittanceDue(nextTodayRemittanceDue);
+              setRemittanceDueAt(nextRemittanceDueAt);
+              console.log("[DRIVER-HOME] Settlement data loaded:", { overdueTotal: nextOverdueTotal, nextTodayRemittanceDue, nextGrandTotal, isBlocked });
 
+              // Persist accurate settlement values to dashboard cache
+              cacheService.get<any>("driver_home_dashboard").then((cachedDash) => {
+                if (cachedDash) {
+                  cacheService.set("driver_home_dashboard", {
+                    ...cachedDash,
+                    settlementBlocked: isBlocked,
+                    settlementOutstanding: isBlocked ? nextOverdueTotal : nextGrandTotal,
+                    todayRemittanceDue: nextTodayRemittanceDue,
+                    remittanceDueAt: nextRemittanceDueAt,
+                    ...(nextTodayEarnings > 0 ? { todayEarnings: nextTodayEarnings } : {}),
+                  }, 5 * 60).catch(() => undefined);
+                }
+              }).catch(() => undefined);
+            }
+          })
+          .catch((err) => {
+            console.warn('[DRIVER-HOME] Settlement data failed:', err?.message || err);
+          })
+          .finally(() => {
+            if (isMountedRef.current) setLoadingSettlement(false);
+          });
+      } else {
+        setLoadingSettlement(false);
+      }
       // Load earnings stats using Supabase
       setLoadingEarnings(true);
       if (actualDriverId) {
@@ -672,35 +700,37 @@ export default function DriverHomeScreen() {
         {/* Status Toggle Card */}
         <TourTarget id="driver-online-toggle">
           <View style={[styles.statusCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-             <View style={styles.statusInfo}>
-                <Text style={[styles.statusLabel, { color: theme.colors.textSecondary }]}>Current Status</Text>
-                <Animated.Text style={[styles.statusValue, { color: statusColor }]}>
-                  {isOnline ? 'Online - Receiving Requests' : 'Offline'}
-                </Animated.Text>
-                {loadingSettlement ? (
-                  <ActivityIndicator size="small" color={BRAND.primary} />
-                ) : settlementBlocked ? (
-                  <Text style={[styles.statusNote, { color: '#EF4444' }]}>
-                    Overdue remittance lock: {formatCurrency(settlementOutstanding || 0)}
-                  </Text>
-                ) : todayRemittanceDue > 0 ? (
-                  <Text style={[styles.statusNote, { color: BRAND.primary }]}>
-                    Remittance due in {formatRemittanceCountdown(remittanceCountdownMs)} - {formatCurrency(todayRemittanceDue)}
-                  </Text>
-                ) : (
-                  <Text style={[styles.statusNote, { color: theme.colors.textSecondary }]}>
-                    No remittance due right now
-                  </Text>
-                )}
-             </View>
-             <Switch
-                value={isOnline}
-                onValueChange={handleOnlineToggle}
-                    trackColor={{ false: theme.colors.border, true: '#10B981' }}
-                    thumbColor="#FFF"
-                 />
-              </View>
-            </TourTarget>
+            <View style={styles.statusInfo}>
+              <Text style={[styles.statusLabel, { color: theme.colors.textSecondary }]}>Current Status</Text>
+              <Animated.Text style={[styles.statusValue, { color: statusColor }]}>
+                {isOnline ? 'Online - Receiving Requests' : 'Offline'}
+              </Animated.Text>
+              {loadingSettlement ? (
+                <ActivityIndicator size="small" color={BRAND.primary} />
+              ) : settlementBlocked || settlementOutstanding > 0 ? (
+                <Text style={[styles.statusNote, { color: settlementBlocked ? "#EF4444" : BRAND.primary }]}>
+                  {settlementBlocked ? "Overdue remittance lock: " : "Remittance outstanding: "}
+                  {formatCurrency(settlementOutstanding || todayRemittanceDue || 0)}
+                  {todayRemittanceDue > 0 && !settlementBlocked ? ` (Today: ${formatCurrency(todayRemittanceDue)} due in ${formatRemittanceCountdown(remittanceCountdownMs)})` : ""}
+                </Text>
+              ) : todayRemittanceDue > 0 ? (
+                <Text style={[styles.statusNote, { color: BRAND.primary }]}>
+                  Remittance due in {formatRemittanceCountdown(remittanceCountdownMs)} - {formatCurrency(todayRemittanceDue)}
+                </Text>
+              ) : (
+                <Text style={[styles.statusNote, { color: theme.colors.textSecondary }]}>
+                  No remittance due right now
+                </Text>
+              )}
+            </View>
+            <Switch
+              value={isOnline}
+              onValueChange={handleOnlineToggle}
+              trackColor={{ false: theme.colors.border, true: '#10B981' }}
+              thumbColor="#FFF"
+            />
+          </View>
+        </TourTarget>
       </LinearGradient>
 
       {loading && !driverData ? (
@@ -713,135 +743,134 @@ export default function DriverHomeScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={BRAND.primary} />}
           showsVerticalScrollIndicator={false}
         >
-          <HomePromoCarousel slides={promoSlides} />
 
           {/* Stats Grid */}
           <View style={styles.statsContainer}>
-             <TourTarget id="driver-earnings" style={{ flex: 1 }}>
-               <StatCard 
-                 label="Today's Earnings" 
-                 value={formatCurrency(todayEarnings || 0)} 
-                 icon="wallet-outline" 
-                 color={BRAND.primary}
-                 theme={theme}
-                 isLight={isLight}
-                 onPress={() => router.push('/driver/earnings')}
-               />
-             </TourTarget>
-             <StatCard
-               label="Completed Trips"
-               value={loadingEarnings ? '...' : driverStats.completedTrips.toString()}
-               icon="check-circle-outline"
-               color="#10B981"
-               theme={theme}
-               isLight={isLight}
-               onPress={() => router.push('/driver/rides')}
-             />
+            <TourTarget id="driver-earnings" style={{ flex: 1 }}>
+              <StatCard
+                label="Today's Earnings"
+                value={formatCurrency(todayEarnings || 0)}
+                icon="wallet-outline"
+                color={BRAND.primary}
+                theme={theme}
+                isLight={isLight}
+                onPress={() => router.push('/driver/earnings')}
+              />
+            </TourTarget>
+            <StatCard
+              label="Completed Trips"
+              value={loadingEarnings ? '...' : driverStats.completedTrips.toString()}
+              icon="check-circle-outline"
+              color="#10B981"
+              theme={theme}
+              isLight={isLight}
+              onPress={() => router.push('/driver/rides')}
+            />
           </View>
-          
+
           <View style={[styles.statsContainer, { marginTop: 12 }]}>
-             <StatCard 
-               label="Active Rides" 
-               value={activeRidesCount.toString()} 
-               icon="rickshaw" 
-               color="#3B82F6"
-               theme={theme}
-               isLight={isLight}
-               onPress={() => router.push('/driver/rides')}
-             />
-             <StatCard
-               label="Rating"
-               value={loadingEarnings ? '...' : (driverStats.averageRating || 0).toFixed(1)} 
-               icon="star" 
-               color="#F59E0B"
-               theme={theme}
-               isLight={isLight}
-               onPress={() => router.push('/driver/profile')}
-             />
+            <StatCard
+              label="Active Rides"
+              value={activeRidesCount.toString()}
+              icon="rickshaw"
+              color="#3B82F6"
+              theme={theme}
+              isLight={isLight}
+              onPress={() => router.push('/driver/rides')}
+            />
+            <StatCard
+              label="Rating"
+              value={loadingEarnings ? '...' : (driverStats.averageRating || 0).toFixed(1)}
+              icon="star"
+              color="#F59E0B"
+              theme={theme}
+              isLight={isLight}
+              onPress={() => router.push('/driver/profile')}
+            />
           </View>
 
           {/* Map Preview */}
           <View style={[styles.mapSection, { borderColor: theme.colors.border }]}>
-             <MapboxMap
-                style={StyleSheet.absoluteFill}
-                latitude={currentLocation?.latitude || 6.5244}
-                longitude={currentLocation?.longitude || 3.3792}
-                zoom={13}
-                mapStyle={isLight ? 'light' : 'dark'}
-                showUserLocation
-                showCompass
-                showScaleBar
-                autoCenter={false}
-                fitCoordinates={mapFocusCoordinates}
-                onTouchStart={() => setScrollEnabled(false)}
-                onTouchEnd={() => setScrollEnabled(true)}
-              >
-                {mapRides.flatMap((ride) => {
-                  const markers = [];
-                  const pickupLng = parseFloat(String(
-                    ride.pickup_longitude ?? ride.pickup_location?.longitude ?? ride.pickup_location?.lng
-                  ));
-                  const pickupLat = parseFloat(String(
-                    ride.pickup_latitude ?? ride.pickup_location?.latitude ?? ride.pickup_location?.lat
-                  ));
-                  const dropoffLng = parseFloat(String(
-                    ride.dropoff_longitude ?? ride.dropoff_location?.longitude ?? ride.dropoff_location?.lng
-                  ));
-                  const dropoffLat = parseFloat(String(
-                    ride.dropoff_latitude ?? ride.dropoff_location?.latitude ?? ride.dropoff_location?.lat
-                  ));
+            <MapboxMap
+              style={StyleSheet.absoluteFill}
+              latitude={currentLocation?.latitude || 6.5244}
+              longitude={currentLocation?.longitude || 3.3792}
+              zoom={13}
+              mapStyle={isLight ? 'light' : 'dark'}
+              showUserLocation
+              showCompass
+              showScaleBar
+              autoCenter={false}
+              fitCoordinates={mapFocusCoordinates}
+              onTouchStart={() => setScrollEnabled(false)}
+              onTouchEnd={() => setScrollEnabled(true)}
+            >
+              {mapRides.flatMap((ride) => {
+                const markers = [];
+                const pickupLng = parseFloat(String(
+                  ride.pickup_longitude ?? ride.pickup_location?.longitude ?? ride.pickup_location?.lng
+                ));
+                const pickupLat = parseFloat(String(
+                  ride.pickup_latitude ?? ride.pickup_location?.latitude ?? ride.pickup_location?.lat
+                ));
+                const dropoffLng = parseFloat(String(
+                  ride.dropoff_longitude ?? ride.dropoff_location?.longitude ?? ride.dropoff_location?.lng
+                ));
+                const dropoffLat = parseFloat(String(
+                  ride.dropoff_latitude ?? ride.dropoff_location?.latitude ?? ride.dropoff_location?.lat
+                ));
 
-                  if (Number.isFinite(pickupLat) && Number.isFinite(pickupLng)) {
-                    markers.push(
-                      <MapboxMarker
-                        key={`pickup-${ride.id}`}
-                        id={`pickup-${ride.id}`}
-                        coordinate={[pickupLng, pickupLat]}
-                        title={activeRides.length > 0 ? 'Active Pickup' : 'Pickup'}
-                        description={ride.pickup_zone || 'Pickup Location'}
-                        color="#2563EB"
-                      />
-                    );
-                  }
-                  if (Number.isFinite(dropoffLat) && Number.isFinite(dropoffLng)) {
-                    markers.push(
-                      <MapboxMarker
-                        key={`dropoff-${ride.id}`}
-                        id={`dropoff-${ride.id}`}
-                        coordinate={[dropoffLng, dropoffLat]}
-                        title={activeRides.length > 0 ? 'Active Dropoff' : 'Dropoff'}
-                        description={ride.destination_zone || 'Dropoff Location'}
-                        color="#10B981"
-                      />
-                    );
-                  }
-                  return markers;
-                })}
-              </MapboxMap>
-              {/* CTA Carousel moved below mapSection */}
-              {(mapRides.length > 0 || loadingRecentRides) && (
-                <View style={[styles.mapInfo, { backgroundColor: theme.colors.surface }]}>
-                  {loadingRecentRides ? (
-                    <ActivityIndicator size="small" color={BRAND.primary} />
-                  ) : (
-                    <Text numberOfLines={1} style={[styles.mapInfoText, { color: theme.colors.textPrimary }]}>
-                      {activeRides.length > 0
-                        ? `Showing ${activeRides.length} active ride${activeRides.length > 1 ? 's' : ''}`
-                        : `Showing ${mapRides.length} recent ride${mapRides.length > 1 ? 's' : ''}`}
-                    </Text>
-                  )}
-                </View>
-              )}
-              <View style={[styles.mapOverlay, { backgroundColor: theme.colors.surface }]}>
-                <View style={styles.dot} />
-                <Text style={[styles.locationText, { color: theme.colors.textPrimary }]}>
-                   {currentLocation ? 'You are here' : 'Locating...'}
-                </Text>
+                if (Number.isFinite(pickupLat) && Number.isFinite(pickupLng)) {
+                  markers.push(
+                    <MapboxMarker
+                      key={`pickup-${ride.id}`}
+                      id={`pickup-${ride.id}`}
+                      coordinate={[pickupLng, pickupLat]}
+                      title={activeRides.length > 0 ? 'Active Pickup' : 'Pickup'}
+                      description={ride.pickup_zone || 'Pickup Location'}
+                      color="#2563EB"
+                    />
+                  );
+                }
+                if (Number.isFinite(dropoffLat) && Number.isFinite(dropoffLng)) {
+                  markers.push(
+                    <MapboxMarker
+                      key={`dropoff-${ride.id}`}
+                      id={`dropoff-${ride.id}`}
+                      coordinate={[dropoffLng, dropoffLat]}
+                      title={activeRides.length > 0 ? 'Active Dropoff' : 'Dropoff'}
+                      description={ride.destination_zone || 'Dropoff Location'}
+                      color="#10B981"
+                    />
+                  );
+                }
+                return markers;
+              })}
+            </MapboxMap>
+            {/* CTA Carousel moved below mapSection */}
+            {(mapRides.length > 0 || loadingRecentRides) && (
+              <View style={[styles.mapInfo, { backgroundColor: theme.colors.surface }]}>
+                {loadingRecentRides ? (
+                  <ActivityIndicator size="small" color={BRAND.primary} />
+                ) : (
+                  <Text numberOfLines={1} style={[styles.mapInfoText, { color: theme.colors.textPrimary }]}>
+                    {activeRides.length > 0
+                      ? `Showing ${activeRides.length} active ride${activeRides.length > 1 ? 's' : ''}`
+                      : `Showing ${mapRides.length} recent ride${mapRides.length > 1 ? 's' : ''}`}
+                  </Text>
+                )}
               </View>
+            )}
+            <View style={[styles.mapOverlay, { backgroundColor: theme.colors.surface }]}>
+              <View style={styles.dot} />
+              <Text style={[styles.locationText, { color: theme.colors.textPrimary }]}>
+                {currentLocation ? 'You are here' : 'Locating...'}
+              </Text>
+            </View>
           </View>
 
           {/* CTA Carousel (driver-only cards) - placed under map and above recent/available rides */}
-          <View style={[styles.paddingH, { marginTop: 16 }]}> 
+          <View style={[styles.paddingH, { marginTop: 16 }]}>
             <CtaCarousel
               items={[
                 {
@@ -869,6 +898,7 @@ export default function DriverHomeScreen() {
               ]}
             />
           </View>
+          <HomePromoCarousel slides={promoSlides} />
 
           {isOnline && availableRides.length > 0 ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.ridesScroll}>
@@ -878,16 +908,16 @@ export default function DriverHomeScreen() {
                   style={[styles.rideCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
                   onPress={() => router.push('/driver/rides')}
                 >
-                   <View style={styles.rideHeader}>
-                     <View style={styles.rideBadge}><Text style={styles.rideBadgeText}>NEW</Text></View>
-                     <Text style={[styles.rideFare, { color: BRAND.primary }]}>₦{ride.driver_earnings?.toLocaleString()}</Text>
-                   </View>
-                   <Text numberOfLines={1} style={[styles.rideLoc, { color: theme.colors.textPrimary }]}>{ride.pickup_zone}</Text>
-                   <Text style={[styles.rideArrow, { color: theme.colors.textSecondary }]}>↓</Text>
-                   <Text numberOfLines={1} style={[styles.rideLoc, { color: theme.colors.textPrimary }]}>{ride.destination_zone}</Text>
-                   <View style={styles.rideMeta}>
-                      <Text style={[styles.metaText, { color: theme.colors.textSecondary }]}>{ride.distance_km?.toFixed(1)} km</Text>
-                   </View>
+                  <View style={styles.rideHeader}>
+                    <View style={styles.rideBadge}><Text style={styles.rideBadgeText}>NEW</Text></View>
+                    <Text style={[styles.rideFare, { color: BRAND.primary }]}>₦{ride.driver_earnings?.toLocaleString()}</Text>
+                  </View>
+                  <Text numberOfLines={1} style={[styles.rideLoc, { color: theme.colors.textPrimary }]}>{ride.pickup_zone}</Text>
+                  <Text style={[styles.rideArrow, { color: theme.colors.textSecondary }]}>↓</Text>
+                  <Text numberOfLines={1} style={[styles.rideLoc, { color: theme.colors.textPrimary }]}>{ride.destination_zone}</Text>
+                  <View style={styles.rideMeta}>
+                    <Text style={[styles.metaText, { color: theme.colors.textSecondary }]}>{ride.distance_km?.toFixed(1)} km</Text>
+                  </View>
                 </TouchableOpacity>
               ))}
               {loadingAvailableRides && (
@@ -902,12 +932,12 @@ export default function DriverHomeScreen() {
               <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>Loading rides...</Text>
             </View>
           ) : (
-             <View style={[styles.emptyState, { borderColor: theme.colors.border, borderStyle: 'dashed' }]}>
-               <MaterialCommunityIcons name={isOnline ? "rickshaw" : "power-sleep"} size={32} color={theme.colors.textTertiary} />
-               <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
-                 {isOnline ? 'Searching for nearby rides...' : 'Go online to see requests'}
-               </Text>
-             </View>
+            <View style={[styles.emptyState, { borderColor: theme.colors.border, borderStyle: 'dashed' }]}>
+              <MaterialCommunityIcons name={isOnline ? "rickshaw" : "power-sleep"} size={32} color={theme.colors.textTertiary} />
+              <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
+                {isOnline ? 'Searching for nearby rides...' : 'Go online to see requests'}
+              </Text>
+            </View>
           )}
 
         </ScrollView>
@@ -938,7 +968,7 @@ export default function DriverHomeScreen() {
                 <Text style={styles.permissionButtonText}>Enable</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => Linking.openSettings().catch(() => {})}
+                onPress={() => Linking.openSettings().catch(() => { })}
                 style={[styles.permissionButton, { backgroundColor: theme.colors.inputBackground, borderColor: theme.colors.border, borderWidth: 1 }]}
               >
                 <Text style={[styles.permissionButtonText, { color: theme.colors.textPrimary }]}>Open Settings</Text>

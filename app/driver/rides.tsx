@@ -1,4 +1,4 @@
-﻿
+
 import React, { useMemo, useState, useEffect } from 'react';
 import {
   View,
@@ -121,25 +121,24 @@ export default function RidesListScreen() {
       if (showLoader) setLoading(true);
       let data;
       
-      if (activeTab === 'active') {
-        // Keep using API for active rides (may have business logic)
-        const response = (await apiService.getActiveRides()) as any;
-        data = response?.rides || [];
-      } else if (activeTab === 'available') {
+      if (activeTab === "active") {
+        // Use Supabase directly for fast load without server roundtrip
+        if (driverId) {
+          data = await supabaseService.getDriverActiveRides(driverId);
+        } else {
+          const response = (await apiService.getActiveRides().catch(() => ({ rides: [] }))) as any;
+          data = response?.rides || [];
+        }
+      } else if (activeTab === "available") {
         // Don't fetch available rides if driver is offline
         if (resolvedStatus !== 'online') {
           setRides([]);
           return;
         }
-        // Use Supabase directly for faster loading
-        if (!currentLocation?.latitude || !currentLocation?.longitude) {
-          console.warn('[DRIVER_RIDES] No location available for available rides');
-          setRides([]);
-          return;
-        }
+        // Use Supabase directly for faster loading (location optional - no PostGIS filter needed)
         data = await supabaseService.getAvailableRides(
-          currentLocation.latitude,
-          currentLocation.longitude,
+          currentLocation?.latitude ?? 0,
+          currentLocation?.longitude ?? 0,
           10
         );
       } else {
@@ -218,6 +217,20 @@ export default function RidesListScreen() {
       setShowAcceptedModal(true);
       await fetchRides(false, `driver_rides_${activeTab}`);
     } catch (error: any) {
+      const isAlreadyAccepted = String(error?.message || '').toLowerCase().includes('no longer available') ||
+                                String(error?.message || '').toLowerCase().includes('already accepted');
+      if (isAlreadyAccepted && driverId) {
+        try {
+          const active = await supabaseService.getDriverActiveRides(driverId);
+          const found = (active || []).find((r: any) => r.id === ride.id);
+          if (found) {
+            setAcceptedRideId(ride.id);
+            setShowAcceptedModal(true);
+            await fetchRides(false, `driver_rides_${activeTab}`);
+            return;
+          }
+        } catch {}
+      }
       showError('Could not accept ride', error?.message || 'This ride may already have been accepted by another driver.');
     } finally {
       setAcceptingRideId(null);
@@ -290,7 +303,7 @@ export default function RidesListScreen() {
               <Text style={[styles.metaValue, { color: theme.colors.textPrimary }]}>{item.distance_km?.toFixed(1) || '-'} km</Text>
            </View>
            <View style={styles.metaItem}>
-              <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Est. Time</Text>
+              <Text style={[styles.metaValue, { color: theme.colors.textPrimary }]}>{item.duration_minutes || (item.distance_km ? Math.max(1, Math.round(Number(item.distance_km) * 2.5)) : '-')} min</Text>
               <Text style={[styles.metaValue, { color: theme.colors.textPrimary }]}>{item.duration_minutes || '-'} min</Text>
            </View>
         </View>

@@ -177,7 +177,7 @@ export default function WalletScreen() {
       console.log('🔗 [DEEP_LINK] Handling deep link:', url);
       const route = url.replace(/.*?:\/\//g, '');
       const routeParts = route.split('?')[0].split('/');
-      
+
       if (routeParts[0] === 'payment-callback') {
         const reference = routeParts[1];
         if (reference) {
@@ -189,7 +189,7 @@ export default function WalletScreen() {
     };
 
     const subscription = Linking.addEventListener('url', handleDeepLink);
-    
+
     // Check if app was opened from deep link
     Linking.getInitialURL().then((url) => {
       if (url != null) {
@@ -299,7 +299,7 @@ export default function WalletScreen() {
         walletData: { balance },
         transactions: nextTransactions,
       });
-    } catch (error) { console.error(error); } 
+    } catch (error) { console.error(error); }
     finally { if (showLoader) setLoading(false); }
   };
 
@@ -448,7 +448,7 @@ export default function WalletScreen() {
         settlementStatus?.totalDueNow ??
         (Number(settlementStatus?.totalOutstanding || 0) + Number(settlementStatus?.todayRemittance?.totalDue || 0))
       );
-      
+
       if (totalOutstanding <= 0) {
         Alert.alert('No Remittance Due', 'All settlement fees have been paid.');
         return;
@@ -462,13 +462,13 @@ export default function WalletScreen() {
       });
       const authUrl = data?.authUrl;
       const reference = data?.reference;
-      
+
       if (!authUrl) {
         throw new Error('Payment link not available');
       }
 
       setSettlementReference(reference || null);
-      
+
       // Store reference for verification when app reopens
       if (reference) {
         await cacheService.set('paystack_pending_reference', reference);
@@ -559,14 +559,14 @@ export default function WalletScreen() {
     setRefreshing(false);
   };
 
-  if (loading) return <SafeAreaView style={{flex:1, backgroundColor: theme.colors.background}}><ListScreenSkeleton itemCount={4}/></SafeAreaView>;
+  if (loading) return <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.background }}><ListScreenSkeleton itemCount={4} /></SafeAreaView>;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <StatusBar barStyle={isLight ? 'dark-content' : 'light-content'} />
       <SafeAreaView style={{ flex: 1 }}>
         <View style={styles.header}>
-           <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>Wallet</Text>
+          <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>Wallet</Text>
         </View>
 
         <ScrollView
@@ -620,7 +620,7 @@ export default function WalletScreen() {
 
               {(totalOutstandingDisplay > 0) && ((settlementInfo?.outstandingSettlements?.length) > 0) && (
                 <Text style={[styles.settlementSub, { color: '#FF9101', marginBottom: 10 }]}>
-                  { (settlementInfo?.outstandingSettlements?.length ?? 0) } overdue settlement(s): ₦{Number(settlementInfo?.totalOutstanding ?? 0).toLocaleString('en-US')}
+                  {(settlementInfo?.outstandingSettlements?.length ?? 0)} overdue settlement(s): ₦{Number(settlementInfo?.totalOutstanding ?? 0).toLocaleString('en-US')}
                 </Text>
               )}
 
@@ -663,69 +663,69 @@ export default function WalletScreen() {
               </View>
             </View>
 
-              {/* Older Outstanding Remittances */}
-              {((settlementInfo?.outstandingSettlements?.length) ?? 0) > 0 && (
-                <View style={[styles.paddingH, { marginTop: 12 }]}>
-                  <View style={[styles.settlementCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-                    <View style={styles.settlementHeader}>
-                      <View>
-                        <Text style={[styles.settlementTitle, { color: theme.colors.textPrimary }]}>Outstanding Remittances</Text>
-                        <Text style={[styles.settlementSub, { color: theme.colors.textSecondary }]}>Older unpaid remittances requiring payment</Text>
-                      </View>
-                      <MaterialCommunityIcons name="calendar-clock" size={22} color={BRAND.primary} />
+            {/* Older Outstanding Remittances */}
+            {((settlementInfo?.outstandingSettlements?.length) ?? 0) > 0 && (
+              <View style={[styles.paddingH, { marginTop: 12 }]}>
+                <View style={[styles.settlementCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+                  <View style={styles.settlementHeader}>
+                    <View>
+                      <Text style={[styles.settlementTitle, { color: theme.colors.textPrimary }]}>Outstanding Remittances</Text>
+                      <Text style={[styles.settlementSub, { color: theme.colors.textSecondary }]}>Older unpaid remittances requiring payment</Text>
                     </View>
+                    <MaterialCommunityIcons name="calendar-clock" size={22} color={BRAND.primary} />
+                  </View>
 
-                    <View style={styles.outstandingList}>
-                          {outstandingDetails.length > 0 ? (
-                            outstandingDetails.map(({ settlement, daily }: any) => (
-                              <View key={settlement.id} style={[styles.outstandingItem, { borderBottomColor: theme.colors.border }]}>
-                                <View style={{ flex: 1 }}>
-                                  <Text style={[styles.outstandingDate, { color: theme.colors.textPrimary }]}>{formatDisplayDate(settlement.settlement_date)}</Text>
-                                  <Text style={[styles.settlementSub, { color: theme.colors.textSecondary }]}>
-                                    Due: {formatDisplayDate(settlement.payment_due_date)} • {settlement.settlement_status}
-                                  </Text>
-                                  {daily?.rides && daily.rides.length > 0 && (
-                                    <View style={{ marginTop: 8 }}>
-                                      {(() => {
-                                        const isExpanded = !!expandedSettlements[settlement.id];
-                                        const visible = isExpanded ? daily.rides : daily.rides.slice(0, 5);
-                                        return (
-                                          <>
-                                            {visible.map((r: any) => (
-                                              <View key={r.id} style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                                                <Text style={{ color: theme.colors.textSecondary, fontSize: 12 }}>{(r.pickup_zone || 'Pickup')} → {(r.destination_zone || 'Destination')}</Text>
-                                                <Text style={{ color: '#FF9101', fontSize: 12 }}>₦{Number(r.platform_fee || 0).toLocaleString('en-US')}</Text>
-                                              </View>
-                                            ))}
-                                            {daily.rides.length > 5 && (
-                                              <TouchableOpacity onPress={() => setExpandedSettlements(prev => ({ ...prev, [settlement.id]: !prev[settlement.id] }))}>
-                                                <Text style={{ color: BRAND.primary, fontSize: 12, marginTop: 6 }}>{isExpanded ? 'Show less' : `Show ${daily.rides.length - 5} more`}</Text>
-                                              </TouchableOpacity>
-                                            )}
-                                          </>
-                                        )
-                                      })()}
-                                    </View>
-                                  )}
-                                </View>
-                                <Text style={[styles.outstandingAmount, { color: '#FF9101' }]}>₦{Number(settlement.total_platform_fees || 0).toLocaleString('en-US')}</Text>
+                  <View style={styles.outstandingList}>
+                    {outstandingDetails.length > 0 ? (
+                      outstandingDetails.map(({ settlement, daily }: any) => (
+                        <View key={settlement.id} style={[styles.outstandingItem, { borderBottomColor: theme.colors.border }]}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.outstandingDate, { color: theme.colors.textPrimary }]}>{formatDisplayDate(settlement.settlement_date)}</Text>
+                            <Text style={[styles.settlementSub, { color: theme.colors.textSecondary }]}>
+                              Due: {formatDisplayDate(settlement.payment_due_date)} • {settlement.settlement_status}
+                            </Text>
+                            {daily?.rides && daily.rides.length > 0 && (
+                              <View style={{ marginTop: 8 }}>
+                                {(() => {
+                                  const isExpanded = !!expandedSettlements[settlement.id];
+                                  const visible = isExpanded ? daily.rides : daily.rides.slice(0, 5);
+                                  return (
+                                    <>
+                                      {visible.map((r: any) => (
+                                        <View key={r.id} style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                                          <Text style={{ color: theme.colors.textSecondary, fontSize: 12 }}>{(r.pickup_zone || 'Pickup')} → {(r.destination_zone || 'Destination')}</Text>
+                                          <Text style={{ color: '#FF9101', fontSize: 12 }}>₦{Number(r.platform_fee || 0).toLocaleString('en-US')}</Text>
+                                        </View>
+                                      ))}
+                                      {daily.rides.length > 5 && (
+                                        <TouchableOpacity onPress={() => setExpandedSettlements(prev => ({ ...prev, [settlement.id]: !prev[settlement.id] }))}>
+                                          <Text style={{ color: BRAND.primary, fontSize: 12, marginTop: 6 }}>{isExpanded ? 'Show less' : `Show ${daily.rides.length - 5} more`}</Text>
+                                        </TouchableOpacity>
+                                      )}
+                                    </>
+                                  )
+                                })()}
                               </View>
-                            ))
-                          ) : (
-                            settlementInfo.outstandingSettlements.map((s: any) => (
-                              <View key={s.id} style={[styles.outstandingItem, { borderBottomColor: theme.colors.border }]}>
-                                <View style={{ flex: 1 }}>
-                                  <Text style={[styles.outstandingDate, { color: theme.colors.textPrimary }]}>{formatDisplayDate(s.settlement_date)}</Text>
-                                  <Text style={[styles.settlementSub, { color: theme.colors.textSecondary }]}>Due: {formatDisplayDate(s.payment_due_date)} • {s.settlement_status}</Text>
-                                </View>
-                                <Text style={[styles.outstandingAmount, { color: '#FF9101' }]}>₦{Number(s.total_platform_fees || 0).toLocaleString('en-US')}</Text>
-                              </View>
-                            ))
-                          )}
-                    </View>
+                            )}
+                          </View>
+                          <Text style={[styles.outstandingAmount, { color: '#FF9101' }]}>₦{Number(settlement.total_platform_fees || 0).toLocaleString('en-US')}</Text>
+                        </View>
+                      ))
+                    ) : (
+                      settlementInfo.outstandingSettlements.map((s: any) => (
+                        <View key={s.id} style={[styles.outstandingItem, { borderBottomColor: theme.colors.border }]}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.outstandingDate, { color: theme.colors.textPrimary }]}>{formatDisplayDate(s.settlement_date)}</Text>
+                            <Text style={[styles.settlementSub, { color: theme.colors.textSecondary }]}>Due: {formatDisplayDate(s.payment_due_date)} • {s.settlement_status}</Text>
+                          </View>
+                          <Text style={[styles.outstandingAmount, { color: '#FF9101' }]}>₦{Number(s.total_platform_fees || 0).toLocaleString('en-US')}</Text>
+                        </View>
+                      ))
+                    )}
                   </View>
                 </View>
-              )}
+              </View>
+            )}
           </View>
 
           {/* Daily Accepted Rides (Remittance Basis) */}
@@ -797,37 +797,37 @@ export default function WalletScreen() {
                 onPress={() => {
                   Alert.prompt
                     ? Alert.prompt(
-                        'Request Withdrawal',
-                        'Enter amount to withdraw to your registered bank account:',
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          {
-                            text: 'Submit',
-                            onPress: async (amountText?: string) => {
-                              const val = Number(amountText);
-                              if (!val || val <= 0) {
-                                Alert.alert('Invalid Amount', 'Please provide a valid withdrawal amount.');
-                                return;
-                              }
-                              try {
-                                await apiService.requestDriverWithdrawal({
-                                  amount: val,
-                                  bank_name: 'Primary Registered Account',
-                                  account_number: 'N/A',
-                                  account_name: 'Driver Profile',
-                                });
-                                Alert.alert('Request Submitted', 'Your withdrawal request has been sent to admin for approval.');
-                                onRefresh();
-                              } catch (e: any) {
-                                Alert.alert('Request Failed', e.message || 'Could not submit withdrawal request.');
-                              }
-                            },
+                      'Request Withdrawal',
+                      'Enter amount to withdraw to your registered bank account:',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Submit',
+                          onPress: async (amountText?: string) => {
+                            const val = Number(amountText);
+                            if (!val || val <= 0) {
+                              Alert.alert('Invalid Amount', 'Please provide a valid withdrawal amount.');
+                              return;
+                            }
+                            try {
+                              await apiService.requestDriverWithdrawal({
+                                amount: val,
+                                bank_name: 'Primary Registered Account',
+                                account_number: 'N/A',
+                                account_name: 'Driver Profile',
+                              });
+                              Alert.alert('Request Submitted', 'Your withdrawal request has been sent to admin for approval.');
+                              onRefresh();
+                            } catch (e: any) {
+                              Alert.alert('Request Failed', e.message || 'Could not submit withdrawal request.');
+                            }
                           },
-                        ],
-                        'plain-text',
-                        '',
-                        'numeric'
-                      )
+                        },
+                      ],
+                      'plain-text',
+                      '',
+                      'numeric'
+                    )
                     : Alert.alert('Withdrawal', 'Withdrawal requests will be processed to your verified bank account.');
                 }}
                 style={[styles.actionBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
@@ -853,42 +853,42 @@ export default function WalletScreen() {
               onPress={() => router.push('/driver/payment-history')}
               style={[styles.actionBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
             >
-               <View style={[styles.iconBox, { backgroundColor: '#10B98120' }]}>
-                 <MaterialCommunityIcons name="history" size={24} color="#10B981" />
-               </View>
-               <Text style={[styles.actionText, { color: theme.colors.textPrimary }]}>History</Text>
+              <View style={[styles.iconBox, { backgroundColor: '#10B98120' }]}>
+                <MaterialCommunityIcons name="history" size={24} color="#10B981" />
+              </View>
+              <Text style={[styles.actionText, { color: theme.colors.textPrimary }]}>History</Text>
             </TouchableOpacity>
           </View>
 
           {/* Transactions */}
           <View style={[styles.paddingH, { marginTop: 24 }]}>
-             <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Recent Activity</Text>
-             {transactions.length === 0 ? (
-               <View style={styles.emptyState}>
-                 <Text style={{ color: theme.colors.textSecondary }}>No transactions yet.</Text>
-               </View>
-             ) : (
-               transactions.map((tx) => (
-                 <View key={tx.id} style={[styles.txItem, { borderBottomColor: theme.colors.border }]}>
-                   <View style={[styles.txIcon, { backgroundColor: theme.colors.inputBackground }]}>
-                     <MaterialCommunityIcons 
-                        name={tx.transaction_type === 'credit' ? 'arrow-down-left' : 'arrow-up-right'} 
-                        size={20} 
-                        color={tx.transaction_type === 'credit' ? '#834F0C' : '#FF9101'} 
-                     />
-                   </View>
-                   <View style={{ flex: 1 }}>
-                     <Text style={[styles.txTitle, { color: theme.colors.textPrimary }]}>
-                       {tx.source === 'ride' ? (tx.title || 'Ride Earning') : 'Withdrawal'}
-                     </Text>
-                     <Text style={[styles.txDate, { color: theme.colors.textSecondary }]}>{formatDisplayDate(tx.created_at)}</Text>
-                   </View>
-                   <Text style={[styles.txAmount, { color: tx.transaction_type === 'credit' ? '#834F0C' : theme.colors.textPrimary }]}>
-                     {tx.transaction_type === 'credit' ? '+' : '-'}₦{Number(tx.amount ?? 0).toLocaleString('en-US')}
-                   </Text>
-                 </View>
-               ))
-             )}
+            <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Recent Activity</Text>
+            {transactions.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Text style={{ color: theme.colors.textSecondary }}>No transactions yet.</Text>
+              </View>
+            ) : (
+              transactions.map((tx) => (
+                <View key={tx.id} style={[styles.txItem, { borderBottomColor: theme.colors.border }]}>
+                  <View style={[styles.txIcon, { backgroundColor: theme.colors.inputBackground }]}>
+                    <MaterialCommunityIcons
+                      name={tx.transaction_type === 'credit' ? 'arrow-down-left' : 'arrow-up-right'}
+                      size={20}
+                      color={tx.transaction_type === 'credit' ? '#834F0C' : '#FF9101'}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.txTitle, { color: theme.colors.textPrimary }]}>
+                      {tx.source === 'ride' ? (tx.title || 'Ride Earning') : 'Withdrawal'}
+                    </Text>
+                    <Text style={[styles.txDate, { color: theme.colors.textSecondary }]}>{formatDisplayDate(tx.created_at)}</Text>
+                  </View>
+                  <Text style={[styles.txAmount, { color: tx.transaction_type === 'credit' ? '#834F0C' : theme.colors.textPrimary }]}>
+                    {tx.transaction_type === 'credit' ? '+' : '-'}₦{Number(tx.amount ?? 0).toLocaleString('en-US')}
+                  </Text>
+                </View>
+              ))
+            )}
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -904,7 +904,7 @@ export default function WalletScreen() {
         onClose={handlePaystackClose}
       />
 
-        {/* Withdraw removed - feature not offered */}
+      {/* Withdraw removed - feature not offered */}
 
     </View>
   );
@@ -914,7 +914,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { padding: 20 },
   headerTitle: { fontSize: 28, fontWeight: '800' },
-  paddingH: { paddingHorizontal: 20 },
+  paddingH: { paddingHorizontal: 20, marginBottom: 44 },
   cardGradient: { borderRadius: 20, padding: 24, height: 180, justifyContent: 'space-between' },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between' },
   cardLabel: { fontSize: 14, fontWeight: '600', color: '#000', opacity: 0.7 },

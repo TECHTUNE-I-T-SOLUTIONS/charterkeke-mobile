@@ -1,3 +1,4 @@
+import { OtaUpdateNoticeModal } from '@/components/OtaUpdateNoticeModal';
 import React, { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -80,6 +81,7 @@ export default function RootLayout() {
                   <NotificationProvider>
                     <GuidedTourProvider>
                       <RootLayoutContent />
+                      <OtaUpdateNoticeModal />
                     </GuidedTourProvider>
                   </NotificationProvider>
                 </RideProvider>

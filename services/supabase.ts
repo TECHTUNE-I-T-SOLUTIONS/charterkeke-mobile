@@ -318,7 +318,6 @@ class SupabaseService {
       `)
       .in('status', ['pending', 'dispatched'])
       .is('driver_id', null)
-      .gte('pickup_time', new Date(new Date().setHours(0, 0, 0, 0)).toISOString())
       .order('created_at', { ascending: false })
       .limit(20);
 
@@ -343,6 +342,107 @@ class SupabaseService {
     return ridesWithUsers;
   }
 
+  async getDriverSettlementSummary(driverId: string) {
+    // Lagos WAT = UTC+1
+    const LAGOS_OFFSET_MS = 60 * 60 * 1000;
+    const getLagosDateString = (date = new Date()) =>
+      new Date(date.getTime() + LAGOS_OFFSET_MS).toISOString().slice(0, 10);
+    const getLagosDayRange = (dateString: string) => {
+      const start = new Date(new Date(`${dateString}T00:00:00.000Z`).getTime() - LAGOS_OFFSET_MS);
+      const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+      return { start, end };
+    };
+
+    const today = getLagosDateString();
+    const { start: todayStart, end: todayEnd } = getLagosDayRange(today);
+
+    // Run queries in parallel for speed
+    const [todaySettlementResult, overdueResult, todayRidesResult] = await Promise.all([
+      // 1. Today's settlement row
+      this.supabase
+        .from('driver_daily_settlement')
+        .select('id, settlement_date, total_platform_fees, total_driver_earnings, total_rides, settlement_status, payment_due_date, paid_at')
+        .eq('driver_id', driverId)
+        .eq('settlement_date', today)
+        .maybeSingle(),
+
+      // 2. Past overdue settlements (strictly past dates)
+      this.supabase
+        .from('driver_daily_settlement')
+        .select('id, settlement_date, total_platform_fees, total_driver_earnings, settlement_status, payment_due_date')
+        .eq('driver_id', driverId)
+        .in('settlement_status', ['pending', 'overdue'])
+        .lt('settlement_date', today)
+        .order('settlement_date', { ascending: false }),
+
+      // 3. Today's unremitted rides only
+      this.supabase
+        .from('rides')
+        .select('id, platform_fee, fare_amount, driver_earnings')
+        .eq('driver_id', driverId)
+        .eq('remitted', false)
+        .in('status', ['accepted', 'in_progress', 'completed'])
+        .gte('updated_at', todayStart.toISOString())
+        .lt('updated_at', todayEnd.toISOString()),
+    ]);
+
+    const todaySettlement = todaySettlementResult.data;
+    const overdueSettlements = overdueResult.data || [];
+    const todayRides = todayRidesResult.data || [];
+
+    // Overdue total: sum of past unpaid daily settlements (matches backend & wallet screen)
+    const overdueTotal = overdueSettlements.reduce(
+      (sum: number, s: any) => sum + Number(s.total_platform_fees || 0),
+      0
+    );
+
+    // Today's total: computed from today's rides, or fallback to today's settlement row
+    const calculatedTodayTotal = todayRides.reduce(
+      (sum: number, r: any) => sum + Number(r.platform_fee || Number(r.fare_amount || 0) * 0.15),
+      0
+    );
+    const settlementTodayFee = Number(todaySettlement?.total_platform_fees || 0);
+    const todayTotal = calculatedTodayTotal > 0 ? calculatedTodayTotal : (todaySettlement?.settlement_status !== 'paid' ? settlementTodayFee : 0);
+
+    const grandTotal = overdueTotal + todayTotal;
+    const dueAt = todaySettlement?.payment_due_date || todayEnd.toISOString();
+    const msRemaining = Math.max(new Date(dueAt).getTime() - Date.now(), 0);
+
+    const todayEarnings = Number(
+      todaySettlement?.total_driver_earnings ??
+      todayRides.reduce((sum: number, r: any) => sum + Number(r.driver_earnings || (Number(r.fare_amount || 0) * 0.85)), 0)
+    );
+
+    return {
+      blocked: overdueTotal > 0,
+      totalOutstanding: overdueTotal,
+      overdueTotal,
+      todayTotal,
+      grandTotal,
+      totalOverdue: overdueTotal,
+      totalTodayDue: todayTotal,
+      totalDueNow: grandTotal,
+      todayRemittance: {
+        totalDue: todayTotal,
+        ridesDue: todayRides.length,
+        dueAt,
+        millisecondsRemaining: msRemaining,
+        isOverdue: msRemaining <= 0 && todayTotal > 0,
+      },
+      remittanceSummary: {
+        overdueTotal,
+        todayTotal,
+        grandTotal,
+      },
+      todaySettlement: todaySettlement || {
+        total_driver_earnings: todayEarnings,
+        total_platform_fees: todayTotal,
+        settlement_status: todayTotal > 0 ? 'pending' : 'paid',
+      },
+      outstandingSettlements: overdueSettlements,
+    };
+  }
+
   async getDriverRideHistory(driverId: string, page: number = 1, limit: number = 10) {
     const offset = (page - 1) * limit;
     
@@ -356,11 +456,13 @@ class SupabaseService {
         driver_earnings,
         platform_fee,
         distance_km,
+        duration_minutes,
+        pickup_time,
         completed_at,
         created_at,
         status,
         rating,
-        users:rider_id (first_name, last_name)
+        users:rider_id (first_name, last_name, profile_picture_url)
       `)
       .eq('driver_id', driverId)
       .in('status', ['completed', 'accepted', 'in_progress'])
@@ -372,6 +474,7 @@ class SupabaseService {
   }
 
   async getDriverActiveRides(driverId: string) {
+    if (!driverId) return [];
     const { data, error } = await this.supabase
       .from('rides')
       .select(`
@@ -386,6 +489,7 @@ class SupabaseService {
         platform_fee,
         seats_booked,
         distance_km,
+        duration_minutes,
         status,
         pickup_time,
         created_at
@@ -414,63 +518,72 @@ class SupabaseService {
 
     return ridesWithUsers;
   }
-
   async getDriverDetails(userId: string) {
-    const { data, error } = await this.supabase
-      .from('drivers')
-      .select(`
-        id,
-        user_id,
-        first_name,
-        last_name,
-        phone_number,
-        email,
-        profile_picture_url,
-        vehicle_type,
-        plate_number,
-        vehicle_color,
-        average_rating,
-        total_rides_completed,
-        total_earnings,
-        verified,
-        availability_status,
-        manual_availability_off
-      `)
-      .eq('user_id', userId)
-      .single();
-
-    if (error) {
-      // Fallback if manual_availability_off doesn't exist
-      if (error.code === '42703') {
-        const { data: fallbackData, error: fallbackError } = await this.supabase
-          .from('drivers')
-          .select(`
+    try {
+      const { data: driver, error: driverError } = await this.supabase
+        .from("drivers")
+        .select(`
+          *,
+          users:user_id (
             id,
-            user_id,
             first_name,
             last_name,
-            phone_number,
             email,
-            profile_picture_url,
-            vehicle_type,
-            plate_number,
-            vehicle_color,
-            average_rating,
-            total_rides_completed,
-            total_earnings,
-            verified,
-            availability_status
-          `)
-          .eq('user_id', userId)
-          .single();
-        
-        if (fallbackError) throw fallbackError;
-        return { driver: fallbackData };
-      }
-      throw error;
-    }
+            phone_number,
+            profile_picture_url
+          )
+        `)
+        .eq("user_id", userId)
+        .single();
 
-    return { driver: data };
+      if (!driverError && driver) {
+        const u = (driver as any).users || {};
+        return {
+          driver: {
+            ...driver,
+            first_name: u.first_name || "",
+            last_name: u.last_name || "",
+            email: u.email || "",
+            phone_number: u.phone_number || "",
+            profile_picture_url: u.profile_picture_url || "",
+          }
+        };
+      }
+
+      // Fallback: query drivers with basic columns and users separately
+      const { data: rawDriver, error: rawError } = await this.supabase
+        .from("drivers")
+        .select("*")
+        .eq("user_id", userId)
+        .single();
+
+      if (rawError) throw rawError;
+
+      const { data: rawUser } = await this.supabase
+        .from("users")
+        .select("id, first_name, last_name, email, phone_number, profile_picture_url")
+        .eq("id", userId)
+        .single();
+
+      return {
+        driver: {
+          ...rawDriver,
+          first_name: rawUser?.first_name || "",
+          last_name: rawUser?.last_name || "",
+          email: rawUser?.email || "",
+          phone_number: rawUser?.phone_number || "",
+          profile_picture_url: rawUser?.profile_picture_url || "",
+        }
+      };
+    } catch (err) {
+      console.warn("[supabaseService] getDriverDetails error, falling back to basic:", err);
+      const { data: minimal } = await this.supabase
+        .from("drivers")
+        .select("id, user_id, verified, availability_status")
+        .eq("user_id", userId)
+        .maybeSingle();
+      return { driver: minimal || {} };
+    }
   }
 
   async getDriverEarningsStats(driverId: string) {

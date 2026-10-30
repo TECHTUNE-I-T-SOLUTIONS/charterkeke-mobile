@@ -45,19 +45,6 @@ class APIService {
     // Handle network errors and timeouts (status 0)
     if (!error.response || error.response.status === 0) {
       const currentBaseUrl = String(originalRequest?.baseURL || this.api.defaults.baseURL || '').replace(/\/+$/, '');
-      const fallbackBaseUrl = String(API_CONFIG.fallbackUrl || '').replace(/\/+$/, '');
-
-      if (originalRequest && fallbackBaseUrl && fallbackBaseUrl !== currentBaseUrl && !originalRequest._fallbackRetry) {
-        originalRequest._fallbackRetry = true;
-        originalRequest.baseURL = fallbackBaseUrl;
-        console.warn('[API] Primary API host unreachable, retrying with fallback host:', {
-          primary: currentBaseUrl,
-          fallback: fallbackBaseUrl,
-          url: originalRequest.url,
-          code: error.code,
-        });
-        return this.api(originalRequest);
-      }
 
       console.error('[API] Network error or timeout:', {
         message: error.message,
