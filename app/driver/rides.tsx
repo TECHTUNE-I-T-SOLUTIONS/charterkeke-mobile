@@ -1,4 +1,4 @@
-
+﻿
 import React, { useMemo, useState, useEffect } from 'react';
 import {
   View,
@@ -62,6 +62,7 @@ export default function RidesListScreen() {
   const [driverStatus, setDriverStatus] = useState<'online' | 'offline' | 'busy' | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [driverId, setDriverId] = useState<string | null>(null);
+  const [hasActiveRide, setHasActiveRide] = useState(false);
 
   const isLight = theme.mode === 'light';
   const swipeResponder = useMemo(
@@ -125,15 +126,23 @@ export default function RidesListScreen() {
         // Use Supabase directly for fast load without server roundtrip
         if (driverId) {
           data = await supabaseService.getDriverActiveRides(driverId);
+          // Check if driver has any active rides
+          setHasActiveRide(Array.isArray(data) && data.length > 0);
         } else {
           const response = (await apiService.getActiveRides().catch(() => ({ rides: [] }))) as any;
           data = response?.rides || [];
+          setHasActiveRide(Array.isArray(data) && data.length > 0);
         }
       } else if (activeTab === "available") {
         // Don't fetch available rides if driver is offline
         if (resolvedStatus !== 'online') {
           setRides([]);
           return;
+        }
+        // Check if driver has active rides before showing available rides
+        if (driverId) {
+          const activeRides = await supabaseService.getDriverActiveRides(driverId);
+          setHasActiveRide(Array.isArray(activeRides) && activeRides.length > 0);
         }
         // Use Supabase directly for faster loading (location optional - no PostGIS filter needed)
         data = await supabaseService.getAvailableRides(
@@ -215,10 +224,14 @@ export default function RidesListScreen() {
       await apiService.acceptRide(ride.id);
       setAcceptedRideId(ride.id);
       setShowAcceptedModal(true);
+      setHasActiveRide(true); // Update state after accepting
       await fetchRides(false, `driver_rides_${activeTab}`);
     } catch (error: any) {
       const isAlreadyAccepted = String(error?.message || '').toLowerCase().includes('no longer available') ||
                                 String(error?.message || '').toLowerCase().includes('already accepted');
+      const hasActiveRideError = String(error?.message || '').toLowerCase().includes('already have an active ride') ||
+                                 error?.code === 'has_active_ride';
+      
       if (isAlreadyAccepted && driverId) {
         try {
           const active = await supabaseService.getDriverActiveRides(driverId);
@@ -226,11 +239,20 @@ export default function RidesListScreen() {
           if (found) {
             setAcceptedRideId(ride.id);
             setShowAcceptedModal(true);
+            setHasActiveRide(true);
             await fetchRides(false, `driver_rides_${activeTab}`);
             return;
           }
         } catch {}
       }
+      
+      if (hasActiveRideError) {
+        setHasActiveRide(true);
+        showError('Cannot Accept Ride', 'You already have an active ride. Please complete your current ride before accepting a new one.');
+        await fetchRides(false, `driver_rides_${activeTab}`);
+        return;
+      }
+      
       showError('Could not accept ride', error?.message || 'This ride may already have been accepted by another driver.');
     } finally {
       setAcceptingRideId(null);
@@ -252,6 +274,7 @@ export default function RidesListScreen() {
     const fare = item.driver_earnings || item.fare_amount || 0;
     const isAvailable = activeTab === 'available';
     const isAccepting = acceptingRideId === item.id;
+    const canAccept = !hasActiveRide;
 
     return (
       <TouchableOpacity 
@@ -331,20 +354,31 @@ export default function RidesListScreen() {
             <TouchableOpacity disabled={isAccepting} onPress={() => {}} style={[styles.actionBtn, { borderColor: theme.colors.border, opacity: isAccepting ? 0.55 : 1 }]}>
                <Text style={[styles.actionText, { color: theme.colors.textSecondary }]}>Decline</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              disabled={isAccepting}
-              onPress={() => handleAcceptRide(item)}
-              style={[styles.actionBtn, { backgroundColor: BRAND.primary, borderColor: BRAND.primary, opacity: isAccepting ? 0.78 : 1 }]}
-            >
-               {isAccepting ? (
-                 <View style={styles.acceptingRow}>
-                   <ActivityIndicator size="small" color="#000" />
-                   <Text style={[styles.actionText, { color: '#000', fontWeight: '700' }]}>Accepting...</Text>
-                 </View>
-               ) : (
-                 <Text style={[styles.actionText, { color: '#000', fontWeight: '700' }]}>Accept Ride</Text>
-               )}
-            </TouchableOpacity>
+            {canAccept ? (
+              <TouchableOpacity
+                disabled={isAccepting}
+                onPress={() => handleAcceptRide(item)}
+                style={[styles.actionBtn, { backgroundColor: BRAND.primary, borderColor: BRAND.primary, opacity: isAccepting ? 0.78 : 1 }]}
+              >
+                 {isAccepting ? (
+                   <View style={styles.acceptingRow}>
+                     <ActivityIndicator size="small" color="#000" />
+                     <Text style={[styles.actionText, { color: '#000', fontWeight: '700' }]}>Accepting...</Text>
+                   </View>
+                 ) : (
+                   <Text style={[styles.actionText, { color: '#000', fontWeight: '700' }]}>Accept Ride</Text>
+                 )}
+              </TouchableOpacity>
+            ) : (
+              <View style={[styles.actionBtn, { backgroundColor: theme.colors.border, borderColor: theme.colors.border }]}>
+                <View style={styles.cannotAcceptRow}>
+                  <MaterialCommunityIcons name="alert-circle" size={16} color={theme.colors.textSecondary} />
+                  <Text style={[styles.actionText, { color: theme.colors.textSecondary, fontSize: 12 }]}>
+                    Complete current ride first
+                  </Text>
+                </View>
+              </View>
+            )}
           </View>
         )}
 
@@ -477,6 +511,7 @@ const styles = StyleSheet.create({
   actionRow: { flexDirection: 'row', gap: 12, marginTop: 16 },
   actionBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 1, alignItems: 'center' },
   acceptingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  cannotAcceptRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   actionText: { fontSize: 14, fontWeight: '600' },
   emptyState: { alignItems: 'center', padding: 40 },
   emptyText: { marginTop: 12 },
