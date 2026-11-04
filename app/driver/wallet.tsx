@@ -11,8 +11,6 @@ import {
   Modal,
   TextInput,
   Linking,
-  Alert,
-  AppState,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import * as ExpoLinking from 'expo-linking';
@@ -26,7 +24,9 @@ import { cacheService } from '@/services/cache';
 import { STORAGE_KEYS } from '@/utils/constants';
 import { ListScreenSkeleton } from '@/components/ListScreenSkeleton';
 import { PaystackPaymentModal } from '@/components/PaystackPaymentModal';
-import { BRAND, COLORS } from '@/utils/colors';
+import { BRAND } from '@/utils/colors';
+import { useAlert } from '@/context/AlertContext';
+import { recordExperience, reportAppError } from '@/services/experienceReporting';
 
 interface Transaction {
   id: string;
@@ -41,6 +41,7 @@ export default function WalletScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { theme } = useTheme();
+  const { showAlert, showSuccess, showError } = useAlert();
   const [walletData, setWalletData] = useState<{ balance: number } | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,7 +77,7 @@ export default function WalletScreen() {
     await fetchSettlementStatus();
     await fetchEarningsForToday(true);
     if (showAlert) {
-      Alert.alert('✅ Payment Successful', 'Your settlement has been paid. You can now accept rides.');
+      showSuccess('✅ Payment Successful', 'Your settlement has been paid. You can now accept rides.');
     }
   };
 
@@ -147,9 +148,12 @@ export default function WalletScreen() {
   )
     ? Number(settlementInfo?.remittanceSummary?.grandTotal ?? settlementInfo.totalDueNow ?? 0)
     : overdueRemittanceDue + todayRemittanceDue;
-  const todayUnremittedRides = (earningsData?.rides || []).filter(
+  const todayUnremittedRides = (Array.isArray(earningsData?.rides) ? earningsData.rides : []).filter(
     (ride: any) => !ride.remitted && Number(ride.platform_fee || 0) > 0
   );
+  const outstandingSettlements = Array.isArray(settlementInfo?.outstandingSettlements)
+    ? settlementInfo.outstandingSettlements
+    : [];
   const todayUnremittedGross = todayUnremittedRides.reduce(
     (sum: number, ride: any) => sum + Number(ride.fare_amount || 0),
     0
@@ -212,7 +216,7 @@ export default function WalletScreen() {
       } else if (['failed', 'cancelled'].includes(paymentStatus)) {
         console.log('[DEEP_LINK] Payment failed:', paymentStatus);
         setSettlementReference(null);
-        Alert.alert('Payment Failed', `Status: ${paymentStatus}`);
+        showError('Payment Failed', `Status: ${paymentStatus}`);
       } else {
         console.log('[DEEP_LINK] Payment pending:', paymentStatus);
         startPaymentStatusPolling(reference);
@@ -236,20 +240,22 @@ export default function WalletScreen() {
         setShowPaystackModal(false);
         setPaystackAuthUrl('');
         setPaystackAmount(0);
-        Alert.alert('Payment Successful', 'Your settlement has been paid. You can now accept rides.');
+        showSuccess('Payment Successful', 'Your settlement has been paid. You can now accept rides.');
       } else {
-        Alert.alert('Payment Status', `Status: ${paymentStatus || 'processing'}`);
+        showAlert({ type: 'info', title: 'Payment Status', message: `Status: ${paymentStatus || 'processing'}` });
       }
     } catch (error) {
       console.error('Payment verification error:', error);
-      Alert.alert('Verification Failed', 'Unable to verify payment. Please try again.');
+      void reportAppError(error, 'driver/wallet', 'payment_verification_failed');
+      showError('Verification Failed', 'Unable to verify payment. Please try again.');
     } finally {
       setSettlementPaying(false);
     }
   };
   const handlePaystackError = (error: string) => {
     console.error('🔴 [PAYSTACK_MODAL] Error:', error);
-    Alert.alert('Payment Error', error || 'An error occurred during payment.');
+    void reportAppError(new Error(error || 'Payment gateway error'), 'driver/wallet', 'payment_gateway_error');
+    showError('Payment Error', error || 'An error occurred during payment.');
   };
 
   const handlePaystackClose = () => {
@@ -284,8 +290,14 @@ export default function WalletScreen() {
     try {
       if (showLoader) setLoading(true);
       const [allEarnings, txResponse] = await Promise.all([
-        apiService.getEarnings('all').catch(() => ({ earnings: {} })),
-        apiService.getTransactions(1).catch(() => ({ transactions: [] })),
+        apiService.getEarnings('all').catch((error) => {
+          void reportAppError(error, 'driver/wallet', 'wallet_earnings_fetch_failed');
+          return { earnings: {} };
+        }),
+        apiService.getTransactions(1).catch((error) => {
+          void reportAppError(error, 'driver/wallet', 'wallet_transactions_fetch_failed');
+          return { transactions: [] };
+        }),
       ]);
 
       const balance = Number(allEarnings?.earnings?.total_ride_earnings || 0);
@@ -327,6 +339,7 @@ export default function WalletScreen() {
       }
     } catch (error: any) {
       console.error('Settlement status error:', error);
+      void reportAppError(error, 'driver/wallet', 'settlement_status_fetch_failed');
       try {
         const daily = await apiService.getDriverDailySettlement();
         const dailyDue = Number(
@@ -436,6 +449,7 @@ export default function WalletScreen() {
       return nextData;
     } catch (error) {
       console.error('Earnings fetch error:', error);
+      void reportAppError(error, 'driver/wallet', 'daily_earnings_fetch_failed');
       return null;
     }
   };
@@ -449,8 +463,8 @@ export default function WalletScreen() {
         (Number(settlementStatus?.totalOutstanding || 0) + Number(settlementStatus?.todayRemittance?.totalDue || 0))
       );
 
-      if (totalOutstanding <= 0) {
-        Alert.alert('No Remittance Due', 'All settlement fees have been paid.');
+      if (!Number.isFinite(totalOutstanding) || totalOutstanding <= 0) {
+        showAlert({ type: 'info', title: 'No Remittance Due', message: 'All settlement fees have been paid.' });
         return;
       }
 
@@ -478,12 +492,15 @@ export default function WalletScreen() {
       setPaystackAuthUrl(authUrl);
       setPaystackAmount(totalOutstanding);
       setShowPaystackModal(true);
+      void recordExperience('task_success', 'driver/wallet', 'settlement_payment_started');
     } catch (error) {
       console.error('Settlement payment error:', error);
+      void reportAppError(error, 'driver/wallet', 'settlement_payment_start_failed');
+      void recordExperience('task_failure', 'driver/wallet', 'settlement_payment_start_failed');
       const message = error instanceof Error && error.message
         ? error.message
         : 'Unable to start payment. Please try again.';
-      Alert.alert('Payment Failed', message);
+      showError('Payment Failed', message);
     } finally {
       setSettlementPaying(false);
     }
@@ -510,7 +527,7 @@ export default function WalletScreen() {
           clearInterval(pollInterval);
           console.log('[POLLING] Payment failed:', paymentStatus);
           setSettlementReference(null);
-          Alert.alert('Payment Failed', `Payment status: ${paymentStatus}`);
+          showError('Payment Failed', `Payment status: ${paymentStatus}`);
         }
       } catch (error) {
         console.log('[POLLING] Check scheduled, will retry...', error);
@@ -538,7 +555,7 @@ export default function WalletScreen() {
           console.log('[VERIFY] Pending payment failed:', paymentStatus);
           setSettlementReference(null);
           await cacheService.remove('paystack_pending_reference');
-          Alert.alert('Payment Failed', `Status: ${paymentStatus}`);
+          showError('Payment Failed', `Status: ${paymentStatus}`);
         } else {
           console.log('[VERIFY] Payment still processing:', paymentStatus || 'pending');
         }
@@ -557,6 +574,35 @@ export default function WalletScreen() {
       fetchEarningsForToday(true) // forceRefresh=true on pull-to-refresh
     ]);
     setRefreshing(false);
+  };
+
+  const submitWithdrawal = async () => {
+    const amount = Number(withdrawAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      showError('Invalid Amount', 'Please provide a valid withdrawal amount.');
+      return;
+    }
+
+    setWithdrawing(true);
+    try {
+      await apiService.requestDriverWithdrawal({
+        amount,
+        bank_name: 'Primary Registered Account',
+        account_number: 'N/A',
+        account_name: 'Driver Profile',
+      });
+      setShowWithdrawModal(false);
+      setWithdrawAmount('');
+      showSuccess('Request Submitted', 'Your withdrawal request has been sent to admin for approval.');
+      void recordExperience('task_success', 'driver/wallet', 'withdrawal_requested');
+      await onRefresh();
+    } catch (error: any) {
+      void reportAppError(error, 'driver/wallet', 'withdrawal_request_failed');
+      void recordExperience('task_failure', 'driver/wallet', 'withdrawal_request_failed');
+      showError('Request Failed', error?.message || 'Could not submit withdrawal request.');
+    } finally {
+      setWithdrawing(false);
+    }
   };
 
   if (loading) return <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.background }}><ListScreenSkeleton itemCount={4} /></SafeAreaView>;
@@ -618,9 +664,9 @@ export default function WalletScreen() {
                 </Text>
               </View>
 
-              {(totalOutstandingDisplay > 0) && ((settlementInfo?.outstandingSettlements?.length) > 0) && (
+              {(totalOutstandingDisplay > 0) && outstandingSettlements.length > 0 && (
                 <Text style={[styles.settlementSub, { color: '#FF9101', marginBottom: 10 }]}>
-                  {(settlementInfo?.outstandingSettlements?.length ?? 0)} overdue settlement(s): ₦{Number(settlementInfo?.totalOutstanding ?? 0).toLocaleString('en-US')}
+                  {outstandingSettlements.length} overdue settlement(s): ₦{Number(settlementInfo?.totalOutstanding ?? 0).toLocaleString('en-US')}
                 </Text>
               )}
 
@@ -664,7 +710,7 @@ export default function WalletScreen() {
             </View>
 
             {/* Older Outstanding Remittances */}
-            {((settlementInfo?.outstandingSettlements?.length) ?? 0) > 0 && (
+            {outstandingSettlements.length > 0 && (
               <View style={[styles.paddingH, { marginTop: 12 }]}>
                 <View style={[styles.settlementCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
                   <View style={styles.settlementHeader}>
@@ -693,7 +739,7 @@ export default function WalletScreen() {
                                     <>
                                       {visible.map((r: any) => (
                                         <View key={r.id} style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                                          <Text style={{ color: theme.colors.textSecondary, fontSize: 12 }}>{(r.pickup_zone || 'Pickup')} → {(r.destination_zone || 'Destination')}</Text>
+                                          <Text style={{ color: theme.colors.textSecondary, fontSize: 12 }}>{(r.pickup_zone || 'Pickup')} ➡️ {(r.destination_zone || 'Destination')}</Text>
                                           <Text style={{ color: '#FF9101', fontSize: 12 }}>₦{Number(r.platform_fee || 0).toLocaleString('en-US')}</Text>
                                         </View>
                                       ))}
@@ -712,7 +758,7 @@ export default function WalletScreen() {
                         </View>
                       ))
                     ) : (
-                      settlementInfo.outstandingSettlements.map((s: any) => (
+                      outstandingSettlements.map((s: any) => (
                         <View key={s.id} style={[styles.outstandingItem, { borderBottomColor: theme.colors.border }]}>
                           <View style={{ flex: 1 }}>
                             <Text style={[styles.outstandingDate, { color: theme.colors.textPrimary }]}>{formatDisplayDate(s.settlement_date)}</Text>
@@ -794,42 +840,7 @@ export default function WalletScreen() {
           <View style={[styles.actionRow, styles.paddingH]}>
             {cashlessEnabled ? (
               <TouchableOpacity
-                onPress={() => {
-                  Alert.prompt
-                    ? Alert.prompt(
-                      'Request Withdrawal',
-                      'Enter amount to withdraw to your registered bank account:',
-                      [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                          text: 'Submit',
-                          onPress: async (amountText?: string) => {
-                            const val = Number(amountText);
-                            if (!val || val <= 0) {
-                              Alert.alert('Invalid Amount', 'Please provide a valid withdrawal amount.');
-                              return;
-                            }
-                            try {
-                              await apiService.requestDriverWithdrawal({
-                                amount: val,
-                                bank_name: 'Primary Registered Account',
-                                account_number: 'N/A',
-                                account_name: 'Driver Profile',
-                              });
-                              Alert.alert('Request Submitted', 'Your withdrawal request has been sent to admin for approval.');
-                              onRefresh();
-                            } catch (e: any) {
-                              Alert.alert('Request Failed', e.message || 'Could not submit withdrawal request.');
-                            }
-                          },
-                        },
-                      ],
-                      'plain-text',
-                      '',
-                      'numeric'
-                    )
-                    : Alert.alert('Withdrawal', 'Withdrawal requests will be processed to your verified bank account.');
-                }}
+                onPress={() => setShowWithdrawModal(true)}
                 style={[styles.actionBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
               >
                 <View style={[styles.iconBox, { backgroundColor: '#FF910120' }]}>
@@ -839,7 +850,7 @@ export default function WalletScreen() {
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
-                onPress={() => Alert.alert('Cashless Mode Inactive', 'Digital wallet withdrawals will become available once cashless mode is activated by admin.')}
+                onPress={() => showAlert({ type: 'info', title: 'Cashless Mode Coming Soon', message: 'Digital wallet withdrawals will become available once cashless mode is activated.' })}
                 style={[styles.actionBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border, opacity: 0.6 }]}
               >
                 <View style={[styles.iconBox, { backgroundColor: '#6b728020' }]}>
@@ -904,6 +915,48 @@ export default function WalletScreen() {
         onClose={handlePaystackClose}
       />
 
+      <Modal
+        visible={showWithdrawModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => !withdrawing && setShowWithdrawModal(false)}
+        statusBarTranslucent
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
+            <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>Request Withdrawal</Text>
+            <Text style={{ color: theme.colors.textSecondary, marginBottom: 12 }}>
+              Enter an amount to withdraw to your registered bank account.
+            </Text>
+            <TextInput
+              value={withdrawAmount}
+              onChangeText={setWithdrawAmount}
+              keyboardType="numeric"
+              placeholder="Amount in NGN"
+              placeholderTextColor={theme.colors.textSecondary}
+              editable={!withdrawing}
+              style={[styles.input, { color: theme.colors.textPrimary, backgroundColor: theme.colors.inputBackground }]}
+            />
+            <View style={styles.modalBtns}>
+              <TouchableOpacity
+                disabled={withdrawing}
+                onPress={() => setShowWithdrawModal(false)}
+                style={[styles.modalBtn, { backgroundColor: theme.colors.inputBackground }]}
+              >
+                <Text style={{ color: theme.colors.textSecondary, fontWeight: '700' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                disabled={withdrawing}
+                onPress={submitWithdrawal}
+                style={[styles.modalBtn, { backgroundColor: BRAND.primary }]}
+              >
+                <Text style={{ color: '#1A1206', fontWeight: '800' }}>{withdrawing ? 'Submitting...' : 'Submit request'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Withdraw removed - feature not offered */}
 
     </View>
@@ -966,6 +1019,6 @@ const styles = StyleSheet.create({
   outstandingList: { paddingTop: 8 },
   outstandingItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1 },
   outstandingDate: { fontSize: 13, fontWeight: '700' },
-  outstandingAmount: { fontSize: 13, fontWeight: '800' },
+  outstandingAmount: { fontSize: 13, fontWeight: '800', marginBottom: 36 },
 });
 

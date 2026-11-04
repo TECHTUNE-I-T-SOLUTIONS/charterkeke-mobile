@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet, ActivityIndicator, Share, Linking } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet, ActivityIndicator, Share, Linking, TextInput } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -10,16 +10,20 @@ import { apiService } from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
 import { sendLocalNotification } from '@/services/notificationService';
 import ConfirmationDialog from '@/components/ui/ConfirmationDialog';
+import { useExperienceConsent } from '@/components/ExperienceConsentProvider';
+import { recordExperience } from '@/services/experienceReporting';
 
 export default function PrivacySettingsScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ delete?: string }>();
   const { theme, mode } = useTheme();
   const { logout, clearCache } = useAuth();
+  const { consent: experienceConsent, requestConsent } = useExperienceConsent();
   const isDark = mode === 'dark';
   const colors = isDark ? COLORS.dark : COLORS.light;
   const [busy, setBusy] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [experienceFeedback, setExperienceFeedback] = useState('');
   const openedDeletePrompt = useRef(false);
 
   useEffect(() => {
@@ -96,6 +100,17 @@ export default function PrivacySettingsScreen() {
     }
   };
 
+  const submitExperienceFeedback = async () => {
+    if (experienceConsent !== true) {
+      requestConsent();
+      return;
+    }
+    if (!experienceFeedback.trim()) return;
+    await recordExperience('feedback', 'privacy-settings', 'user_feedback', undefined, experienceFeedback.trim());
+    setExperienceFeedback('');
+    Alert.alert('Feedback queued', 'Thank you. Your suggestion will be sent for app improvement analysis.');
+  };
+
   const confirmDeleteAccount = async () => {
     try {
       setBusy(true);
@@ -161,6 +176,41 @@ export default function PrivacySettingsScreen() {
           <Text style={[styles.noticeText, { color: colors.textSecondary }]}>
             You can update your profile, control device permissions from your phone settings, manage notification permissions, request support, export your data, or ask us to review eligible account information.
           </Text>
+        </View>
+
+        <View style={[styles.noticeCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.noticeTitle, { color: colors.text }]}>Optional app diagnostics</Text>
+          <Text style={[styles.noticeText, { color: colors.textSecondary }]}>
+            {experienceConsent === true
+              ? 'You allow limited screen usage and error diagnostics to help us find problems and improve the app. Withdrawing consent requests removal of reports already stored for your account.'
+              : 'You have not enabled optional screen usage and error diagnostics. No app experience data is sent through this feature.'}
+          </Text>
+          <TouchableOpacity
+            style={[styles.actionBtn, { borderColor: colors.primary, backgroundColor: colors.card }]}
+            onPress={requestConsent}
+          >
+            <MaterialCommunityIcons name="tune-variant" size={20} color={colors.primary} />
+            <Text style={[styles.actionText, { color: colors.primary }]}>
+              {experienceConsent === true ? 'Change diagnostics choice' : 'Review diagnostics choice'}
+            </Text>
+          </TouchableOpacity>
+          <TextInput
+            value={experienceFeedback}
+            onChangeText={setExperienceFeedback}
+            placeholder="Share a suggestion or describe a difficulty (avoid personal details)"
+            placeholderTextColor={colors.textSecondary}
+            multiline
+            maxLength={800}
+            style={[styles.feedbackInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+          />
+          <TouchableOpacity
+            style={[styles.actionBtn, { borderColor: colors.primary, backgroundColor: colors.card, opacity: experienceFeedback.trim() ? 1 : 0.55 }]}
+            onPress={submitExperienceFeedback}
+            disabled={!experienceFeedback.trim()}
+          >
+            <MaterialCommunityIcons name="send-outline" size={19} color={colors.primary} />
+            <Text style={[styles.actionText, { color: colors.primary }]}>Share feedback</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.actions}>
@@ -235,4 +285,5 @@ const styles = StyleSheet.create({
   actions: { paddingHorizontal: 16, marginTop: 20 },
   actionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1.5, borderRadius: 14, paddingVertical: 13, marginTop: 12 },
   actionText: { fontSize: 14, fontWeight: '800' },
+  feedbackInput: { minHeight: 84, borderWidth: 1, borderRadius: 13, padding: 12, marginTop: 14, textAlignVertical: 'top', fontSize: 13 },
 });

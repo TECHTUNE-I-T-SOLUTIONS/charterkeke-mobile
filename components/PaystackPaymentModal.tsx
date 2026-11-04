@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { View, Modal, TouchableOpacity, Text, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { View, Modal, TouchableOpacity, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { BRAND } from '@/utils/colors';
+import { useAlert } from '@/context/AlertContext';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -28,6 +29,7 @@ export const PaystackPaymentModal: React.FC<PaystackPaymentModalProps> = ({
   onClose,
 }) => {
   const [loading, setLoading] = useState(false);
+  const { showConfirm } = useAlert();
 
   const handleOpenPayment = async () => {
     try {
@@ -70,17 +72,13 @@ export const PaystackPaymentModal: React.FC<PaystackPaymentModalProps> = ({
   };
 
   const handleClose = () => {
-    Alert.alert(
+    showConfirm(
       'Close Payment',
       'Are you sure you want to close this payment? Make sure you have completed the payment.',
-      [
-        { text: 'Cancel', onPress: () => {} },
-        {
-          text: 'Close',
-          onPress: () => onClose(),
-          style: 'destructive',
-        },
-      ]
+      onClose,
+      undefined,
+      'Close',
+      'Keep paying',
     );
   };
 
