@@ -4,12 +4,14 @@ import { Platform } from 'react-native';
 import { apiService } from '@/services/api';
 
 const CONSENT_KEY = '@charter_keke_experience_consent_v1';
+const MIGRATED_CONSENT_KEY = '@charter_keke_experience_consent_v2';
 const QUEUE_KEY = '@charter_keke_experience_queue_v1';
 const REVOCATION_KEY = '@charter_keke_experience_revocation_pending_v1';
 const MAX_QUEUED_EVENTS = 30;
 const recentErrors = new Map<string, number>();
 let flushTimer: ReturnType<typeof setTimeout> | undefined;
 let flushInProgress = false;
+let consentCache: boolean | null | undefined;
 
 export type ExperienceEvent = {
   id: string;
@@ -36,9 +38,25 @@ const cleanText = (value: unknown, limit: number) => String(value ?? '')
 const eventId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 export async function getExperienceConsent(): Promise<boolean | null> {
+  if (consentCache !== undefined) return consentCache;
   try {
     const value = await AsyncStorage.getItem(CONSENT_KEY);
-    return value === null ? null : value === 'granted';
+    if (value !== null) {
+      consentCache = value === 'granted';
+      return consentCache;
+    }
+    // Migrate a decision made while the newer consent key was active.
+    const migratedValue = await AsyncStorage.getItem(MIGRATED_CONSENT_KEY);
+    if (migratedValue !== null) {
+      await AsyncStorage.setItem(CONSENT_KEY, migratedValue);
+      await AsyncStorage.removeItem(MIGRATED_CONSENT_KEY);
+      consentCache = migratedValue === 'granted';
+      return consentCache;
+    }
+    // No saved decision exists, so do not upload events queued by an older install.
+    await AsyncStorage.removeItem(QUEUE_KEY);
+    consentCache = null;
+    return consentCache;
   } catch {
     return false;
   }
@@ -46,11 +64,14 @@ export async function getExperienceConsent(): Promise<boolean | null> {
 
 export async function setExperienceConsent(granted: boolean): Promise<void> {
   const previous = await AsyncStorage.getItem(CONSENT_KEY).catch(() => null);
+  const migratedPrevious = await AsyncStorage.getItem(MIGRATED_CONSENT_KEY).catch(() => null);
   await AsyncStorage.setItem(CONSENT_KEY, granted ? 'granted' : 'denied');
-  if (granted) await flushExperienceQueue();
+  consentCache = granted;
+  await AsyncStorage.removeItem(MIGRATED_CONSENT_KEY).catch(() => undefined);
+  if (granted) void flushExperienceQueue();
   else {
     await AsyncStorage.removeItem(QUEUE_KEY);
-    if (previous === 'granted') {
+    if (previous === 'granted' || migratedPrevious === 'granted') {
       await AsyncStorage.setItem(REVOCATION_KEY, '1');
       void retryConsentRevocation();
     }
@@ -154,4 +175,52 @@ export async function recordExperience(
   feedback?: string,
 ): Promise<void> {
   await enqueue(createEvent({ type, screen, action, durationMs: durationMs ? Math.round(durationMs) : undefined, feedback }));
+}
+
+export async function submitExperienceHealthCheck(): Promise<boolean> {
+  if (!(await getExperienceConsent())) return false;
+
+  try {
+    const stored = await AsyncStorage.getItem(QUEUE_KEY);
+    const queued: ExperienceEvent[] = stored ? JSON.parse(stored) : [];
+    const events = Array.isArray(queued) ? queued.slice(-MAX_QUEUED_EVENTS) : [];
+    const counts = events.reduce<Record<string, number>>((result, event) => {
+      result[event.type] = (result[event.type] || 0) + 1;
+      return result;
+    }, {});
+    const errors = events
+      .filter((event) => event.type === 'error' || event.type === 'task_failure')
+      .slice(-5)
+      .map((event) => ({
+        occurredAt: event.occurredAt,
+        screen: event.screen,
+        action: event.action,
+        errorName: event.errorName,
+        message: event.message,
+        stack: event.stack?.slice(0, 1200),
+      }));
+    const details = JSON.stringify({
+      kind: 'user_requested_mobile_health_check',
+      generatedAt: new Date().toISOString(),
+      appVersion: Constants.expoConfig?.version || Constants.nativeAppVersion || 'unknown',
+      platform: Platform.OS,
+      queuedEventCount: events.length,
+      eventCounts: counts,
+      recentErrors: errors,
+      note: 'The server will combine this report with recent consented experience events for this account.',
+    }, null, 2);
+    const report = createEvent({
+      type: 'error',
+      screen: 'privacy-settings',
+      action: 'user_initiated_health_check',
+      errorName: 'MobileExperienceHealthCheck',
+      message: `User requested an app health check. ${events.length} locally queued experience event(s) were summarized.`,
+      stack: details,
+    });
+
+    await apiService.post('/mobile/experience/reports', { events: [report], consent: true, healthCheck: true });
+    return true;
+  } catch {
+    return false;
+  }
 }

@@ -641,7 +641,7 @@ export default function WalletScreen() {
           </View>
 
           {/* Settlement Card */}
-          <View style={[styles.paddingH, { marginTop: 20 }]}>
+          <View style={[styles.paddingH, { marginTop: 4 }]}>
             <View style={[styles.settlementCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
               <View style={styles.settlementHeader}>
                 <View>

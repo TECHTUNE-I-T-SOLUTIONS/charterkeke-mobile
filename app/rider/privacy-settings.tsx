@@ -11,7 +11,7 @@ import { useAuth } from '@/context/AuthContext';
 import { sendLocalNotification } from '@/services/notificationService';
 import ConfirmationDialog from '@/components/ui/ConfirmationDialog';
 import { useExperienceConsent } from '@/components/ExperienceConsentProvider';
-import { recordExperience } from '@/services/experienceReporting';
+import { recordExperience, submitExperienceHealthCheck } from '@/services/experienceReporting';
 
 export default function PrivacySettingsScreen() {
   const router = useRouter();
@@ -24,6 +24,7 @@ export default function PrivacySettingsScreen() {
   const [busy, setBusy] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [experienceFeedback, setExperienceFeedback] = useState('');
+  const [healthCheckBusy, setHealthCheckBusy] = useState(false);
   const openedDeletePrompt = useRef(false);
 
   useEffect(() => {
@@ -111,6 +112,24 @@ export default function PrivacySettingsScreen() {
     Alert.alert('Feedback queued', 'Thank you. Your suggestion will be sent for app improvement analysis.');
   };
 
+  const runExperienceHealthCheck = async () => {
+    if (experienceConsent !== true) {
+      requestConsent();
+      return;
+    }
+    setHealthCheckBusy(true);
+    try {
+      const submitted = await submitExperienceHealthCheck();
+      if (submitted) {
+        Alert.alert('Health check submitted', 'Your report was received. Thank you for helping us improve the app.');
+      } else {
+        Alert.alert('Could not send report', 'Please check your connection and try again.');
+      }
+    } finally {
+      setHealthCheckBusy(false);
+    }
+  };
+
   const confirmDeleteAccount = async () => {
     try {
       setBusy(true);
@@ -182,7 +201,7 @@ export default function PrivacySettingsScreen() {
           <Text style={[styles.noticeTitle, { color: colors.text }]}>Optional app diagnostics</Text>
           <Text style={[styles.noticeText, { color: colors.textSecondary }]}>
             {experienceConsent === true
-              ? 'You allow limited screen usage and error diagnostics to help us find problems and improve the app. Withdrawing consent requests removal of reports already stored for your account.'
+              ? 'You allow limited screen usage and error diagnostics to be analyzed by Charter Keke and used to improve the app. Withdrawing consent requests removal of reports already stored for your account.'
               : 'You have not enabled optional screen usage and error diagnostics. No app experience data is sent through this feature.'}
           </Text>
           <TouchableOpacity
@@ -194,6 +213,21 @@ export default function PrivacySettingsScreen() {
               {experienceConsent === true ? 'Change diagnostics choice' : 'Review diagnostics choice'}
             </Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionBtn, { borderColor: colors.primary, backgroundColor: colors.primary, opacity: healthCheckBusy ? 0.7 : 1 }]}
+            onPress={runExperienceHealthCheck}
+            disabled={healthCheckBusy}
+          >
+            {healthCheckBusy
+              ? <ActivityIndicator color={colors.background} />
+              : <MaterialCommunityIcons name="heart-pulse" size={20} color={colors.background} />}
+            <Text style={[styles.actionText, { color: colors.background }]}>
+              {healthCheckBusy ? 'Analyzing recent app activity…' : 'Run app health check'}
+            </Text>
+          </TouchableOpacity>
+          <Text style={[styles.noticeText, { color: colors.textSecondary, marginTop: 8 }]}>
+            Sends recent app errors and consented experience details so Charter Keke can understand issues and improve the app. Personal and payment details are scrubbed where possible.
+          </Text>
           <TextInput
             value={experienceFeedback}
             onChangeText={setExperienceFeedback}
@@ -234,7 +268,7 @@ export default function PrivacySettingsScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.actionBtn, { borderColor: colors.error || '#ef4444', backgroundColor: colors.card }]}
+            style={[styles.actionBtn, { borderColor: colors.error || '#ef4444', backgroundColor: colors.card, marginBottom: 60 }]}
             onPress={() => setShowDeleteConfirm(true)}
             disabled={busy}
           >
