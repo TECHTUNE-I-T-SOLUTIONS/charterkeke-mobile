@@ -1,16 +1,16 @@
-{
-  "key": "ota-2026-10-30-v2",
-  "title": "Faster, Smoother, Safer Rides! 🚀",
-  "subtitle": "Here's what's new in this update:",
-  "highlights": [
-    "🚀 Much faster loading - driver home and rides screens now load instantly with direct database access",
-    "🐛 Fixed rider app crash after ride cancellation - app stays stable even when rides are cancelled",
-    "🛡️ Drivers must be near pickup location before starting trips - prevents false starts",
-    "🚫 Drivers with active rides can't accept new ones - focus on one ride at a time",
-    "💰 Fixed cashback rewards - used rewards won't show again in booking sheet",
-    "📍 Fixed driver date/time display - now shows correct dates for all rides",
-    "📱 Removed heavy caching - tabs load fresh data every time, no more stale content",
-    "🎨 Branded alert modals - consistent, beautiful error messages throughout the app",
-    "🔒 Automatic driver status - goes 'busy' during rides, 'online' when completed (if remittance is clear)"
-  ]
+﻿{
+    "key":  "ota-2026-11-04-v1",
+    "title":  "A More Reliable Wallet and Smarter App Updates!",
+    "subtitle":  "Here\u0027s what\u0027s new in this update:",
+    "highlights":  [
+                       "More reliable driver wallet with safer settlement data handling and clearer payment errors",
+                       "Consistent custom alerts across wallet payment and withdrawal flows",
+                       "Optional AI-assisted diagnostics help admins investigate app errors and user suggestions",
+                       "Privacy consent controls let you manage experience diagnostics at any time",
+                       "Fixed cashback rewards - used rewards won\u0027t show again in booking sheet",
+                       "Fixed driver date/time display - now shows correct dates for all rides",
+                       "Removed heavy caching - tabs load fresh data every time, no more stale content",
+                       "Branded alert modals - consistent, beautiful error messages throughout the app",
+                       "Automatic driver status - goes \u0027busy\u0027 during rides, \u0027online\u0027 when completed (if remittance is clear)"
+                   ]
 }
