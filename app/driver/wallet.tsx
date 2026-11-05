@@ -967,8 +967,8 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { padding: 20 },
   headerTitle: { fontSize: 28, fontWeight: '800' },
-  paddingH: { paddingHorizontal: 20, marginBottom: 44 },
-  cardGradient: { borderRadius: 20, padding: 24, height: 180, justifyContent: 'space-between' },
+  paddingH: { paddingHorizontal: 20, marginBottom: 14 },
+  cardGradient: { borderRadius: 20, padding: 24, height: 140, justifyContent: 'space-between' },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between' },
   cardLabel: { fontSize: 14, fontWeight: '600', color: '#000', opacity: 0.7 },
   balanceText: {

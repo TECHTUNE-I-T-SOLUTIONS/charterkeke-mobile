@@ -507,6 +507,21 @@ export default function DriverHomeScreen() {
                   }, 5 * 60).catch(() => undefined);
                 }
               }).catch(() => undefined);
+
+              // Auto-enable online status if settlement is no longer blocked and driver was previously offline due to settlement
+              if (!isBlocked && !isOnline) {
+                console.log('[DRIVER-HOME] Settlement cleared, auto-enabling online status');
+                apiService.setDriverStatus('online')
+                  .then((result) => {
+                    const nextStatus = String(result?.status || '').toLowerCase();
+                    setIsOnline(nextStatus === 'online');
+                    console.log('[DRIVER-HOME] Auto-enabled online status:', nextStatus);
+                  })
+                  .catch((autoOnlineError) => {
+                    console.warn('[DRIVER-HOME] Failed to auto-enable online status:', autoOnlineError);
+                    // Don't block the dashboard load if auto-enable fails
+                  });
+              }
             }
           })
           .catch((err) => {

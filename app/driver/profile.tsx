@@ -172,7 +172,7 @@ export default function DriverProfileScreen() {
     try {
       if (clearCache) await clearCache();
       await logout();
-      router.replace('/auth/welcome');
+      router.replace('/auth/login-new');
     } catch (e) {
       Alert.alert('Error', 'Logout failed');
     }
@@ -667,5 +667,5 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     gap: 8,
   },
-  versionText: { textAlign: 'center', fontSize: 11, fontWeight: '600', marginTop: 14, marginBottom: 8 },
+  versionText: { textAlign: 'center', fontSize: 11, fontWeight: '600', marginTop: 14, marginBottom: 24 },
 });

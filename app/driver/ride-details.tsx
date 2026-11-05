@@ -830,10 +830,20 @@ export default function RideDetailsScreen() {
                 onPress={async () => {
                   setVerifyingLocation(true);
 
+                  // Refresh current location before verification
                   const driverLat = currentLocation?.latitude ?? driverCoordinate?.[1];
                   const driverLng = currentLocation?.longitude ?? driverCoordinate?.[0];
                   const dropoffLat = dropoffCoordinate?.[1];
                   const dropoffLng = dropoffCoordinate?.[0];
+
+                  console.log('[RIDE-DETAILS] Location verification:', {
+                    driverLat,
+                    driverLng,
+                    dropoffLat,
+                    dropoffLng,
+                    hasCurrentLocation: !!currentLocation,
+                    hasDriverCoordinate: !!driverCoordinate,
+                  });
 
                   // 1. Check if driver has location available
                   if (!driverLat || !driverLng) {
@@ -855,6 +865,13 @@ export default function RideDetailsScreen() {
                   const DROPOFF_THRESHOLD_KM = 0.5;
                   const RIDER_PROXIMITY_THRESHOLD_KM = 0.6;
 
+                  console.log('[RIDE-DETAILS] Distance checks:', {
+                    distToDropoffKm,
+                    distToRiderKm,
+                    dropoffThreshold: DROPOFF_THRESHOLD_KM,
+                    riderThreshold: RIDER_PROXIMITY_THRESHOLD_KM,
+                  });
+
                   if (distToDropoffKm > DROPOFF_THRESHOLD_KM) {
                     setVerifyingLocation(false);
                     setProximityAlert({ visible: true, distanceKm: distToDropoffKm, type: 'dropoff' });
@@ -870,6 +887,7 @@ export default function RideDetailsScreen() {
 
                   setVerifyingLocation(false);
                   setLocationVerified(true);
+                  console.log('[RIDE-DETAILS] Location verified successfully');
                 }}
                 disabled={verifyingLocation || locationVerified}
               >
