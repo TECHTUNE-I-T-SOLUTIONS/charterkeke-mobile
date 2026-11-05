@@ -579,8 +579,11 @@ export default function DriverHomeScreen() {
 
   const handleOnlineToggle = async (value: boolean) => {
     try {
+      console.log('[DRIVER-HOME] handleOnlineToggle called with value:', value, 'driverId:', driverId);
+      
       // Check for settlement block first
       if (value && settlementBlocked) {
+        console.log('[DRIVER-HOME] Settlement blocked, showing remittance modal');
         setIsOnline(false);
         setRemittanceModalAmount(settlementOutstanding);
         setRemittanceModalVisible(true);
@@ -589,6 +592,7 @@ export default function DriverHomeScreen() {
 
       // Check for active rides when trying to go online using Supabase SDK directly
       if (value && driverId) {
+        console.log('[DRIVER-HOME] Checking for active rides for driver:', driverId);
         try {
           // Query rides table directly for accepted or in_progress rides
           const { data: activeRides, error } = await supabaseService.getClient()
@@ -598,18 +602,24 @@ export default function DriverHomeScreen() {
             .in('status', ['accepted', 'in_progress'])
             .limit(1);
 
+          console.log('[DRIVER-HOME] Active rides query result:', { activeRides, error });
+
           if (error) {
             console.warn('[DRIVER-HOME] Failed to check active rides:', error);
           } else if (activeRides && activeRides.length > 0) {
+            console.log('[DRIVER-HOME] Driver has active ride, blocking online status:', activeRides[0]);
             setIsOnline(false);
             setActiveRideModalVisible(true);
-            console.log('[DRIVER-HOME] Driver has active ride, blocking online status:', activeRides[0]);
             return;
+          } else {
+            console.log('[DRIVER-HOME] No active rides found, proceeding to go online');
           }
         } catch (error) {
           console.warn('[DRIVER-HOME] Failed to check active rides:', error);
           // Continue with status toggle even if check fails
         }
+      } else if (value && !driverId) {
+        console.warn('[DRIVER-HOME] Cannot check active rides - driverId is null');
       }
 
       if (!value) setIsOnline(false);
