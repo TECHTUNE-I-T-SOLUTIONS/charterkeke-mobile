@@ -480,46 +480,51 @@ export default function RideDetailsScreen() {
     if (terminal.includes(String(rideDetails?.status || '').toLowerCase())) return;
 
     let active = true;
-    supabaseService.subscribeToRideUpdates(rideId, (updatedRide: any) => {
-      if (!active) return;
-      const newStatus = String(updatedRide?.status || '').toLowerCase();
-      setRideDetails((prev: any) => {
-        if (!prev) return prev;
-        const statusChanged = prev.status !== updatedRide.status;
-        const next = { ...prev, ...updatedRide };
-        if (statusChanged) {
-          if (newStatus === 'accepted') {
-            Alert.alert('Driver Found! 🎉', 'A driver has accepted your ride and is on the way.');
-            // Start 15-minute arrival check timer
-            setDriverAcceptedAt(new Date().toISOString());
-            startDriverArrivalCheck(rideId);
-          }
-          else if (newStatus === 'in_progress') {
-            Alert.alert('Ride Started 🚗', 'Your ride has started. Enjoy your trip!');
-            // Clear arrival check timer since ride started
-            if (driverArrivalCheckTimer.current) {
-              clearInterval(driverArrivalCheckTimer.current);
-              driverArrivalCheckTimer.current = null;
+    try {
+      supabaseService.subscribeToRideUpdates(rideId, (updatedRide: any) => {
+        if (!active) return;
+        const newStatus = String(updatedRide?.status || '').toLowerCase();
+        setRideDetails((prev: any) => {
+          if (!prev) return prev;
+          const statusChanged = prev.status !== updatedRide.status;
+          const next = { ...prev, ...updatedRide };
+          if (statusChanged) {
+            if (newStatus === 'accepted') {
+              Alert.alert('Driver Found! 🎉', 'A driver has accepted your ride and is on the way.');
+              // Start 15-minute arrival check timer
+              setDriverAcceptedAt(new Date().toISOString());
+              startDriverArrivalCheck(rideId);
             }
-          }
-          else if (newStatus === 'completed') Alert.alert('Ride Completed ✅', 'Your ride is complete!', [
-            { text: 'Rate Now', onPress: () => router.replace(`/rider/rating?rideId=${rideId}`) },
-            { text: 'Later', style: 'cancel' },
-          ]);
-          else if (newStatus === 'cancelled') {
-            // Clear arrival check timer
-            if (driverArrivalCheckTimer.current) {
-              clearInterval(driverArrivalCheckTimer.current);
-              driverArrivalCheckTimer.current = null;
+            else if (newStatus === 'in_progress') {
+              Alert.alert('Ride Started 🚗', 'Your ride has started. Enjoy your trip!');
+              // Clear arrival check timer since ride started
+              if (driverArrivalCheckTimer.current) {
+                clearInterval(driverArrivalCheckTimer.current);
+                driverArrivalCheckTimer.current = null;
+              }
             }
-            Alert.alert('Ride Cancelled', 'This ride was cancelled.', [
-              { text: 'Book Again', onPress: () => router.replace('/rider/booking') },
+            else if (newStatus === 'completed') Alert.alert('Ride Completed ✅', 'Your ride is complete!', [
+              { text: 'Rate Now', onPress: () => router.replace(`/rider/rating?rideId=${rideId}`) },
+              { text: 'Later', style: 'cancel' },
             ]);
+            else if (newStatus === 'cancelled') {
+              // Clear arrival check timer
+              if (driverArrivalCheckTimer.current) {
+                clearInterval(driverArrivalCheckTimer.current);
+                driverArrivalCheckTimer.current = null;
+              }
+              Alert.alert('Ride Cancelled', 'This ride was cancelled.', [
+                { text: 'Book Again', onPress: () => router.replace('/rider/booking') },
+              ]);
+            }
           }
-        }
-        return next;
+          return next;
+        });
       });
-    });
+    } catch (error) {
+      console.warn('[RIDE-DETAILS] Failed to subscribe to ride updates:', error);
+      // Don't crash the app if subscription fails
+    }
 
     return () => {
       active = false;
@@ -538,45 +543,50 @@ export default function RideDetailsScreen() {
     let unwatch: undefined | (() => void);
 
     const startLiveTracking = async () => {
-      await supabaseService.subscribeToRideLocationUpdates(String(rideId), (payload) => {
-        if (!mounted || !payload) return;
-        const coordinate: [number, number] | null =
-          Number.isFinite(Number(payload.longitude)) && Number.isFinite(Number(payload.latitude))
-            ? [Number(payload.longitude), Number(payload.latitude)]
-            : null;
-        if (!coordinate) return;
+      try {
+        await supabaseService.subscribeToRideLocationUpdates(String(rideId), (payload) => {
+          if (!mounted || !payload) return;
+          const coordinate: [number, number] | null =
+            Number.isFinite(Number(payload.longitude)) && Number.isFinite(Number(payload.latitude))
+              ? [Number(payload.longitude), Number(payload.latitude)]
+              : null;
+          if (!coordinate) return;
 
-        if (payload.role === 'driver') {
-          setLiveDriverLocation(coordinate);
-        }
-        if (payload.role === 'rider') {
-          setLiveRiderLocation(coordinate);
-        }
-      });
-
-      if (currentLocation) {
-        const initial: [number, number] = [currentLocation.longitude, currentLocation.latitude];
-        setLiveRiderLocation(initial);
-        await supabaseService.broadcastRideLocation(String(rideId), {
-          role: 'rider',
-          latitude: currentLocation.latitude,
-          longitude: currentLocation.longitude,
-          accuracy: (currentLocation as any).accuracy,
-          timestamp: Date.now(),
+          if (payload.role === 'driver') {
+            setLiveDriverLocation(coordinate);
+          }
+          if (payload.role === 'rider') {
+            setLiveRiderLocation(coordinate);
+          }
         });
-      }
 
-      unwatch = await watchLocation((location) => {
-        if (!mounted) return;
-        setLiveRiderLocation([location.longitude, location.latitude]);
-        supabaseService.broadcastRideLocation(String(rideId), {
-          role: 'rider',
-          latitude: location.latitude,
-          longitude: location.longitude,
-          accuracy: (location as any).accuracy,
-          timestamp: Date.now(),
-        }).catch((error) => console.log('Failed to broadcast rider ride location:', error));
-      });
+        if (currentLocation) {
+          const initial: [number, number] = [currentLocation.longitude, currentLocation.latitude];
+          setLiveRiderLocation(initial);
+          await supabaseService.broadcastRideLocation(String(rideId), {
+            role: 'rider',
+            latitude: currentLocation.latitude,
+            longitude: currentLocation.longitude,
+            accuracy: (currentLocation as any).accuracy,
+            timestamp: Date.now(),
+          });
+        }
+
+        unwatch = await watchLocation((location) => {
+          if (!mounted) return;
+          setLiveRiderLocation([location.longitude, location.latitude]);
+          supabaseService.broadcastRideLocation(String(rideId), {
+            role: 'rider',
+            latitude: location.latitude,
+            longitude: location.longitude,
+            accuracy: (location as any).accuracy,
+            timestamp: Date.now(),
+          }).catch((error) => console.log('Failed to broadcast rider ride location:', error));
+        });
+      } catch (error) {
+        console.warn('[RIDE-DETAILS] Failed to start live tracking:', error);
+        // Don't crash the app if subscription fails
+      }
     };
 
     startLiveTracking().catch((error) => console.log('Failed to start rider live tracking:', error));

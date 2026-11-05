@@ -71,31 +71,40 @@ export default function RidesHistoryScreen() {
     // Always create a new channel to avoid conflicts
     const channel = supabase.channel(channelName);
 
-    // Add callback before subscribe
-    channel.on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'rides',
-        filter: `rider_id=eq.${user.id}`,
-      },
-      () => {
-        refetch();
-      }
-    );
+    try {
+      // Add callback before subscribe
+      channel.on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'rides',
+          filter: `rider_id=eq.${user.id}`,
+        },
+        () => {
+          refetch();
+        }
+      );
 
-    // Subscribe after callback is added
-    channel.subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        console.log('[RIDES_HISTORY] Realtime subscription active');
-      } else if (status === 'CHANNEL_ERROR') {
-        console.error('[RIDES_HISTORY] Realtime subscription error');
-      }
-    });
+      // Subscribe after callback is added
+      channel.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('[RIDES_HISTORY] Realtime subscription active');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('[RIDES_HISTORY] Realtime subscription error');
+        }
+      });
+    } catch (error) {
+      console.warn('[RIDES_HISTORY] Failed to set up realtime subscription:', error);
+      // Don't crash the app if subscription fails
+    }
 
     return () => {
-      supabase.removeChannel(channel);
+      try {
+        supabase.removeChannel(channel);
+      } catch (error) {
+        console.warn('[RIDES_HISTORY] Failed to remove channel:', error);
+      }
     };
   }, [user?.id]); // Only depend on user ID, not refetch
 
