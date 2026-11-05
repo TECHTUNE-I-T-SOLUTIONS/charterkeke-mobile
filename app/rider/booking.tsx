@@ -24,7 +24,6 @@ import { useTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
 import { BRAND, COLORS } from '@/utils/colors';
 import { locationService } from '@/services/location';
-import { geocodeMapboxLocation } from '@/utils/mapboxGeocoding';
 import { geocodeMapboxLocations } from '@/utils/mapboxGeocoding';
 import Toast from '@/components/ui/Toast';
 import {
@@ -358,50 +357,34 @@ export default function BookingScreen() {
       setIsPrewarmingLocation(true);
       const location = await locationService.getCurrentLocation();
       if (location) {
-        // Use client-side Mapbox geocoding instead of backend API for faster response
+        // Use backend API for reverse geocoding (more reliable)
         const apiUrl = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.198.143:3000';
         const cleanApiUrl = apiUrl.replace(/\/api$/, '');
-        
-        // Try client-side geocoding first (much faster)
-        let address = null;
-        try {
-          const geocodeResult = await geocodeMapboxLocation(`${location.latitude},${location.longitude}`);
-          if (geocodeResult) {
-            address = geocodeResult.placeName;
-          }
-        } catch (geocodeError) {
-          console.warn('[BOOKING] Client-side geocoding failed, trying backend:', geocodeError);
-        }
+        const response = await fetch(
+          `${cleanApiUrl}/api/location/reverse-geocode?lat=${location.latitude}&lon=${location.longitude}`
+        );
 
-        // Fallback to backend API if client-side fails
-        if (!address) {
-          const response = await fetch(
-            `${cleanApiUrl}/api/location/reverse-geocode?lat=${location.latitude}&lon=${location.longitude}`
-          );
-          if (response.ok) {
-            const data = await response.json();
-            if (data.address && data.success) {
-              address = data.address;
+        if (response.ok) {
+          const data = await response.json();
+          if (data.address && data.success) {
+            const loc: Location = {
+              lat: location.latitude,
+              lng: location.longitude,
+              address: sanitizeAddress(data.address),
+            };
+            setPickupLocation(loc);
+            setPickupSearch(loc.address);
+            setCameraCenter([loc.lng, loc.lat]);
+            await setCachedPickupLocation(loc);
+            loadWeather(loc);
+
+            // Recalculate fare if destination is already set
+            if (destinationLocation) {
+              await calculateEstimate();
             }
           }
-        }
-
-        if (address) {
-          const loc: Location = {
-            lat: location.latitude,
-            lng: location.longitude,
-            address: sanitizeAddress(address),
-          };
-          setPickupLocation(loc);
-          setPickupSearch(loc.address);
-          setCameraCenter([loc.lng, loc.lat]);
-          await setCachedPickupLocation(loc);
-          loadWeather(loc);
-
-          // Recalculate fare if destination is already set
-          if (destinationLocation) {
-            await calculateEstimate();
-          }
+        } else {
+          console.warn('[BOOKING] Backend geocoding failed:', response.status);
         }
       }
     } catch (error) {
