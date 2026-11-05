@@ -2079,10 +2079,10 @@
     color "^4.2.3"
     warn-once "^0.1.0"
 
-"@rnmapbox/maps@^10.3.1":
-  version "10.3.7"
-  resolved "https://registry.npmjs.org/@rnmapbox/maps/-/maps-10.3.7.tgz"
-  integrity sha512-ICZIEi+Hp8aX6RsdUQK1PGK9qJ2L5g4YiFT1SUTQ023m5O/VcC/Ys0GKcd5/ABL8onvci3n4uZ8PbjXM1Vs6FA==
+"@rnmapbox/maps@^10.3.17":
+  version "10.3.17"
+  resolved "https://registry.npmjs.org/@rnmapbox/maps/-/maps-10.3.17.tgz"
+  integrity sha512-GKW9IOPAaJO1LdXnXVQGc3mJGEeQuQ/aRAGit5GbbIk5UlhgyLFOsAlwwYaHsQsyfe9LSfz6yyCCYfzpLGAFUg==
   dependencies:
     "@turf/along" "6.5.0"
     "@turf/distance" "6.5.0"
