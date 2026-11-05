@@ -169,6 +169,7 @@ export default function DriverHomeScreen() {
 
   const [refreshing, setRefreshing] = useState(false);
   const [isOnline, setIsOnline] = useState(false);
+  const [togglingOnline, setTogglingOnline] = useState(false);
   const [driverData, setDriverData] = useState<DriverData | null>(null);
   const [todayEarnings, setTodayEarnings] = useState(0);
   const [activeRidesCount, setActiveRidesCount] = useState(0);
@@ -581,12 +582,21 @@ export default function DriverHomeScreen() {
     try {
       console.log('[DRIVER-HOME] handleOnlineToggle called with value:', value, 'driverId:', driverId);
       
+      // Don't allow toggle if already toggling
+      if (togglingOnline) {
+        console.log('[DRIVER-HOME] Already toggling, ignoring');
+        return;
+      }
+
+      setTogglingOnline(true);
+      
       // Check for settlement block first
       if (value && settlementBlocked) {
         console.log('[DRIVER-HOME] Settlement blocked, showing remittance modal');
         setIsOnline(false);
         setRemittanceModalAmount(settlementOutstanding);
         setRemittanceModalVisible(true);
+        setTogglingOnline(false);
         return;
       }
 
@@ -610,6 +620,7 @@ export default function DriverHomeScreen() {
             console.log('[DRIVER-HOME] Driver has active ride, blocking online status:', activeRides[0]);
             setIsOnline(false);
             setActiveRideModalVisible(true);
+            setTogglingOnline(false);
             return;
           } else {
             console.log('[DRIVER-HOME] No active rides found, proceeding to go online');
@@ -642,10 +653,13 @@ export default function DriverHomeScreen() {
         setSettlementBlocked(true);
         setRemittanceModalAmount(amount);
         setRemittanceModalVisible(true);
+        setTogglingOnline(false);
         return;
       }
       setRemittanceModalAmount(0);
       setRemittanceModalVisible(true);
+    } finally {
+      setTogglingOnline(false);
     }
   };
 
@@ -758,9 +772,13 @@ export default function DriverHomeScreen() {
           <View style={[styles.statusCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
             <View style={styles.statusInfo}>
               <Text style={[styles.statusLabel, { color: theme.colors.textSecondary }]}>Current Status</Text>
-              <Animated.Text style={[styles.statusValue, { color: statusColor }]}>
-                {isOnline ? 'Online - Receiving Requests' : 'Offline'}
-              </Animated.Text>
+              {togglingOnline ? (
+                <Text style={[styles.statusValue, { color: BRAND.primary }]}>Updating...</Text>
+              ) : (
+                <Animated.Text style={[styles.statusValue, { color: statusColor }]}>
+                  {isOnline ? 'Online - Receiving Requests' : 'Offline'}
+                </Animated.Text>
+              )}
               {loadingSettlement ? (
                 <ActivityIndicator size="small" color={BRAND.primary} />
               ) : settlementBlocked || settlementOutstanding > 0 ? (
@@ -779,12 +797,19 @@ export default function DriverHomeScreen() {
                 </Text>
               )}
             </View>
-            <Switch
-              value={isOnline}
-              onValueChange={handleOnlineToggle}
-              trackColor={{ false: theme.colors.border, true: '#10B981' }}
-              thumbColor="#FFF"
-            />
+            <View style={styles.switchContainer}>
+              {togglingOnline ? (
+                <ActivityIndicator size="small" color={BRAND.primary} />
+              ) : (
+                <Switch
+                  value={isOnline}
+                  onValueChange={handleOnlineToggle}
+                  trackColor={{ false: theme.colors.border, true: '#10B981' }}
+                  thumbColor="#FFF"
+                  disabled={togglingOnline}
+                />
+              )}
+            </View>
           </View>
         </TourTarget>
       </LinearGradient>
@@ -1144,6 +1169,7 @@ const styles = StyleSheet.create({
   statusValue: { fontSize: 14, fontWeight: '700' },
   statusNote: { fontSize: 12, marginTop: 4, fontWeight: '600' },
   statusInfo: { flex: 1 },
+  switchContainer: { justifyContent: 'center', alignItems: 'center', width: 50 },
   statsContainer: { flexDirection: 'row', gap: 12, paddingHorizontal: 20, marginTop: 20 },
   statCard: { flex: 1, flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 16, borderWidth: 1, gap: 8 },
   statIcon: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
