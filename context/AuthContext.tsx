@@ -150,9 +150,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const handleLogout = async () => {
     try {
       setError(null);
+      
+      // Step 1: Call logout API FIRST (while session is still valid)
+      await authService.logout();
+      console.log('✅ [AUTH-CONTEXT] Backend logout API called successfully');
+      
+      // Step 2: Stop auto sync
       syncService.stopAutoSync();
       
-      // Disconnect WebSocket
+      // Step 3: Disconnect WebSocket
       try {
         disconnectWebSocket();
         console.log('🌐 [AUTH-CONTEXT] WebSocket disconnected');
@@ -161,7 +167,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         // Don't fail logout if WebSocket fails
       }
       
-      // Clear push notifications subscription on logout
+      // Step 4: Clear push notifications subscription
       try {
         await clearPushSubscription();
         console.log('🔔 [AUTH-CONTEXT] Push notification subscription cleared');
@@ -170,11 +176,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         // Don't fail logout if notifications fail
       }
       
-      // Clear session resumed flag
+      // Step 5: Clear session resumed flag
       await AsyncStorage.removeItem('sessionResumed');
       
-      // Call logout API - this won't throw even if it fails
-      await authService.logout();
+      // Step 6: Clear user state
       setUser(null);
       setUserRole(null);
       console.log('🔓 [AUTH-CONTEXT] Logout successful - user cleared');
