@@ -34,9 +34,11 @@ export const PaystackPaymentModal: React.FC<PaystackPaymentModalProps> = ({
   const handleOpenPayment = async () => {
     try {
       setLoading(true);
-      console.log('🔗 [PAYSTACK_BROWSER] Opening payment URL:', authUrl);
+      console.log('🔗 [PAYSTACK_BROWSER] Opening payment URL in in-app browser:', authUrl);
 
       const returnUrl = Linking.createURL('payment-callback');
+      
+      // Use openAuthSessionAsync to open in in-app browser
       const result = await WebBrowser.openAuthSessionAsync(authUrl, returnUrl);
       
       console.log('🔄 [PAYSTACK_BROWSER] Browser result:', result);
@@ -140,7 +142,7 @@ export const PaystackPaymentModal: React.FC<PaystackPaymentModalProps> = ({
           <View style={styles.disclaimerBox}>
             <MaterialCommunityIcons name="information" size={16} color="#999" />
             <Text style={styles.disclaimerText}>
-              You will be taken to Paystack's secure checkout. After completing payment, return to this app.
+              Payment will open in a secure in-app browser. After completing payment, return to this app automatically.
             </Text>
           </View>
         </View>
