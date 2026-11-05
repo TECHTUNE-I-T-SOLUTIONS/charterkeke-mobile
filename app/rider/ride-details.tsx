@@ -1138,7 +1138,7 @@ export default function RideDetailsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  mapContainer: { height: 480, width: '100%', position: 'relative' },
+  mapContainer: { height: 320, width: '100%', position: 'relative' },
   map: { ...StyleSheet.absoluteFillObject },
   headerOverlay: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20, position: 'absolute', top: 0, left: 0, right: 0 },
   backBtn: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, elevation: 4, position: 'absolute', top: scale(16), left: scale(16), zIndex: 10 },

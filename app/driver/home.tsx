@@ -185,6 +185,8 @@ export default function DriverHomeScreen() {
   const [countdownNow, setCountdownNow] = useState(Date.now());
   const [remittanceModalVisible, setRemittanceModalVisible] = useState(false);
   const [remittanceModalAmount, setRemittanceModalAmount] = useState(0);
+  const [activeRideModalVisible, setActiveRideModalVisible] = useState(false);
+  const [driverId, setDriverId] = useState<string | null>(null);
   const [driverStats, setDriverStats] = useState({ completedTrips: 0, averageRating: 0 });
   const [locationPermissionVisible, setLocationPermissionVisible] = useState(false);
   const [checkingLocationPermission, setCheckingLocationPermission] = useState(false);
@@ -367,6 +369,9 @@ export default function DriverHomeScreen() {
         setLoading(false);
         return;
       }
+      
+      // Store driverId for use in other functions
+      setDriverId(driverId);
 
       const [details, status] = await Promise.all([
         supabaseService.getDriverDetails(driverId).catch((err) => {
@@ -574,11 +579,28 @@ export default function DriverHomeScreen() {
 
   const handleOnlineToggle = async (value: boolean) => {
     try {
+      // Check for settlement block first
       if (value && settlementBlocked) {
         setIsOnline(false);
         setRemittanceModalAmount(settlementOutstanding);
         setRemittanceModalVisible(true);
         return;
+      }
+
+      // Check for active rides when trying to go online
+      if (value && driverId) {
+        try {
+          const activeRides = await supabaseService.getDriverActiveRides(driverId);
+          if (activeRides && activeRides.length > 0) {
+            setIsOnline(false);
+            setActiveRideModalVisible(true);
+            console.log('[DRIVER-HOME] Driver has active ride, blocking online status');
+            return;
+          }
+        } catch (error) {
+          console.warn('[DRIVER-HOME] Failed to check active rides:', error);
+          // Continue with status toggle even if check fails
+        }
       }
 
       if (!value) setIsOnline(false);
@@ -1038,6 +1060,35 @@ export default function DriverHomeScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={activeRideModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setActiveRideModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+            <View style={styles.modalIconWrap}>
+              <MaterialCommunityIcons name="car-side" size={28} color="#F59E0B" />
+            </View>
+            <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>
+              Active Ride in Progress
+            </Text>
+            <Text style={[styles.modalText, { color: theme.colors.textSecondary }]}>
+              You cannot go online while you have an active ride. Please complete your current ride before accepting new rides.
+            </Text>
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                onPress={() => setActiveRideModalVisible(false)}
+                style={[styles.modalBtn, { backgroundColor: BRAND.primary }]}
+              >
+                <Text style={styles.modalBtnPrimaryText}>OK, Got It</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1099,7 +1150,7 @@ const styles = StyleSheet.create({
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, marginBottom: 12 },
   sectionTitle: { fontSize: 16, fontWeight: '700' },
   seeAll: { fontSize: 13, fontWeight: '600' },
-  ridesScroll: { paddingHorizontal: 20, gap: 12 },
+  ridesScroll: { paddingHorizontal: 20, gap: 12, marginTop: 24 },
   rideCard: { width: 200, padding: 16, borderRadius: 16, borderWidth: 1, marginRight: 4 },
   rideHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
   rideBadge: { backgroundColor: BRAND.primary, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
