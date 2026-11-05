@@ -11,8 +11,8 @@ interface TokenPayload {
   exp: number;
 }
 
-const SESSION_LIFESPAN_MS = 60 * 24 * 60 * 60 * 1000; // 2 months
-const REFRESH_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // Refresh during the final week
+const SESSION_LIFESPAN_MS = 365 * 2 * 24 * 60 * 60 * 1000; // 2 years
+const REFRESH_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // Refresh during the final month
 
 class AuthService {
   private currentUser: any = null;
@@ -84,7 +84,7 @@ class AuthService {
       // The backend mobile token is an opaque base64 token. Keep it long-lived locally;
       // the server still validates the user account on every request.
       this.tokenExpiryTime = Date.now() + SESSION_LIFESPAN_MS;
-      console.log('Using 2-month token expiry for non-JWT token');
+      console.log('Using 2-year token expiry for non-JWT token');
     }
   }
 
