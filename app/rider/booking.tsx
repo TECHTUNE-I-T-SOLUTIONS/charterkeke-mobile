@@ -24,6 +24,7 @@ import { useTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
 import { BRAND, COLORS } from '@/utils/colors';
 import { locationService } from '@/services/location';
+import { cacheService } from '@/services/cache';
 import { geocodeMapboxLocations } from '@/utils/mapboxGeocoding';
 import Toast from '@/components/ui/Toast';
 import {
@@ -846,6 +847,22 @@ export default function BookingScreen() {
       if (response) {
         setShowReviewModal(false);
         const rideId = response.ride?.id || response.id;
+        
+        // Clear all booking-related state to show fresh data on next booking
+        setPickupLocation(null);
+        setPickupSearch('');
+        setDestinationLocation(null);
+        setDestinationSearch('');
+        setEstimatedFare(null);
+        setEstimatedDistance(null);
+        setEstimatedTime(null);
+        setSelectedCashback(null);
+        setDiscountedFare(null);
+        setPickupTime(null);
+        setCurrentStep('pickup');
+        
+        // Clear cache
+        await cacheService.remove('rider_booking_cache');
         
         // Refresh cashback rewards to remove the used one
         try {
