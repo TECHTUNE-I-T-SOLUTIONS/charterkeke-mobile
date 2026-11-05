@@ -13,6 +13,12 @@ let flushTimer: ReturnType<typeof setTimeout> | undefined;
 let flushInProgress = false;
 let consentCache: boolean | null | undefined;
 
+// Get API URL for direct fetch (no auth required)
+const getApiUrl = () => {
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.18.14:3000';
+  return apiUrl.replace(/\/api$/, '');
+};
+
 export type ExperienceEvent = {
   id: string;
   type: 'error' | 'screen_view' | 'task_success' | 'task_failure' | 'feedback';
@@ -81,7 +87,14 @@ export async function setExperienceConsent(granted: boolean): Promise<void> {
 async function retryConsentRevocation(): Promise<void> {
   try {
     if (await AsyncStorage.getItem(REVOCATION_KEY)) {
-      await apiService.delete('/mobile/experience/reports');
+      // Use direct fetch without auth for consent revocation
+      const apiUrl = getApiUrl();
+      await fetch(`${apiUrl}/api/mobile/experience/reports`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
       await AsyncStorage.removeItem(REVOCATION_KEY);
     }
   } catch {
@@ -135,7 +148,22 @@ export async function flushExperienceQueue(): Promise<void> {
     const queue: ExperienceEvent[] = JSON.parse(stored);
     if (!Array.isArray(queue) || queue.length === 0) return;
     const batch = queue.slice(0, 15);
-    await apiService.post('/mobile/experience/reports', { events: batch, consent: true });
+    
+    // Use direct fetch without authentication
+    const apiUrl = getApiUrl();
+    const response = await fetch(`${apiUrl}/api/mobile/experience/reports`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ events: batch, consent: true }),
+    });
+    
+    if (!response.ok) {
+      console.warn('[EXPERIENCE] Failed to flush queue:', response.status);
+      return;
+    }
+    
     const latest = await AsyncStorage.getItem(QUEUE_KEY);
     const latestQueue: ExperienceEvent[] = latest ? JSON.parse(latest) : [];
     const sentIds = new Set(batch.map((event) => event.id));
@@ -218,8 +246,17 @@ export async function submitExperienceHealthCheck(): Promise<boolean> {
       stack: details,
     });
 
-    await apiService.post('/mobile/experience/reports', { events: [report], consent: true, healthCheck: true });
-    return true;
+    // Use direct fetch without authentication
+    const apiUrl = getApiUrl();
+    const response = await fetch(`${apiUrl}/api/mobile/experience/reports`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ events: [report], consent: true, healthCheck: true }),
+    });
+    
+    return response.ok;
   } catch {
     return false;
   }
