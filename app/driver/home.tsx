@@ -804,9 +804,9 @@ export default function DriverHomeScreen() {
             />
           </View>
 
-          {/* Map Preview */}
-          <View style={[styles.mapSection, { borderColor: theme.colors.border }]}>
-            <MapboxMap
+
+          {/* <View style={[styles.mapSection, { borderColor: theme.colors.border }]}> */}
+            {/* <MapboxMap
               style={StyleSheet.absoluteFill}
               latitude={currentLocation?.latitude || 6.5244}
               longitude={currentLocation?.longitude || 3.3792}
@@ -861,9 +861,9 @@ export default function DriverHomeScreen() {
                 }
                 return markers;
               })}
-            </MapboxMap>
+            </MapboxMap> */}
             {/* CTA Carousel moved below mapSection */}
-            {(mapRides.length > 0 || loadingRecentRides) && (
+            {/* {(mapRides.length > 0 || loadingRecentRides) && (
               <View style={[styles.mapInfo, { backgroundColor: theme.colors.surface }]}>
                 {loadingRecentRides ? (
                   <ActivityIndicator size="small" color={BRAND.primary} />
@@ -875,46 +875,14 @@ export default function DriverHomeScreen() {
                   </Text>
                 )}
               </View>
-            )}
-            <View style={[styles.mapOverlay, { backgroundColor: theme.colors.surface }]}>
+            )} */}
+            {/* <View style={[styles.mapOverlay, { backgroundColor: theme.colors.surface }]}>
               <View style={styles.dot} />
               <Text style={[styles.locationText, { color: theme.colors.textPrimary }]}>
                 {currentLocation ? 'You are here' : 'Locating...'}
               </Text>
-            </View>
-          </View>
-
-          {/* CTA Carousel (driver-only cards) - placed under map and above recent/available rides */}
-          <View style={[styles.paddingH, { marginTop: 16 }]}>
-            <CtaCarousel
-              items={[
-                {
-                  id: 'earn-more',
-                  title: 'View Earnings',
-                  subtitle: 'See how much you earned today and withdraw.',
-                  label: 'Earnings',
-                  onPress: () => router.push('/driver/earnings'),
-                } as CtaCard,
-                {
-                  id: 'settlement',
-                  title: 'Settlement Status',
-                  subtitle: 'Check outstanding settlements and remittance details.',
-                  label: 'Settlements',
-                  onPress: () => router.push('/driver/wallet'),
-                } as CtaCard,
-                {
-                  id: 'refer',
-                  title: 'Refer a friend',
-                  subtitle: 'Share your referral code and earn rewards.',
-                  label: 'Share',
-                  share: true,
-                  onPress: () => router.push('/driver/referrals'),
-                } as CtaCard,
-              ]}
-            />
-          </View>
-          <HomePromoCarousel slides={promoSlides} />
-
+            </View> */}
+          {/* </View> */}
           {isOnline && availableRides.length > 0 ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.ridesScroll}>
               {availableRides.map((ride) => (
@@ -954,6 +922,38 @@ export default function DriverHomeScreen() {
               </Text>
             </View>
           )}
+
+          {/* CTA Carousel (driver-only cards) - placed under map and above recent/available rides */}
+          <View style={[styles.paddingH, { marginTop: 16 }]}>
+            <CtaCarousel
+              items={[
+                {
+                  id: 'earn-more',
+                  title: 'View Earnings',
+                  subtitle: 'See how much you earned today and withdraw.',
+                  label: 'Earnings',
+                  onPress: () => router.push('/driver/earnings'),
+                } as CtaCard,
+                {
+                  id: 'settlement',
+                  title: 'Settlement Status',
+                  subtitle: 'Check outstanding settlements and remittance details.',
+                  label: 'Settlements',
+                  onPress: () => router.push('/driver/wallet'),
+                } as CtaCard,
+                {
+                  id: 'refer',
+                  title: 'Refer a friend',
+                  subtitle: 'Share your referral code and earn rewards.',
+                  label: 'Share',
+                  share: true,
+                  onPress: () => router.push('/driver/referrals'),
+                } as CtaCard,
+              ]}
+            />
+          </View>
+          <HomePromoCarousel slides={promoSlides} />
+
 
         </ScrollView>
       )}
@@ -1058,9 +1058,9 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   scrollView: { flex: 1 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  fixedHeader: { paddingHorizontal: 20, paddingBottom: 24, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, elevation: 4, shadowColor: '#000', shadowOpacity: 0.1, shadowOffset: { width: 0, height: 2 }, zIndex: 10 },
-  headerGradient: { paddingHorizontal: 20, paddingBottom: 24, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  fixedHeader: { paddingHorizontal: 20, paddingBottom: 14, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, elevation: 4, shadowColor: '#000', shadowOpacity: 0.1, shadowOffset: { width: 0, height: 2 }, zIndex: 10 },
+  headerGradient: { paddingHorizontal: 20, paddingBottom: 14, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   greeting: { fontSize: 13, fontWeight: '500' },
   name: { fontSize: 22, fontWeight: '800' },
   headerButtons: { flexDirection: 'row', gap: 12, alignItems: 'center' },
@@ -1069,8 +1069,8 @@ const styles = StyleSheet.create({
   badgeText: { fontSize: 10, fontWeight: '700', color: '#fff' },
   profileBtn: { width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: BRAND.primary, padding: 1 },
   profileImage: { width: '100%', height: '100%', borderRadius: 20 },
-  statusCard: { padding: 16, borderRadius: 16, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.05, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
-  statusLabel: { fontSize: 12, marginBottom: 4 },
+  statusCard: { padding: 10, borderRadius: 16, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.05, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
+  statusLabel: { fontSize: 12, marginBottom: 2 },
   statusValue: { fontSize: 14, fontWeight: '700' },
   statusNote: { fontSize: 12, marginTop: 4, fontWeight: '600' },
   statusInfo: { flex: 1 },
@@ -1079,22 +1079,22 @@ const styles = StyleSheet.create({
   statIcon: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
   statValue: { fontSize: 15, fontWeight: '700' },
   statLabel: { fontSize: 10 },
-  mapSection: { margin: 20, height: 440, borderRadius: 20, overflow: 'hidden', borderWidth: 1, position: 'relative' },
-  mapInfo: {
-    position: 'absolute',
-    top: 12,
-    left: 12,
-    right: 12,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  mapInfoText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  mapOverlay: { position: 'absolute', bottom: 12, left: 12, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, gap: 6 },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: BRAND.primary },
+  // mapSection: { margin: 20, height: 280, borderRadius: 20, overflow: 'hidden', borderWidth: 1, position: 'relative' },
+  // mapInfo: {
+  //   position: 'absolute',
+  //   top: 12,
+  //   left: 12,
+  //   right: 12,
+  //   borderRadius: 10,
+  //   paddingHorizontal: 10,
+  //   paddingVertical: 8,
+  // },
+  // mapInfoText: {
+  //   fontSize: 12,
+  //   fontWeight: '600',
+  // },
+  // mapOverlay: { position: 'absolute', bottom: 12, left: 12, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, gap: 6 },
+  // dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: BRAND.primary },
   locationText: { fontSize: 12, fontWeight: '600' },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, marginBottom: 12 },
   sectionTitle: { fontSize: 16, fontWeight: '700' },
@@ -1192,10 +1192,10 @@ const styles = StyleSheet.create({
   permissionButtonText: { fontSize: 14, fontWeight: '800' },
 });
 
-const mapDarkStyle = [
-  { "elementType": "geometry", "stylers": [{ "color": "#242f3e" }] },
-  { "elementType": "labels.text.stroke", "stylers": [{ "color": "#242f3e" }] },
-  { "elementType": "labels.text.fill", "stylers": [{ "color": "#746855" }] },
-  { "featureType": "road", "elementType": "geometry", "stylers": [{ "color": "#38414e" }] },
-  { "featureType": "road", "elementType": "geometry.stroke", "stylers": [{ "color": "#212a37" }] },
-];
+// const mapDarkStyle = [
+//   { "elementType": "geometry", "stylers": [{ "color": "#242f3e" }] },
+//   { "elementType": "labels.text.stroke", "stylers": [{ "color": "#242f3e" }] },
+//   { "elementType": "labels.text.fill", "stylers": [{ "color": "#746855" }] },
+//   { "featureType": "road", "elementType": "geometry", "stylers": [{ "color": "#38414e" }] },
+//   { "featureType": "road", "elementType": "geometry.stroke", "stylers": [{ "color": "#212a37" }] },
+// ];

@@ -40,6 +40,8 @@ export default function DriverLayout() {
   const hideBottomNav = [
     'awaiting-verification',
     'help-and-support',
+    // 'messages',
+    'chat',
   ].some((route) => segments[segments.length - 1] === route);
 
   return (

@@ -9,10 +9,12 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { COLORS } from '@/utils/colors';
 import { moderateScale, scale, verticalScale } from 'react-native-size-matters';
 import { ChatItem } from '@/components/ChatItem';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function DriverMessagesScreen() {
   const { theme, mode } = useTheme();
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const colors = mode === 'dark' ? COLORS.dark : COLORS.light;
   const [chats, setChats] = useState<Chat[]>([]);
@@ -106,11 +108,11 @@ export default function DriverMessagesScreen() {
   if (loading) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
           <TouchableOpacity
             onPress={handleBackPress}
             style={styles.backButton}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            hitSlop={{ top: 20, bottom: 10, left: 10, right: 10 }}
           >
             <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text} />
           </TouchableOpacity>
@@ -125,11 +127,11 @@ export default function DriverMessagesScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <TouchableOpacity
           onPress={handleBackPress}
           style={styles.backButton}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          hitSlop={{ top: 20, bottom: 10, left: 10, right: 10 }}
         >
           <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text} />
         </TouchableOpacity>

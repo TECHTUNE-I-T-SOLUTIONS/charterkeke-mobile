@@ -170,7 +170,10 @@ export default function ProfileScreen() {
     try {
       if (clearCache) await clearCache();
       await logout();
-      router.replace('/auth/welcome');
+      // Use replace with a slight delay to prevent 404 screen
+      setTimeout(() => {
+        router.replace('/auth/welcome');
+      }, 100);
     } catch (e) {
       Alert.alert('Error', 'Logout failed');
     }

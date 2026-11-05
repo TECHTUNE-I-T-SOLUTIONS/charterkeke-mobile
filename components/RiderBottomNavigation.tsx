@@ -180,7 +180,7 @@ export default function RiderBottomNavigation() {
   return (
     <View
       pointerEvents="box-none"
-      style={[styles.barWrap, { bottom: insets.bottom > 0 ? insets.bottom : 16 }]}
+      style={[styles.barWrap, { bottom: insets.bottom > 0 ? insets.bottom : 2 }]}
     >
       <View
         style={[
