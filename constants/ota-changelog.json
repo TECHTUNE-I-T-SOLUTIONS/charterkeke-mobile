@@ -1,16 +1,17 @@
 ﻿{
-    "key":  "ota-2026-11-04-v1",
-    "title":  "A More Reliable Wallet and Smarter App Updates!",
+    "key":  "ota-2026-11-05-v2",
+    "title":  "Enhanced Payment Flow, Better Session Management & Smarter Driver Status!",
     "subtitle":  "Here\u0027s what\u0027s new in this update:",
     "highlights":  [
-                       "More reliable driver wallet with safer settlement data handling and clearer payment errors",
-                       "Consistent custom alerts across wallet payment and withdrawal flows",
-                       "Optional AI-assisted diagnostics help admins investigate app errors and user suggestions",
-                       "Privacy consent controls let you manage experience diagnostics at any time",
-                       "Fixed cashback rewards - used rewards won\u0027t show again in booking sheet",
-                       "Fixed driver date/time display - now shows correct dates for all rides",
-                       "Removed heavy caching - tabs load fresh data every time, no more stale content",
-                       "Branded alert modals - consistent, beautiful error messages throughout the app",
-                       "Automatic driver status - goes \u0027busy\u0027 during rides, \u0027online\u0027 when completed (if remittance is clear)"
+                       "In-app payment browser - pay your remittance without leaving the app",
+                       "2-year session persistence - stay logged in longer without re-entering credentials",
+                       "Driver status improvements - can\u0027t go online with active rides, loading indicator during status change",
+                       "Fixed booking price updates - amount refreshes correctly when you change pickup/destination",
+                       "Clean booking state - \u0027Book Ride\u0027 button resets after successful booking",
+                       "App crash fixes - better error handling for realtime subscriptions",
+                       "Fixed rider logout - no more 404 screen when logging out",
+                       "Enhanced cashback - rewards marked as used only after ride is verified",
+                       "Driver auto-online - automatically goes online after paying overdue remittance",
+                       "Improved driver location verification with better logging for debugging"
                    ]
 }
