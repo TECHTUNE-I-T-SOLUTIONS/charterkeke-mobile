@@ -587,14 +587,23 @@ export default function DriverHomeScreen() {
         return;
       }
 
-      // Check for active rides when trying to go online
+      // Check for active rides when trying to go online using Supabase SDK directly
       if (value && driverId) {
         try {
-          const activeRides = await supabaseService.getDriverActiveRides(driverId);
-          if (activeRides && activeRides.length > 0) {
+          // Query rides table directly for accepted or in_progress rides
+          const { data: activeRides, error } = await supabaseService.getClient()
+            .from('rides')
+            .select('id, status')
+            .eq('driver_id', driverId)
+            .in('status', ['accepted', 'in_progress'])
+            .limit(1);
+
+          if (error) {
+            console.warn('[DRIVER-HOME] Failed to check active rides:', error);
+          } else if (activeRides && activeRides.length > 0) {
             setIsOnline(false);
             setActiveRideModalVisible(true);
-            console.log('[DRIVER-HOME] Driver has active ride, blocking online status');
+            console.log('[DRIVER-HOME] Driver has active ride, blocking online status:', activeRides[0]);
             return;
           }
         } catch (error) {
