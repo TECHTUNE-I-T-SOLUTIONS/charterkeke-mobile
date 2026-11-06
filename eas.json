@@ -14,7 +14,7 @@
       "channel": "staging",
       "android": {
         "buildType": "apk",
-        "image": "ubuntu-22.04-jdk-11-ndk-r21e"
+        "image": "ubuntu-24.04-jdk-17-ndk-r27b"
       },
       "env": {
         "EXPO_PUBLIC_ENVIRONMENT": "staging"
@@ -25,7 +25,7 @@
       "channel": "production",
       "android": {
         "buildType": "apk",
-        "image": "ubuntu-22.04-jdk-11-ndk-r21e"
+        "image": "ubuntu-24.04-jdk-17-ndk-r27b"
       },
       "env": {
         "EXPO_PUBLIC_ENVIRONMENT": "production"
