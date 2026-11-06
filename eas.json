@@ -13,8 +13,7 @@
       "distribution": "internal",
       "channel": "staging",
       "android": {
-        "buildType": "apk",
-        "image": "ubuntu-22.04-jdk-11-ndk-r21e"
+        "buildType": "apk"
       },
       "env": {
         "EXPO_PUBLIC_ENVIRONMENT": "staging"
@@ -24,8 +23,7 @@
       "autoIncrement": true,
       "channel": "production",
       "android": {
-        "buildType": "apk",
-        "image": "ubuntu-22.04-jdk-11-ndk-r21e"
+        "buildType": "apk"
       },
       "env": {
         "EXPO_PUBLIC_ENVIRONMENT": "production"
